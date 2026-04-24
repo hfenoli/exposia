@@ -258,8 +258,12 @@ export default function App({session}){
       // Club
       let{data:clubData}=await supabase.from("clubs").select("*").eq("user_id",uid).single();
       if(!clubData){
-        const{data:newClub}=await supabase.from("clubs").insert({user_id:uid,name:"Mon Club"}).select().single();
+        const{data:newClub}=await supabase.from("clubs").insert({user_id:uid,name:"Mon Club",approved:false}).select().single();
         clubData=newClub;
+      }
+      if(!clubData?.approved){
+        await supabase.auth.signOut();
+        return;
       }
       setClub(clubData);
       // Players with photos

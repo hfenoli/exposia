@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { supabase } from "./supabase";
 
-export default function Auth({ onAuth }) {
+export default function Auth() {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -19,8 +19,12 @@ export default function Auth({ onAuth }) {
       const { data, error } = await supabase.auth.signUp({ email, password });
       if (error) { setError(error.message); setLoading(false); return; }
       if (data.user) {
-        await supabase.from("clubs").insert({ user_id: data.user.id, name: clubName || "Mon Club" });
-        setSuccess("Compte créé ! Vérifiez votre email puis connectez-vous.");
+        await supabase.from("clubs").insert({
+          user_id: data.user.id,
+          name: clubName || "Mon Club",
+          approved: false
+        });
+        setSuccess("Demande envoyée ! Vous recevrez un accès sous 24h après validation.");
         setMode("login");
       }
     }
@@ -39,7 +43,7 @@ export default function Auth({ onAuth }) {
           {["login", "signup"].map(m => (
             <button key={m} onClick={() => { setMode(m); setError(""); setSuccess(""); }}
               style={{ flex: 1, padding: "8px", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13, fontWeight: 600, background: mode === m ? "#7c3aed" : "transparent", color: mode === m ? "#fff" : "#64748b", transition: "all .2s" }}>
-              {m === "login" ? "Connexion" : "Créer un compte"}
+              {m === "login" ? "Connexion" : "Demander l'accès"}
             </button>
           ))}
         </div>
@@ -60,11 +64,16 @@ export default function Auth({ onAuth }) {
           <input value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" type="password"
             style={{ width: "100%", background: "#1a1a26", border: "1px solid #3a3a55", borderRadius: 8, padding: "10px 12px", color: "#f1f5f9", fontSize: 13, outline: "none", boxSizing: "border-box" }} />
         </div>
+        {mode === "signup" && (
+          <div style={{ background: "#1a1a26", border: "1px solid #3a3a55", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#94a3b8", marginBottom: 16 }}>
+            💡 Votre demande sera examinée sous 24h. Vous recevrez un email de confirmation dès validation.
+          </div>
+        )}
         {error && <div style={{ background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 8, padding: "10px 14px", color: "#fca5a5", fontSize: 12, marginBottom: 16 }}>{error}</div>}
         {success && <div style={{ background: "#052e16", border: "1px solid #166534", borderRadius: 8, padding: "10px 14px", color: "#86efac", fontSize: 12, marginBottom: 16 }}>{success}</div>}
         <button onClick={handleSubmit} disabled={loading}
           style={{ width: "100%", background: "#7c3aed", color: "#fff", border: "none", borderRadius: 8, padding: "12px", fontSize: 14, fontWeight: 600, cursor: loading ? "wait" : "pointer", opacity: loading ? 0.7 : 1 }}>
-          {loading ? "Chargement..." : mode === "login" ? "Se connecter" : "Créer le compte"}
+          {loading ? "Chargement..." : mode === "login" ? "Se connecter" : "Envoyer la demande"}
         </button>
       </div>
     </div>
