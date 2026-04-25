@@ -31,12 +31,20 @@ export default function Auth() {
           approved: false
         });
         // Notifier par email
-        await supabase.functions.invoke("notify-signup", {
-          body: {
-            club_name: clubName || "Mon Club",
-            email: email,
-          },
-        });
+        await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/notify-signup`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            },
+            body: JSON.stringify({
+              club_name: clubName || "Mon Club",
+              email: email,
+            }),
+          }
+        );
         setSuccess("Demande envoyée ! Vous recevrez un accès sous 24h après validation.");
         setMode("login");
       }
