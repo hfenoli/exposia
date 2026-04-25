@@ -3,27 +3,32 @@ import { createRoot } from "react-dom/client"
 import { supabase } from "./supabase"
 import App from "./App"
 import Auth from "./Auth"
+import Landing from "./Landing"
 
 function Root() {
   const [session, setSession] = useState(undefined)
+  const [showLanding, setShowLanding] = useState(true)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
+      if (session) setShowLanding(false)
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
+      if (session) setShowLanding(false)
     })
     return () => subscription.unsubscribe()
   }, [])
 
   if (session === undefined) return (
-    <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0a0a0f", color: "#64748b", fontFamily: "system-ui" }}>
-      Chargement...
+    <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#fff" }}>
     </div>
   )
 
-  return session ? <App session={session} /> : <Auth />
+  if (showLanding && !session) return <Landing onEnter={() => setShowLanding(false)} />
+  if (!session) return <Auth />
+  return <App session={session} />
 }
 
 createRoot(document.getElementById("root")).render(
