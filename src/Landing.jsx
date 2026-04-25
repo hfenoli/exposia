@@ -20,8 +20,8 @@ export default function Landing({ onEnter }) {
         boxSizing: "border-box",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <img src="/team/logo.jpg" alt="Visium" style={{ width: 28, height: 28, display: "block" }} />
-          <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: "0.08em" }}>Visium</span>
+          <img src="/team/logo.jpg" alt="Visium Sport" style={{ width: 28, height: 28, display: "block" }} />
+          <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: "0.08em" }}>Visium Sport</span>
         </div>
         <a href="mailto:info@visium-sport.ch" style={{
           fontSize: 13,
@@ -77,7 +77,7 @@ export default function Landing({ onEnter }) {
           margin: "0 0 52px",
           fontWeight: 400,
         }}>
-          Visium permet aux clubs de football de créer des visuels professionnels en quelques secondes — aux couleurs de leur équipe, depuis leur téléphone.
+          Visium Sport permet aux clubs de football de créer des visuels professionnels en quelques secondes — aux couleurs de leur équipe, depuis leur téléphone.
         </p>
         {/* CTAs */}
         <div style={{
@@ -101,7 +101,7 @@ export default function Landing({ onEnter }) {
               textTransform: "uppercase",
             }}
           >
-            Accéder à Visium
+            Accéder à Visium Sport
           </button>
           <a
             href="mailto:info@visium-sport.ch"
@@ -240,7 +240,7 @@ export default function Landing({ onEnter }) {
         gap: 10,
       }}>
         <span style={{ fontSize: 12, color: "#ccc", letterSpacing: "0.04em" }}>
-          © 2025 Visium · Suisse
+          © 2025 Visium Sport · Suisse
         </span>
         <a href="mailto:info@visium-sport.ch" style={{
           fontSize: 12,

@@ -36,7 +36,7 @@ export default function Auth() {
       <div style={{ width: 380, background: "#12121a", border: "1px solid #2a2a40", borderRadius: 16, padding: 32 }}>
         <div style={{ textAlign: "center", marginBottom: 28 }}>
           <div style={{ fontSize: 32, marginBottom: 8 }}>⚡</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: "#f1f5f9" }}>EXPOsia</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: "#f1f5f9" }}>Visium Sport</div>
           <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>Créateur de visuels football</div>
         </div>
         <div style={{ display: "flex", marginBottom: 24, background: "#1a1a26", borderRadius: 8, padding: 4 }}>
