@@ -20,7 +20,7 @@ export default function Landing({ onEnter }) {
         boxSizing: "border-box",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <img src="/logo.jpg" alt="Visium" style={{ width: 28, height: 28, display: "block" }} />
+          <img src="/team/logo.jpg" alt="Visium" style={{ width: 28, height: 28, display: "block" }} />
           <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: "0.08em" }}>Visium</span>
         </div>
         <a href="mailto:info@visium-sport.ch" style={{
