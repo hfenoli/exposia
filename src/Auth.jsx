@@ -35,7 +35,7 @@ export default function Auth() {
       }
     } else if (mode === "forgot") {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: "https://peaceful-blini-17747c.netlify.app"
+        redirectTo: import.meta.env.VITE_APP_URL
       });
       if (error) setError(error.message);
       else setSuccess("Un lien de réinitialisation a été envoyé à votre email.");
