@@ -20,11 +20,7 @@ export default function Landing({ onEnter }) {
         boxSizing: "border-box",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {/* Logo SVG inline */}
-          <svg width="28" height="24" viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <polyline points="0,0 60,90 120,0" fill="none" stroke="#0a0a0a" strokeWidth="12" strokeLinejoin="round" strokeLinecap="round"/>
-            <polyline points="20,0 60,65 100,0" fill="none" stroke="#0a0a0a" strokeWidth="8" strokeLinejoin="round" strokeLinecap="round"/>
-          </svg>
+          <img src="/logo.jpg" alt="Visium" style={{ width: 28, height: 28, display: "block" }} />
           <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: "0.08em" }}>Visium</span>
         </div>
         <a href="mailto:info@visium-sport.ch" style={{
@@ -201,30 +197,27 @@ export default function Landing({ onEnter }) {
             {
               nom: "Hugo Fenoli-Rebellato",
               role: "Co-fondateur",
-              initiales: "H",
+              photo: "/team/hugo.jpg",
             },
             {
-              nom: "Lucas",
+              nom: "Lucas Di Pasquale",
               role: "Co-fondateur",
-              initiales: "L",
+              photo: "/team/lucas.jpg",
             },
           ].map((p) => (
             <div key={p.nom} style={{ display: "flex", alignItems: "center", gap: 16 }}>
-              <div style={{
-                width: 52,
-                height: 52,
-                borderRadius: "50%",
-                background: "#0a0a0a",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#fff",
-                fontSize: 18,
-                fontWeight: 700,
-                flexShrink: 0,
-              }}>
-                {p.initiales}
-              </div>
+              <img
+                src={p.photo}
+                alt={p.nom}
+                style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: "50%",
+                  objectFit: "cover",
+                  flexShrink: 0,
+                  background: "#f0f0f0",
+                }}
+              />
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600, color: "#0a0a0a" }}>{p.nom}</div>
                 <div style={{ fontSize: 12, color: "#aaa", marginTop: 2, letterSpacing: "0.04em" }}>{p.role}</div>
