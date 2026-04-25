@@ -357,7 +357,33 @@ function UpBtn({val,on,w,h,r,label,t}){w=w||52;h=h||44;r=r||8;const ref=useRef()
 function Av({photo,name,size}){size=size||40;const[err,setErr]=useState(false);const ini=(name||"?").trim().split(/\s+/).map(w=>w[0]).join("").slice(0,2).toUpperCase();return(<div style={{width:size,height:size,borderRadius:"50%",overflow:"hidden",background:"linear-gradient(135deg,#e63329,#1a1a2e)",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*.32,fontWeight:700,color:"#fff"}}>{photo&&!err?<img src={photo} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt="" onError={()=>setErr(true)}/>:ini}</div>);}
 function PBox({children,t,mb}){return<div style={{background:t.bg3,borderRadius:10,padding:12,marginBottom:mb||10}}>{children}</div>;}
 function SHdr({label,t}){return<div style={{fontSize:10,color:t.text3,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",marginBottom:8,paddingBottom:6,borderBottom:"1px solid "+t.border}}>{label}</div>;}
-function TplGrid({tpls,sel,onSel,t}){const cats=[...new Set(tpls.map(x=>x.cat))];return(<div>{cats.map(cat=>(<div key={cat} style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,fontWeight:700,letterSpacing:".12em",marginBottom:5,textTransform:"uppercase"}}>{cat}</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>{tpls.filter(x=>x.cat===cat).map(tpl=>(<div key={tpl.id} onClick={()=>onSel(tpl.id)} style={{background:sel===tpl.id?rgba(t.accent,.18):t.bg3,border:"2px solid "+(sel===tpl.id?t.accent:t.border),borderRadius:8,padding:"7px 9px",cursor:"pointer"}}><div style={{fontSize:11,fontWeight:sel===tpl.id?700:500,color:sel===tpl.id?t.accent:t.text}}>{tpl.label}</div></div>))}</div></div>))}</div>);}
+function TplGrid({tpls,sel,onSel,t,maxTemplates}){
+  const cats=[...new Set(tpls.map(x=>x.cat))];
+  return(<div>{cats.map(cat=>(
+    <div key={cat} style={{marginBottom:8}}>
+      <div style={{fontSize:9,color:t.text3,fontWeight:700,letterSpacing:".12em",marginBottom:5,textTransform:"uppercase"}}>{cat}</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
+        {tpls.filter(x=>x.cat===cat).map((tpl,idx)=>{
+          const locked=idx>=(maxTemplates||999);
+          return(
+            <div key={tpl.id} onClick={()=>!locked&&onSel(tpl.id)}
+              style={{
+                background:sel===tpl.id?rgba(t.accent,.18):t.bg3,
+                border:"2px solid "+(sel===tpl.id?t.accent:t.border),
+                borderRadius:8,padding:"7px 9px",
+                cursor:locked?"not-allowed":"pointer",
+                opacity:locked?0.4:1,
+                position:"relative"
+              }}>
+              {locked&&<span style={{position:"absolute",top:4,right:6,fontSize:10}}>🔒</span>}
+              <div style={{fontSize:11,fontWeight:sel===tpl.id?700:500,color:sel===tpl.id?t.accent:t.text}}>{tpl.label}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  ))}</div>);
+}
 function PhotoPanel({players,selId,onSel,selUrl,onSelUrl,onAdd,onFav,t}){
   const ref=useRef();
   const player=players.find(p=>p.id===selId);
@@ -435,6 +461,8 @@ export default function App({session}){
   const[groupTpl,setGroupTpl]=useState("gr1");
   const[postTpl,setPostTpl]=useState("pt1");
   const[saveFlash,setSaveFlash]=useState(false);
+  const[weeklyCount,setWeeklyCount]=useState(0);
+  const[limitError,setLimitError]=useState("");
   const mRef=useRef();
   const t=useMemo(()=>buildTheme(club?.color1,club?.color2,club?.theme_mode||"dark"),[club]);
   // ── LOAD DATA ───────────────────────────────────────────────
@@ -450,6 +478,14 @@ export default function App({session}){
       }
       if(!clubData?.approved){await supabase.auth.signOut();return;}
       setClub(clubData);
+      // Compter les visuels des 7 derniers jours
+      const since=new Date(Date.now()-7*24*60*60*1000).toISOString();
+      const{count}=await supabase
+        .from("visuals")
+        .select("*",{count:"exact",head:true})
+        .eq("club_id",clubData.id)
+        .gte("created_at",since);
+      setWeeklyCount(count||0);
       const{data:playersData}=await supabase.from("players").select("*, photos:player_photos(*)").eq("club_id",clubData.id);
       setPlayers(playersData||[]);
       const{data:mediaData}=await supabase.from("media").select("*").eq("club_id",clubData.id);
@@ -522,6 +558,13 @@ export default function App({session}){
     }
   }
   async function save(){
+    if(!editId){
+      if(weeklyCount>=(club.max_visuals_per_week||5)){
+        setLimitError("Limite hebdomadaire atteinte. Passez à l'offre supérieure pour continuer.");
+        setTimeout(()=>setLimitError(""),3000);
+        return;
+      }
+    }
     const ct=CTYPES.find(c=>c.id===selType);
     const payload={club_id:club.id,type:selType,label:ct?.label||"",icon:ct?.icon||"",layers,lineup_data:lineupData,group_data:groupData,post_data:postData,lineup_tpl:lineupTpl,group_tpl:groupTpl,post_tpl:postTpl,bg_url:bgUrl,logo_url:logoUrl,logo2_url:logo2Url,player_url:selPhoto,updated_at:new Date().toISOString()};
     let saved;
@@ -534,6 +577,7 @@ export default function App({session}){
       saved=data;
       if(saved)setHistory(h=>[{...saved,layers:saved.layers||[],lineupData:saved.lineup_data||{},groupData:saved.group_data||{},postData:saved.post_data||{},lineupTpl:saved.lineup_tpl,groupTpl:saved.group_tpl,postTpl:saved.post_tpl,bgUrl:saved.bg_url,logoUrl:saved.logo_url,logo2Url:saved.logo2_url,playerUrl:saved.player_url,ct},...h]);
     }
+    if(saved&&!editId)setWeeklyCount(w=>w+1);
     if(saved)setEditId(saved.id);
     setSaveFlash(true);setTimeout(()=>setSaveFlash(false),2000);
   }
@@ -541,7 +585,10 @@ export default function App({session}){
   async function signOut(){await supabase.auth.signOut();}
   if(loading)return(<div style={{height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#080810",color:"rgba(240,240,248,.4)",fontFamily:"system-ui",flexDirection:"column",gap:12}}><div style={{fontSize:28}}>⚡</div><div>Chargement de vos données...</div></div>);
   const card={background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:20};
-  function SaveBtn(){return<button onClick={save} style={{background:saveFlash?"#22c55e":t.accent,color:"#fff",border:"none",borderRadius:9,padding:"10px 16px",fontSize:13,fontWeight:700,cursor:"pointer",width:"100%",letterSpacing:".04em",transition:"background .3s"}}>{saveFlash?"✓ Sauvegardé !":"✨ Sauvegarder le visuel"}</button>;}
+  function SaveBtn(){return(<>
+    {limitError&&<div style={{background:"#450a0a",border:"1px solid #7f1d1d",borderRadius:8,padding:"10px 14px",color:"#fca5a5",fontSize:12,marginBottom:10}}>{limitError}</div>}
+    <button onClick={save} style={{background:saveFlash?"#22c55e":t.accent,color:"#fff",border:"none",borderRadius:9,padding:"10px 16px",fontSize:13,fontWeight:700,cursor:"pointer",width:"100%",letterSpacing:".04em",transition:"background .3s"}}>{saveFlash?"✓ Sauvegardé !":"✨ Sauvegarder le visuel"}</button>
+  </>);}
   function BackBtn(){return<button onClick={()=>setSelType(null)} style={{display:"inline-flex",alignItems:"center",gap:7,background:t.bg3,border:"1px solid "+t.border2,borderRadius:8,padding:"7px 13px",color:t.text2,cursor:"pointer",fontSize:12,marginBottom:14,fontWeight:500}}>↩ Retour</button>;}
   function renderSpecial(){
     const isL=selType==="lineup",isP=selType==="post",isG=selType==="group";
@@ -551,7 +598,7 @@ export default function App({session}){
     return(<div style={{flex:1,display:"flex",overflow:"hidden"}}>
       <div style={{width:268,background:t.bg2,borderRight:"1px solid "+t.border,overflowY:"auto",padding:14,flexShrink:0}}>
         <BackBtn/>
-        <PBox t={t}><SHdr label="Template" t={t}/><TplGrid tpls={tpls} sel={tpl} onSel={setTpl} t={t}/></PBox>
+        <PBox t={t}><SHdr label="Template" t={t}/><TplGrid tpls={tpls} sel={tpl} onSel={setTpl} t={t} maxTemplates={club?.max_templates}/></PBox>
         <PBox t={t}>
           <SHdr label="Image de fond" t={t}/>
           {media.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4,marginBottom:8}}>{media.slice(0,6).map((m,i)=>(<div key={i} onClick={()=>setBgUrl(m.url)} style={{aspectRatio:"16/9",borderRadius:5,overflow:"hidden",border:"2px solid "+(bgUrl===m.url?t.accent:t.border),cursor:"pointer"}}><img src={m.url} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div>))}</div>}

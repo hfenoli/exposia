@@ -30,6 +30,13 @@ export default function Auth() {
           name: clubName || "Mon Club",
           approved: false
         });
+        // Notifier par email
+        await supabase.functions.invoke("notify-signup", {
+          body: {
+            club_name: clubName || "Mon Club",
+            email: email,
+          },
+        });
         setSuccess("Demande envoyée ! Vous recevrez un accès sous 24h après validation.");
         setMode("login");
       }
