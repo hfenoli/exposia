@@ -1,4 +1,5 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
+import html2canvas from "html2canvas";
 import { supabase } from "./supabase";
 // ─── CONSTANTS ────────────────────────────────────────────────
 const POSITIONS = ["Attaquant","Milieu","Défenseur","Gardien"];
@@ -59,6 +60,12 @@ function rr(hex){ hex=(hex||"#000").replace("#",""); if(hex.length===3)hex=hex[0
 function rgba(hex,a){ const[r,g,b]=rr(hex); return "rgba("+r+","+g+","+b+","+a+")"; }
 function mixC(h1,h2,t){ const a=rr(h1),b=rr(h2); return "#"+[0,1,2].map(i=>Math.round(a[i]+(b[i]-a[i])*t).toString(16).padStart(2,"0")).join(""); }
 function lum(h){ const[r,g,b]=rr(h); return(0.299*r+0.587*g+0.114*b)/255; }
+function contrastText(hex){
+  const[r,g,b]=rr(hex);
+  const lin=c=>{c/=255;return c<=0.03928?c/12.92:Math.pow((c+0.055)/1.055,2.4);};
+  const L=0.2126*lin(r)+0.7152*lin(g)+0.0722*lin(b);
+  return L>0.179?"#000":"#fff";
+}
 function buildTheme(c1,c2,mode){
   const a=c1||"#e63329", b=c2||"#1a1a2e";
   if(mode==="club"){
@@ -216,8 +223,8 @@ function LayerView({lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,isSel,on
   return(<div style={s} onMouseDown={lay.locked?undefined:e=>onMD(e,lay.id)}>{renderLayerContent(lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2)}</div>);
 }
 // ─── LINEUP CANVAS ────────────────────────────────────────────
-function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H}){
-  W=W||270; H=H||480;
+function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScale}){
+  W=W||270; H=H||480; slotScale=slotScale||1;
   const fm=ld&&ld.formation?ld.formation:"4-4-2";
   const starters=ld&&ld.starters?ld.starters:[];
   const subs=ld&&ld.subs?ld.subs.filter(Boolean):[];
@@ -246,7 +253,7 @@ function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H}){
       <Logo url={logo2Url} sz={W*.08}/>
     </div>
     <div style={{position:"relative",zIndex:3,flex:1,display:"flex",flexDirection:"column",justifyContent:"space-around",padding:"0 "+(W*.018)+"px"}}>
-      {[].concat(rows).reverse().map(function(row,ri){return(<div key={ri} style={{display:"flex",justifyContent:"space-around",alignItems:"center"}}>{Array.from({length:row.n}).map(function(_,pi){return<Slot key={pi} p={row.players[pi]} sz={W*.088} square={tpl==="ln4"}/>})}</div>);})}
+      {[].concat(rows).reverse().map(function(row,ri){return(<div key={ri} style={{display:"flex",justifyContent:"space-around",alignItems:"center"}}>{Array.from({length:row.n}).map(function(_,pi){return<Slot key={pi} p={row.players[pi]} sz={W*.088*slotScale} square={tpl==="ln4"}/>})}</div>);})}
     </div>
     {subs.length>0&&<div style={{position:"relative",zIndex:3,borderTop:"1px solid "+rgba(accent,.3),background:rgba(dark?"#000":"#f0f0f0",.55),padding:(W*.012)+"px "+(W*.035)+"px"}}><div style={{fontSize:W*.02,color:rgba(dark?"#fff":"#000",.38),letterSpacing:".1em",marginBottom:2}}>REMPLAÇANTS</div><div style={{display:"flex",gap:W*.016,flexWrap:"wrap",alignItems:"center"}}>{subs.map(function(s,i){const ph=getPhoto(s);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.009}}>{ph?<img src={ph} style={{width:W*.046,height:W*.046,borderRadius:"50%",objectFit:"cover",objectPosition:"top",border:"1px solid "+rgba(accent,.4)}} alt=""/>:<div style={{width:W*.046,height:W*.046,borderRadius:"50%",background:rgba(accent,.2),display:"flex",alignItems:"center",justifyContent:"center",fontSize:W*.018,color:accent}}>{s.number||"?"}</div>}<span style={{fontSize:W*.023,color:rgba(dark?"#fff":"#000",.5)}}>{s.name?s.name.split(" ").pop():""}</span></div>);})}</div></div>}
   </div>);
@@ -318,7 +325,7 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
   const isText=selL&&["text","watertext","heading","subtext"].includes(selL.type);
   return(<div style={{flex:1,display:"flex",overflow:"hidden"}}>
     <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"#030306",padding:20,gap:10}}>
-      <div ref={cvRef} onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU} onClick={layerHit} style={{width:270,height:480,position:"relative",overflow:"hidden",borderRadius:16,border:"1px solid "+t.border,background:"#111",cursor:"default",userSelect:"none",flexShrink:0}}>
+      <div ref={cvRef} className="visium-canvas" onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU} onClick={layerHit} style={{width:270,height:480,position:"relative",overflow:"hidden",borderRadius:16,border:"1px solid "+t.border,background:"#111",cursor:"default",userSelect:"none",flexShrink:0}}>
         {sorted.map(lay=>(<LayerView key={lay.id} lay={lay} bgUrl={bgUrl} playerUrl={playerUrl} logoUrl={logoUrl} logo2Url={logo2Url} accent={accent} accent2={accent2} isSel={sel===lay.id} onMD={onMD}/>))}
       </div>
       <div style={{fontSize:11,color:"rgba(255,255,255,.2)"}}>Cliquer · Glisser pour déplacer</div>
@@ -351,7 +358,7 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
   </div>);
 }
 // ─── SMALL UI ATOMS ───────────────────────────────────────────
-function TIn({v,on,ph,type,t,st}){return<input value={v} type={type||"text"} placeholder={ph||""} onChange={e=>on(e.target.value)} style={Object.assign({},{background:t.bg3,border:"1px solid "+t.border2,borderRadius:7,padding:"8px 10px",color:t.text,fontSize:13,outline:"none",width:"100%",boxSizing:"border-box"},st||{})}/>;}
+function TIn({v,on,ph,type,t,st,min}){return<input value={v} type={type||"text"} placeholder={ph||""} min={min} onChange={e=>on(e.target.value)} style={Object.assign({},{background:t.bg3,border:"1px solid "+t.border2,borderRadius:7,padding:"8px 10px",color:t.text,fontSize:13,outline:"none",width:"100%",boxSizing:"border-box"},st||{})}/>;}
 function TSel({v,on,opts,t}){return<select value={v} onChange={e=>on(e.target.value)} style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:7,padding:"8px 10px",color:t.text,fontSize:13,outline:"none",width:"100%",boxSizing:"border-box"}}>{opts.map(o=>typeof o==="string"?<option key={o} value={o}>{o}</option>:<option key={o.v} value={o.v}>{o.l}</option>)}</select>;}
 function UpBtn({val,on,w,h,r,label,t}){w=w||52;h=h||44;r=r||8;const ref=useRef();const pick=e=>{const f=e.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=ev=>on(ev.target.result);rd.readAsDataURL(f);};return(<div onClick={()=>ref.current.click()} style={{width:w,height:h,borderRadius:r,border:"2px dashed "+(val?t.accent:t.border2),background:t.bg3,cursor:"pointer",overflow:"hidden",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flexShrink:0,gap:2}}>{val?<img src={val} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>:<><span style={{color:t.text3,fontSize:20,lineHeight:1}}>+</span>{label&&<span style={{fontSize:9,color:t.text3,textAlign:"center",padding:"0 3px",lineHeight:1.2}}>{label}</span>}</>}<input ref={ref} type="file" accept="image/*" style={{display:"none"}} onChange={pick}/></div>);}
 function Av({photo,name,size}){size=size||40;const[err,setErr]=useState(false);const ini=(name||"?").trim().split(/\s+/).map(w=>w[0]).join("").slice(0,2).toUpperCase();return(<div style={{width:size,height:size,borderRadius:"50%",overflow:"hidden",background:"linear-gradient(135deg,#e63329,#1a1a2e)",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*.32,fontWeight:700,color:"#fff"}}>{photo&&!err?<img src={photo} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt="" onError={()=>setErr(true)}/>:ini}</div>);}
@@ -384,11 +391,41 @@ function TplGrid({tpls,sel,onSel,t,maxTemplates}){
     </div>
   ))}</div>);
 }
-function PhotoPanel({players,selId,onSel,selUrl,onSelUrl,onAdd,onFav,t}){
+function PhotoPanel({players,selId,onSel,selUrl,onSelUrl,onAdd,onAddUrl,onFav,t}){
   const ref=useRef();
+  const[removing,setRemoving]=useState(null);
   const player=players.find(p=>p.id===selId);
   const photos=player?[...(player.photos||[])].sort((a,b)=>((b.is_fav||b.fav)?1:0)-((a.is_fav||a.fav)?1:0)):[];
   const pick=e=>[...e.target.files].forEach(f=>{const r=new FileReader();r.onload=ev=>onAdd(selId,f);r.readAsDataURL(f);});
+  function handleRemoveBg(ph){
+    setRemoving(ph.id);
+    const img=new Image();
+    img.crossOrigin="anonymous";
+    img.onload=()=>{
+      try{
+        const c=document.createElement("canvas");
+        c.width=img.naturalWidth||img.width; c.height=img.naturalHeight||img.height;
+        const ctx=c.getContext("2d");
+        ctx.drawImage(img,0,0);
+        const d=ctx.getImageData(0,0,c.width,c.height);
+        const data=d.data;
+        for(let i=0;i<data.length;i+=4){
+          const r=data[i],g=data[i+1],b=data[i+2];
+          const avg=(r+g+b)/3;
+          const variance=Math.max(r,g,b)-Math.min(r,g,b);
+          if(avg>220&&variance<30) data[i+3]=0;
+        }
+        ctx.putImageData(d,0,0);
+        const newUrl=c.toDataURL("image/png");
+        Promise.resolve(onAddUrl&&onAddUrl(selId,newUrl,(ph.name||"photo")+"_nobg")).finally(()=>setRemoving(null));
+      }catch(e){
+        console.error("removeBg failed:",e);
+        setRemoving(null);
+      }
+    };
+    img.onerror=()=>setRemoving(null);
+    img.src=ph.url;
+  }
   return(<div>
     <div style={{fontSize:10,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:6}}>Joueur</div>
     <TSel v={selId?String(selId):""} on={v=>onSel(v?v:null)} t={t} opts={[{v:"",l:"Sélectionner un joueur..."},...players.map(p=>({v:p.id,l:p.name+" · #"+p.number}))]}/>
@@ -396,7 +433,17 @@ function PhotoPanel({players,selId,onSel,selUrl,onSelUrl,onAdd,onFav,t}){
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}><span style={{fontSize:11,color:t.text2}}>{photos.length} photo{photos.length!==1?"s":""}</span><button onClick={()=>ref.current.click()} style={{fontSize:11,color:t.accent,background:rgba(t.accent,.12),border:"1px solid "+rgba(t.accent,.3),borderRadius:6,padding:"4px 10px",cursor:"pointer",fontWeight:600}}>+ Photo</button></div>
       <input ref={ref} type="file" accept="image/*" multiple style={{display:"none"}} onChange={pick}/>
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4}}>
-        {photos.map(ph=>(<div key={ph.id} onClick={()=>onSelUrl(ph.url)} style={{position:"relative",borderRadius:7,overflow:"hidden",border:"2px solid "+(selUrl===ph.url?t.accent:t.border),cursor:"pointer",aspectRatio:"3/4"}}><img src={ph.url} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>{(ph.is_fav||ph.fav)&&<div style={{position:"absolute",top:3,left:3,background:t.accent,borderRadius:3,fontSize:8,color:"#fff",padding:"1px 4px",fontWeight:700}}>FAV</div>}<div onClick={e=>{e.stopPropagation();onFav(selId,ph.id);}} style={{position:"absolute",top:3,right:3,fontSize:13,background:"rgba(0,0,0,.5)",borderRadius:3,padding:"1px 2px",cursor:"pointer"}}>{(ph.is_fav||ph.fav)?"★":"☆"}</div></div>))}
+        {photos.map(ph=>(<div key={ph.id} style={{position:"relative"}}>
+          <div onClick={()=>onSelUrl(ph.url)} style={{borderRadius:7,overflow:"hidden",border:"2px solid "+(selUrl===ph.url?t.accent:t.border),cursor:"pointer",aspectRatio:"3/4"}}>
+            <img src={ph.url} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>
+          </div>
+          {(ph.is_fav||ph.fav)&&<div style={{position:"absolute",top:3,left:3,background:t.accent,borderRadius:3,fontSize:8,color:contrastText(t.accent),padding:"1px 4px",fontWeight:700}}>FAV</div>}
+          <div onClick={e=>{e.stopPropagation();onFav(selId,ph.id);}} style={{position:"absolute",top:3,right:3,fontSize:13,background:"rgba(0,0,0,.5)",borderRadius:3,padding:"1px 2px",cursor:"pointer"}}>{(ph.is_fav||ph.fav)?"★":"☆"}</div>
+          <button onClick={e=>{e.stopPropagation();handleRemoveBg(ph);}} disabled={removing===ph.id}
+            style={{position:"absolute",bottom:3,left:"50%",transform:"translateX(-50%)",background:rgba(t.accent,.85),border:"none",borderRadius:4,fontSize:9,color:contrastText(t.accent),cursor:removing===ph.id?"wait":"pointer",padding:"2px 5px",whiteSpace:"nowrap",fontWeight:600}}>
+            {removing===ph.id?"...":"✂ fond"}
+          </button>
+        </div>))}
       </div>
     </div>)}
   </div>);
@@ -463,6 +510,8 @@ export default function App({session}){
   const[saveFlash,setSaveFlash]=useState(false);
   const[weeklyCount,setWeeklyCount]=useState(0);
   const[limitError,setLimitError]=useState("");
+  const[onboardingSkipped,setOnboardingSkipped]=useState(()=>localStorage.getItem("onboarding_skipped")==="1");
+  const[slotScale,setSlotScale]=useState(1);
   const mRef=useRef();
   const t=useMemo(()=>buildTheme(club?.color1,club?.color2,club?.theme_mode||"dark"),[club]);
   // ── LOAD DATA ───────────────────────────────────────────────
@@ -512,6 +561,10 @@ export default function App({session}){
       if(data)setPlayers(prev=>prev.map(p=>p.id===playerId?{...p,photos:[...(p.photos||[]),data]}:p));
     };
     reader.readAsDataURL(file);
+  },[]);
+  const addPhotoUrl=useCallback(async(playerId,url,name)=>{
+    const{data}=await supabase.from("player_photos").insert({player_id:playerId,url,name:name||"photo_nobg",is_fav:false}).select().single();
+    if(data)setPlayers(prev=>prev.map(p=>p.id===playerId?{...p,photos:[...(p.photos||[]),data]}:p));
   },[]);
   const toggleFav=useCallback(async(playerId,photoId)=>{
     const player=players.find(p=>p.id===playerId);
@@ -583,11 +636,46 @@ export default function App({session}){
   }
   async function deleteVisual(id){await supabase.from("visuals").delete().eq("id",id);setHistory(h=>h.filter(x=>x.id!==id));}
   async function signOut(){await supabase.auth.signOut();}
+  async function downloadPng(){
+    const el=document.querySelector(".visium-canvas");
+    if(!el){setLimitError("Aperçu introuvable.");setTimeout(()=>setLimitError(""),2000);return;}
+    try{
+      const canvas=await html2canvas(el,{backgroundColor:null,scale:4,useCORS:true,allowTaint:true,logging:false});
+      const filename="visium-"+(selType||"visuel")+"-"+Date.now()+".png";
+      const ua=navigator.userAgent;
+      const isIOS=/iPad|iPhone|iPod/.test(ua);
+      const isSafari=/Safari/.test(ua)&&!/CriOS|FxiOS|Chrome/.test(ua);
+      if(isIOS&&isSafari){
+        const dataUrl=canvas.toDataURL("image/png");
+        const w=window.open();
+        if(w&&w.document){
+          w.document.write('<html><head><title>'+filename+'</title><meta name="viewport" content="width=device-width, initial-scale=1"/></head><body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;font-family:system-ui;"><img src="'+dataUrl+'" style="max-width:100%;height:auto;display:block"/><p style="color:#fff;text-align:center;font-size:14px;padding:16px;">Appuyez longuement sur l\'image puis « Ajouter aux Photos ».</p></body></html>');
+          w.document.close();
+        }else{
+          window.location.href=dataUrl;
+        }
+      }else{
+        canvas.toBlob(blob=>{
+          if(!blob)return;
+          const url=URL.createObjectURL(blob);
+          const a=document.createElement("a");
+          a.href=url;a.download=filename;
+          document.body.appendChild(a);a.click();document.body.removeChild(a);
+          setTimeout(()=>URL.revokeObjectURL(url),1000);
+        },"image/png");
+      }
+    }catch(e){
+      console.error("Download failed:",e);
+      setLimitError("Erreur lors de l'export PNG.");
+      setTimeout(()=>setLimitError(""),3000);
+    }
+  }
   if(loading)return(<div style={{height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#080810",color:"rgba(240,240,248,.4)",fontFamily:"system-ui",flexDirection:"column",gap:12}}><div style={{fontSize:28}}>⚡</div><div>Chargement de vos données...</div></div>);
   const card={background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:20};
   function SaveBtn(){return(<>
     {limitError&&<div style={{background:"#450a0a",border:"1px solid #7f1d1d",borderRadius:8,padding:"10px 14px",color:"#fca5a5",fontSize:12,marginBottom:10}}>{limitError}</div>}
-    <button onClick={save} style={{background:saveFlash?"#22c55e":t.accent,color:"#fff",border:"none",borderRadius:9,padding:"10px 16px",fontSize:13,fontWeight:700,cursor:"pointer",width:"100%",letterSpacing:".04em",transition:"background .3s"}}>{saveFlash?"✓ Sauvegardé !":"✨ Sauvegarder le visuel"}</button>
+    <button onClick={save} style={{background:saveFlash?"#22c55e":t.accent,color:saveFlash?"#fff":contrastText(t.accent),border:"none",borderRadius:9,padding:"10px 16px",fontSize:13,fontWeight:700,cursor:"pointer",width:"100%",letterSpacing:".04em",transition:"background .3s"}}>{saveFlash?"✓ Sauvegardé !":"✨ Sauvegarder le visuel"}</button>
+    <button onClick={downloadPng} style={{marginTop:8,background:"transparent",color:t.text,border:"1px solid "+t.border2,borderRadius:9,padding:"10px 16px",fontSize:13,fontWeight:600,cursor:"pointer",width:"100%",letterSpacing:".04em"}}>⬇ Télécharger en PNG</button>
   </>);}
   function BackBtn(){return<button onClick={()=>setSelType(null)} style={{display:"inline-flex",alignItems:"center",gap:7,background:t.bg3,border:"1px solid "+t.border2,borderRadius:8,padding:"7px 13px",color:t.text2,cursor:"pointer",fontSize:12,marginBottom:14,fontWeight:500}}>↩ Retour</button>;}
   function renderSpecial(){
@@ -610,6 +698,13 @@ export default function App({session}){
           {club?.logo_url&&<button onClick={()=>setLogoUrl(club.logo_url)} style={{fontSize:10,color:t.accent,background:"none",border:"none",cursor:"pointer",marginTop:4,display:"block"}}>← Logo club</button>}
           {isL&&<div style={{marginTop:10}}><div style={{fontSize:10,color:t.text3,marginBottom:5}}>Logo adversaire</div><UpBtn val={logo2Url} on={setLogo2Url} w={56} h={56} r={8} label="Upload ADV" t={t}/>{logo2Url&&<button onClick={()=>setLogo2Url(null)} style={{fontSize:10,color:t.text3,background:"none",border:"none",cursor:"pointer",marginTop:4,display:"block"}}>✕ Retirer</button>}</div>}
         </PBox>
+        {isL&&(
+          <PBox t={t}>
+            <SHdr label={"Taille des avatars · "+Math.round(slotScale*100)+"%"} t={t}/>
+            <input type="range" min={0.5} max={2.0} step={0.05} value={slotScale} onChange={e=>setSlotScale(+e.target.value)} style={{width:"100%"}}/>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:t.text3,marginTop:2}}><span>50%</span><span>200%</span></div>
+          </PBox>
+        )}
         <PBox t={t} mb={12}>
           <SHdr label={isL?"Composition XI":isP?"Contenu":"Joueurs & groupe"} t={t}/>
           {isL&&<LineupEditor ld={lineupData} setLd={setLineupData} players={players} t={t}/>}
@@ -619,9 +714,11 @@ export default function App({session}){
         <SaveBtn/>
       </div>
       <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",background:"#030306",flexDirection:"column",gap:14}}>
-        {isL&&<LineupCanvas ld={lineupData} tpl={lineupTpl} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl}/>}
-        {isG&&<GroupCanvas gd={groupData} tpl={groupTpl} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl}/>}
-        {isP&&<PostCanvas pd={postData} tpl={postTpl} logoUrl={logoUrl||club?.logo_url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl}/>}
+        <div className="visium-canvas" style={{display:"inline-block"}}>
+          {isL&&<LineupCanvas ld={lineupData} tpl={lineupTpl} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl} slotScale={slotScale}/>}
+          {isG&&<GroupCanvas gd={groupData} tpl={groupTpl} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl}/>}
+          {isP&&<PostCanvas pd={postData} tpl={postTpl} logoUrl={logoUrl||club?.logo_url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl}/>}
+        </div>
         <div style={{fontSize:11,color:"rgba(255,255,255,.18)",letterSpacing:".1em",textTransform:"uppercase"}}>Aperçu en temps réel</div>
       </div>
     </div>);
@@ -630,7 +727,7 @@ export default function App({session}){
     return(<div style={{flex:1,display:"flex",overflow:"hidden"}}>
       <div style={{width:250,background:t.bg2,borderRight:"1px solid "+t.border,overflowY:"auto",padding:14,flexShrink:0}}>
         <BackBtn/>
-        <PBox t={t}><SHdr label="Joueur & photo" t={t}/><PhotoPanel players={players} selId={selPid} onSel={selPlayer} selUrl={selPhoto} onSelUrl={setSelPhoto} onAdd={addPhoto} onFav={toggleFav} t={t}/></PBox>
+        <PBox t={t}><SHdr label="Joueur & photo" t={t}/><PhotoPanel players={players} selId={selPid} onSel={selPlayer} selUrl={selPhoto} onSelUrl={setSelPhoto} onAdd={addPhoto} onAddUrl={addPhotoUrl} onFav={toggleFav} t={t}/></PBox>
         <PBox t={t}>
           <SHdr label="Image de fond" t={t}/>
           {media.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4,marginBottom:8}}>{media.map((m,i)=>(<div key={i} onClick={()=>setBgUrl(m.url)} style={{aspectRatio:"16/9",borderRadius:5,overflow:"hidden",border:"2px solid "+(bgUrl===m.url?t.accent:t.border),cursor:"pointer"}}><img src={m.url} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div>))}</div>}
@@ -652,20 +749,62 @@ export default function App({session}){
     <div style={{height:"100vh",display:"flex",background:t.bg,color:t.text,fontFamily:"system-ui,-apple-system,sans-serif",fontSize:13,overflow:"hidden"}}>
       <div style={{width:192,background:t.bg2,borderRight:"1px solid "+t.border,display:"flex",flexDirection:"column",flexShrink:0}}>
         <div style={{padding:"15px 14px 13px",borderBottom:"1px solid "+t.border,display:"flex",alignItems:"center",gap:10}}>
-          {club?.logo_url?<img src={club.logo_url} style={{width:34,height:34,objectFit:"contain",borderRadius:7}} alt=""/>:<div style={{width:34,height:34,borderRadius:7,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:"#fff",flexShrink:0}}>{(club?.name||"E")[0].toUpperCase()}</div>}
+          {club?.logo_url?<img src={club.logo_url} style={{width:34,height:34,objectFit:"contain",borderRadius:7}} alt=""/>:<div style={{width:34,height:34,borderRadius:7,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:contrastText(mixC(club?.color1||"#e63329",club?.color2||"#1a1a2e",.5)),flexShrink:0}}>{(club?.name||"E")[0].toUpperCase()}</div>}
           <div style={{overflow:"hidden",flex:1}}><div style={{fontSize:14,fontWeight:700,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{club?.name||"Visium Sport"}</div><div style={{fontSize:10,color:t.text3,marginTop:1}}>Studio visuel</div></div>
         </div>
         <nav style={{padding:"10px 8px",flex:1}}>
           {NAV.map(n=>(<button key={n.id} onClick={()=>{setNav(n.id);if(n.id!=="create")setSelType(null);}} style={{display:"flex",alignItems:"center",gap:10,width:"100%",background:nav===n.id?rgba(t.accent,.15):"transparent",border:"none",borderRadius:9,padding:"9px 11px",color:nav===n.id?t.accent:t.text2,cursor:"pointer",fontSize:13,marginBottom:1,textAlign:"left",fontWeight:nav===n.id?600:400}}><span style={{fontSize:15,lineHeight:1}}>{n.icon}</span><span>{n.label}</span>{n.id==="history"&&history.length>0&&<span style={{marginLeft:"auto",background:rgba(t.accent,.2),color:t.accent,fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{history.length}</span>}</button>))}
         </nav>
         <div style={{padding:12,borderTop:"1px solid "+t.border,display:"flex",flexDirection:"column",gap:8}}>
-          <button onClick={()=>openCreate("goal")} style={{background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",color:"#fff",border:"none",borderRadius:9,padding:10,fontSize:12,fontWeight:700,cursor:"pointer",width:"100%",letterSpacing:".05em",textTransform:"uppercase"}}>✨ Créer un visuel</button>
+          <button onClick={()=>openCreate("goal")} style={{background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",color:contrastText(mixC(club?.color1||"#e63329",club?.color2||"#1a1a2e",.5)),border:"none",borderRadius:9,padding:10,fontSize:12,fontWeight:700,cursor:"pointer",width:"100%",letterSpacing:".05em",textTransform:"uppercase"}}>✨ Créer un visuel</button>
           <button onClick={signOut} style={{background:"transparent",color:t.text3,border:"1px solid "+t.border,borderRadius:8,padding:"7px",fontSize:11,cursor:"pointer",width:"100%"}}>Déconnexion</button>
         </div>
       </div>
       <div style={{flex:1,display:"flex",overflow:"hidden"}}>
         {nav==="home"&&(<div style={{flex:1,overflowY:"auto",background:t.bg}}>
           <div style={{padding:"28px 28px 0"}}><h1 style={{fontSize:24,fontWeight:700,color:t.text,marginBottom:4}}>{"Bonjour"+(club?.name?", "+club.name:"")+" 👋"}</h1><p style={{color:t.text3,marginBottom:24,fontSize:14}}>Que souhaitez-vous créer aujourd'hui ?</p></div>
+          {(()=>{
+            if(onboardingSkipped)return null;
+            const clubDone=club?.is_configured===true;
+            const playersDone=players.length>0;
+            const visualsDone=history.length>0;
+            if(clubDone&&playersDone&&visualsDone)return null;
+            const steps=[
+              {done:clubDone,label:"Configurer mon club",icon:"🎨",onClick:()=>setNav("club")},
+              {done:playersDone,label:"Ajouter mes joueurs",icon:"👥",onClick:()=>setNav("players")},
+              {done:visualsDone,label:"Créer mon premier visuel",icon:"✨",onClick:()=>setNav("create")},
+            ];
+            return(
+              <div style={{padding:"0 28px 24px"}}>
+                <div style={{background:t.bg2,border:"1px solid "+rgba(t.accent,.25),borderRadius:12,padding:20}}>
+                  <div style={{fontSize:11,color:t.accent,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",marginBottom:6}}>Premiers pas</div>
+                  <div style={{fontSize:14,color:t.text,marginBottom:14}}>Bienvenue ! Configurez votre club en 3 étapes.</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+                    {steps.map((s,i)=>(
+                      <button key={i} onClick={s.done?undefined:s.onClick} disabled={s.done}
+                        style={{
+                          background:s.done?rgba(t.accent,.08):t.bg3,
+                          border:"1px solid "+(s.done?rgba(t.accent,.3):t.border),
+                          borderRadius:9,padding:"12px 14px",textAlign:"left",
+                          cursor:s.done?"default":"pointer",opacity:s.done?0.55:1,
+                          color:t.text,fontSize:13,fontFamily:"inherit",
+                          display:"flex",alignItems:"center",gap:10
+                        }}>
+                        <span style={{fontSize:16,flexShrink:0}}>{s.done?"✓":s.icon}</span>
+                        <span style={{fontWeight:600,lineHeight:1.3}}>{(i+1)+". "+s.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{textAlign:"center",marginTop:12}}>
+                    <button onClick={()=>{localStorage.setItem("onboarding_skipped","1");setOnboardingSkipped(true);}}
+                      style={{background:"none",border:"none",color:t.text3,fontSize:11,cursor:"pointer",textDecoration:"underline",padding:0}}>
+                      Passer
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
           <div style={{padding:"0 28px",display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:28}}>{CTYPES.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,padding:"20px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(club?.color1||"#e63329",.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}><div style={{fontSize:26,marginBottom:8}}>{c.icon}</div><div style={{fontWeight:700,color:t.text,fontSize:13,marginBottom:3}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.4}}>{c.desc}</div></div>))}</div>
           <div style={{padding:"0 28px 28px",display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>{[[history.length,"Visuels"],[players.length,"Joueurs"],[media.length,"Médias"],[LINEUP_TPLS.length+GROUP_TPLS.length+POST_TPLS.length,"Templates"]].map(([v,l])=>(<div key={l} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:22,fontWeight:700,color:t.accent,lineHeight:1}}>{v}</div><div style={{fontSize:11,color:t.text3,marginTop:4}}>{l}</div></div>))}</div>
         </div>)}
@@ -673,8 +812,8 @@ export default function App({session}){
           <h2 style={{fontSize:20,fontWeight:700,marginBottom:4,color:t.text}}>Mon Club</h2>
           <p style={{color:t.text3,marginBottom:24,fontSize:13}}>Appliqué automatiquement à tous vos visuels.</p>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,maxWidth:650}}>
-            <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Identité</div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Nom du club</label><TIn v={club?.name||""} on={v=>updateClub({name:v})} ph="FC Mon Club" t={t}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,margin:"14px 0 10px"}}><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Couleur principale</label><input type="color" value={club?.color1||"#e63329"} onChange={e=>updateClub({color1:e.target.value})} style={{width:"100%",height:40,borderRadius:8,border:"1px solid "+t.border2,background:t.bg3,cursor:"pointer",padding:3}}/></div><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Couleur secondaire</label><input type="color" value={club?.color2||"#1a1a2e"} onChange={e=>updateClub({color2:e.target.value})} style={{width:"100%",height:40,borderRadius:8,border:"1px solid "+t.border2,background:t.bg3,cursor:"pointer",padding:3}}/></div></div><div style={{height:24,borderRadius:8,background:"linear-gradient(90deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",marginBottom:4}}/><div style={{fontSize:10,color:t.text3,textAlign:"center"}}>Sauvegardé en temps réel ✓</div></div>
-            <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Logo du club</div><UpBtn val={club?.logo_url} on={v=>updateClub({logo_url:v})} w={110} h={110} r={14} label="Cliquer pour uploader" t={t}/>{club?.logo_url&&<><div style={{marginTop:12,display:"flex",alignItems:"center",gap:8}}><div style={{width:36,height:36,borderRadius:7,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center"}}><img src={club.logo_url} style={{width:28,height:28,objectFit:"contain"}} alt=""/></div><div style={{fontSize:11,color:t.text2}}>Logo configuré ✓</div></div><button onClick={()=>updateClub({logo_url:null})} style={{marginTop:8,fontSize:10,color:t.text3,background:"none",border:"none",cursor:"pointer"}}>✕ Supprimer</button></>}</div>
+            <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Identité</div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Nom du club</label><TIn v={club?.name||""} on={v=>updateClub({name:v,is_configured:true})} ph="FC Mon Club" t={t}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,margin:"14px 0 10px"}}><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Couleur principale</label><input type="color" value={club?.color1||"#e63329"} onChange={e=>updateClub({color1:e.target.value,is_configured:true})} style={{width:"100%",height:40,borderRadius:8,border:"1px solid "+t.border2,background:t.bg3,cursor:"pointer",padding:3}}/></div><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Couleur secondaire</label><input type="color" value={club?.color2||"#1a1a2e"} onChange={e=>updateClub({color2:e.target.value,is_configured:true})} style={{width:"100%",height:40,borderRadius:8,border:"1px solid "+t.border2,background:t.bg3,cursor:"pointer",padding:3}}/></div></div><div style={{height:24,borderRadius:8,background:"linear-gradient(90deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",marginBottom:4}}/><div style={{fontSize:10,color:t.text3,textAlign:"center"}}>Sauvegardé en temps réel ✓</div></div>
+            <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Logo du club</div><UpBtn val={club?.logo_url} on={v=>updateClub({logo_url:v,is_configured:true})} w={110} h={110} r={14} label="Cliquer pour uploader" t={t}/>{club?.logo_url&&<><div style={{marginTop:12,display:"flex",alignItems:"center",gap:8}}><div style={{width:36,height:36,borderRadius:7,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center"}}><img src={club.logo_url} style={{width:28,height:28,objectFit:"contain"}} alt=""/></div><div style={{fontSize:11,color:t.text2}}>Logo configuré ✓</div></div><button onClick={()=>updateClub({logo_url:null,is_configured:true})} style={{marginTop:8,fontSize:10,color:t.text3,background:"none",border:"none",cursor:"pointer"}}>✕ Supprimer</button></>}</div>
           </div>
         </div>)}
         {nav==="players"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
@@ -682,8 +821,8 @@ export default function App({session}){
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>Vos joueurs avec leurs photos.</p>
           <div style={{display:"grid",gridTemplateColumns:"275px 1fr",gap:18}}>
             <div>
-              <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Nouveau joueur</div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Nom complet</label><TIn v={pName} on={setPName} ph="Prénom Nom" t={t}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,margin:"10px 0"}}><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Numéro</label><TIn v={pNum} on={setPNum} ph="9" type="number" t={t}/></div><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Poste</label><TSel v={pPos} on={setPPos} t={t} opts={POSITIONS}/></div></div><button onClick={addPlayer} style={{background:t.accent,color:"#fff",border:"none",borderRadius:8,padding:9,fontSize:13,fontWeight:600,cursor:"pointer",width:"100%"}}>+ Ajouter à l'effectif</button></div>
-              {players.length>0&&<div style={Object.assign({},card,{marginTop:14})}><PhotoPanel players={players} selId={selPid} onSel={id=>{setSelPid(id||null);setSelPhoto(null);}} selUrl={selPhoto} onSelUrl={setSelPhoto} onAdd={addPhoto} onFav={toggleFav} t={t}/></div>}
+              <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Nouveau joueur</div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Nom complet</label><TIn v={pName} on={setPName} ph="Prénom Nom" t={t}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,margin:"10px 0"}}><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Numéro</label><TIn v={pNum} on={v=>setPNum(v===""?"":String(Math.max(0,parseInt(v)||0)))} ph="9" type="number" min={0} t={t}/></div><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Poste</label><TSel v={pPos} on={setPPos} t={t} opts={POSITIONS}/></div></div><button onClick={addPlayer} style={{background:t.accent,color:contrastText(t.accent),border:"none",borderRadius:8,padding:9,fontSize:13,fontWeight:600,cursor:"pointer",width:"100%"}}>+ Ajouter à l'effectif</button></div>
+              {players.length>0&&<div style={Object.assign({},card,{marginTop:14})}><PhotoPanel players={players} selId={selPid} onSel={id=>{setSelPid(id||null);setSelPhoto(null);}} selUrl={selPhoto} onSelUrl={setSelPhoto} onAdd={addPhoto} onAddUrl={addPhotoUrl} onFav={toggleFav} t={t}/></div>}
             </div>
             <div><div style={{fontSize:13,fontWeight:600,color:t.text2,marginBottom:12}}>{players.length+" joueur"+(players.length!==1?"s":"")+" dans l'effectif"}</div>
               {players.length===0?<div style={Object.assign({},card,{padding:"40px 20px",textAlign:"center",color:t.text3})}><div style={{fontSize:32,marginBottom:10}}>👥</div><div>Aucun joueur</div></div>:(
@@ -710,7 +849,7 @@ export default function App({session}){
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>Interface et données.</p>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,maxWidth:650}}>
             <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Thème</div>{[["dark","🌑 Sombre","Interface noire premium"],["club","🎨 Couleurs du club","Adapté à vos couleurs"]].map(([mode,label,desc])=>(<div key={mode} onClick={()=>updateClub({theme_mode:mode})} style={{display:"flex",alignItems:"center",gap:12,padding:"13px 14px",borderRadius:10,border:"2px solid "+((club?.theme_mode||"dark")===mode?t.accent:t.border),background:(club?.theme_mode||"dark")===mode?rgba(t.accent,.12):t.bg3,cursor:"pointer",marginBottom:8}}><div style={{width:20,height:20,borderRadius:"50%",border:"2px solid "+t.accent,background:(club?.theme_mode||"dark")===mode?t.accent:"transparent",flexShrink:0}}/><div><div style={{fontSize:13,fontWeight:600,color:t.text}}>{label}</div><div style={{fontSize:11,color:t.text3,marginTop:2}}>{desc}</div></div></div>))}</div>
-            <div style={Object.assign({},card,{display:"flex",flexDirection:"column",gap:14})}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase"}}>Votre club</div><div style={{display:"flex",alignItems:"center",gap:12}}>{club?.logo_url?<img src={club.logo_url} style={{width:52,height:52,objectFit:"contain",borderRadius:8}} alt=""/>:<div style={{width:52,height:52,borderRadius:8,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:700,color:"#fff"}}>{(club?.name||"?")[0].toUpperCase()}</div>}<div><div style={{fontSize:16,fontWeight:700,color:t.text}}>{club?.name||"Club non configuré"}</div><div style={{fontSize:12,color:t.text3,marginTop:3}}>{session.user.email}</div><div style={{fontSize:12,color:t.text3}}>{players.length+" joueurs · "+media.length+" médias · "+history.length+" visuels"}</div></div></div><button onClick={()=>setNav("club")} style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:9,padding:"9px 16px",color:t.text2,cursor:"pointer",fontSize:12,fontWeight:500,textAlign:"left"}}>Modifier les infos du club →</button><button onClick={signOut} style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.2)",borderRadius:9,padding:"9px 16px",color:"#fca5a5",cursor:"pointer",fontSize:12,textAlign:"left"}}>Se déconnecter</button></div>
+            <div style={Object.assign({},card,{display:"flex",flexDirection:"column",gap:14})}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase"}}>Votre club</div><div style={{display:"flex",alignItems:"center",gap:12}}>{club?.logo_url?<img src={club.logo_url} style={{width:52,height:52,objectFit:"contain",borderRadius:8}} alt=""/>:<div style={{width:52,height:52,borderRadius:8,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:700,color:contrastText(mixC(club?.color1||"#e63329",club?.color2||"#1a1a2e",.5))}}>{(club?.name||"?")[0].toUpperCase()}</div>}<div><div style={{fontSize:16,fontWeight:700,color:t.text}}>{club?.name||"Club non configuré"}</div><div style={{fontSize:12,color:t.text3,marginTop:3}}>{session.user.email}</div><div style={{fontSize:12,color:t.text3}}>{players.length+" joueurs · "+media.length+" médias · "+history.length+" visuels"}</div></div></div><button onClick={()=>setNav("club")} style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:9,padding:"9px 16px",color:t.text2,cursor:"pointer",fontSize:12,fontWeight:500,textAlign:"left"}}>Modifier les infos du club →</button><button onClick={signOut} style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.2)",borderRadius:9,padding:"9px 16px",color:"#fca5a5",cursor:"pointer",fontSize:12,textAlign:"left"}}>Se déconnecter</button></div>
           </div>
         </div>)}
       </div>

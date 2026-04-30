@@ -27,7 +27,7 @@ function Root() {
   )
 
   if (showLanding && !session) return <Landing onEnter={() => setShowLanding(false)} />
-  if (!session) return <Auth />
+  if (!session) return <Auth onBack={() => setShowLanding(true)} />
   return <App session={session} />
 }
 
