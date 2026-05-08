@@ -1,6 +1,33 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import html2canvas from "html2canvas";
 import { supabase } from "./supabase";
+// ─── MOBILE HOOKS ─────────────────────────────────────────────
+const MOBILE_BREAKPOINT = 768;
+function useIsMobile(){
+  const[v,setV]=useState(typeof window!=="undefined"&&window.innerWidth<MOBILE_BREAKPOINT);
+  useEffect(()=>{
+    const h=()=>setV(window.innerWidth<MOBILE_BREAKPOINT);
+    window.addEventListener("resize",h);
+    return()=>window.removeEventListener("resize",h);
+  },[]);
+  return v;
+}
+function useCanvasScale(reservedHeight){
+  const r=reservedHeight==null?220:reservedHeight;
+  const[scale,setScale]=useState(1);
+  useEffect(()=>{
+    const compute=()=>{
+      const w=window.innerWidth, h=window.innerHeight;
+      if(w>=MOBILE_BREAKPOINT){setScale(1);return;}
+      const sw=(w-24)/270, sh=(h-r)/480;
+      setScale(Math.max(0.4,Math.min(sw,sh)));
+    };
+    compute();
+    window.addEventListener("resize",compute);
+    return()=>window.removeEventListener("resize",compute);
+  },[r]);
+  return scale;
+}
 // ─── CONSTANTS ────────────────────────────────────────────────
 const POSITIONS = ["Attaquant","Milieu","Défenseur","Gardien"];
 const FONTS = ["Impact","Arial Black","Georgia","Helvetica Neue","Courier New","Montserrat"];
@@ -68,6 +95,14 @@ function contrastText(hex){
 }
 function buildTheme(c1,c2,mode){
   const a=c1||"#e63329", b=c2||"#1a1a2e";
+  if(mode==="light"){
+    return{
+      bg:"#ffffff",bg2:"#f5f5f5",bg3:"#ebebeb",bg4:"#dedede",
+      border:"#e0e0e0",border2:"#cfcfcf",
+      text:"#111111",text2:"rgba(0,0,0,.6)",text3:"rgba(0,0,0,.4)",
+      accent:a,accent2:b,
+    };
+  }
   if(mode==="club"){
     const dk=lum(a)<0.5;
     return{
@@ -179,11 +214,14 @@ function CurvedText({lay,containerW}){
   const large = Math.abs(curve)>180?1:0;
   const sweep = isUp?1:0;
   const pid = "arc_"+lay.id;
+  const arcD = "M "+x1+" "+y1+" A "+r+" "+r+" 0 "+large+" "+sweep+" "+x2+" "+y2;
   const svgH = Math.abs(cy)+r+fontSize*2;
   return(
-    <svg width={W} height={svgH} style={{position:"absolute",left:0,top:"50%",transform:"translateY(-50%)",overflow:"visible",pointerEvents:"none"}}>
-      <defs><path id={pid} d={"M "+x1+" "+y1+" A "+r+" "+r+" 0 "+large+" "+sweep+" "+x2+" "+y2}/></defs>
-      <text fontFamily={font} fontSize={fontSize} fontWeight={lay.bold?"900":"400"} fontStyle={lay.italic?"italic":"normal"} fill={color} letterSpacing={lsp}>
+    <svg width={W} height={svgH} style={{position:"absolute",left:0,top:"50%",transform:"translateY(-50%)",overflow:"visible",cursor:"inherit"}}>
+      <defs><path id={pid} d={arcD}/></defs>
+      {/* Hit zone : bande invisible le long de l'arc qui rend le texte courbé cliquable/draggable */}
+      <path d={arcD} fill="none" stroke="rgba(0,0,0,0)" strokeWidth={fontSize*1.4} strokeLinecap="round" pointerEvents="stroke"/>
+      <text fontFamily={font} fontSize={fontSize} fontWeight={lay.bold?"900":"400"} fontStyle={lay.italic?"italic":"normal"} fill={color} letterSpacing={lsp} pointerEvents="visiblePainted">
         <textPath href={"#"+pid} startOffset="50%" textAnchor="middle">{txt}</textPath>
       </text>
     </svg>
@@ -195,6 +233,7 @@ function renderLayerContent(lay, bgUrl, playerUrl, logoUrl, logo2Url, accent, ac
   if(lay.type==="bg") return(<div style={{width:"100%",height:"100%",overflow:"hidden"}}>{bgUrl?<img src={bgUrl} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>:<div style={{width:"100%",height:"100%",background:"linear-gradient(160deg,#0a0a1a,#1a0a2e)"}}/>}</div>);
   if(lay.type==="overlay") return(<div style={{width:"100%",height:"100%",background:"linear-gradient(to bottom,rgba(0,0,0,"+((lay.opacity||60)/200)+"),rgba(0,0,0,"+((lay.opacity||60)/100)+")"}}/>);
   if(lay.type==="stripe") return(<div style={{width:"100%",height:"100%",background:"linear-gradient(90deg,"+(lay.color||accent)+","+(lay.color2||accent2)+")"}}/>);
+  if(lay.type==="colorblock") return(<div style={{width:"100%",height:"100%",background:lay.color||"#ff5555",opacity:(lay.opacity==null?80:lay.opacity)/100}}/>);
   if(lay.type==="photo") return(<div style={{width:"100%",height:"100%",overflow:"hidden"}}>{playerUrl?<img src={playerUrl} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:36}}>👤</div>}</div>);
   if(lay.type==="logo") return(<div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center"}}>{logoUrl?<img src={logoUrl} style={{width:"100%",height:"100%",objectFit:"contain"}} alt=""/>:<div style={{width:"100%",height:"100%",background:rgba(accent,.2),borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:accent}}>LOGO</div>}</div>);
   if(lay.type==="logo2") return(<div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center"}}>{logo2Url?<img src={logo2Url} style={{width:"100%",height:"100%",objectFit:"contain"}} alt=""/>:<div style={{width:"100%",height:"100%",background:"rgba(255,255,255,.07)",borderRadius:4,border:"1px solid rgba(255,255,255,.14)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"rgba(255,255,255,.3)"}}>ADV</div>}</div>);
@@ -218,11 +257,33 @@ function renderLayerContent(lay, bgUrl, playerUrl, logoUrl, logo2Url, accent, ac
   }
   return null;
 }
-function LayerView({lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,isSel,onMD}){
+function LayerView({lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,isSel,onMD,onResize}){
   const s={position:"absolute",left:lay.x+"%",top:lay.y+"%",width:lay.w+"%",height:lay.h+"%",cursor:lay.locked?"default":"grab",boxSizing:"border-box",outline:isSel&&!lay.locked?"2px solid "+accent:"none",outlineOffset:1,zIndex:lay.z};
-  return(<div style={s} onMouseDown={lay.locked?undefined:e=>onMD(e,lay.id)}>{renderLayerContent(lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2)}</div>);
+  const showHandles=isSel&&!lay.locked&&(lay.type==="photo"||lay.type==="colorblock");
+  return(<div style={s} onMouseDown={lay.locked?undefined:e=>onMD(e,lay.id)}>
+    {renderLayerContent(lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2)}
+    {showHandles&&["tl","tr","bl","br"].map(c=>(
+      <div key={c}
+        onMouseDown={e=>{e.preventDefault();e.stopPropagation();onResize&&onResize(e,lay.id,c);}}
+        style={{
+          position:"absolute",
+          width:11,height:11,
+          background:"#fff",
+          border:"2px solid "+accent,
+          boxSizing:"border-box",
+          [c[0]==="t"?"top":"bottom"]:-6,
+          [c[1]==="l"?"left":"right"]:-6,
+          cursor:(c==="tl"||c==="br")?"nwse-resize":"nesw-resize",
+          zIndex:1000,
+        }}/>
+    ))}
+  </div>);
 }
 // ─── LINEUP CANVAS ────────────────────────────────────────────
+function Watermark(){
+  // Filigrane non-amovible : pas un calque, pointerEvents:none, hardcodé dans chaque canvas
+  return <div aria-hidden="true" style={{position:"absolute",bottom:5,right:6,fontSize:9,color:"rgba(255,255,255,0.92)",background:"rgba(0,0,0,0.42)",padding:"2px 7px",borderRadius:3,fontFamily:"system-ui,-apple-system,sans-serif",letterSpacing:"0.02em",fontWeight:500,whiteSpace:"nowrap",pointerEvents:"none",userSelect:"none",zIndex:999}}>Powered by Viziona</div>;
+}
 function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScale}){
   W=W||270; H=H||480; slotScale=slotScale||1;
   const fm=ld&&ld.formation?ld.formation:"4-4-2";
@@ -236,7 +297,7 @@ function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScal
   const dark=tpl!=="ln5"&&tpl!=="ln6";
   const root={width:W,height:H,position:"relative",overflow:"hidden",borderRadius:W<160?6:14,flexShrink:0,display:"flex",flexDirection:"column",userSelect:"none"};
   function Logo(props){const sz=props.sz||W*.1;if(!props.url)return<div style={{width:sz,height:sz,borderRadius:4,background:rgba(accent,.25),display:"flex",alignItems:"center",justifyContent:"center",color:accent,fontSize:sz*.3}}>◈</div>;return<img src={props.url} style={{width:sz,height:sz,objectFit:"contain"}} alt=""/>;}
-  function Slot(props){const p=props.p;const sz=props.sz||W*.09;const square=props.square;const ph=getPhoto(p);return(<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,minWidth:sz*1.3}}><div style={{width:sz,height:sz,borderRadius:square?6:"50%",overflow:"hidden",border:"2px solid "+accent,background:dark?"rgba(0,0,0,.5)":"#e0e0e8",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:sz*.34,fontWeight:900,color:accent,fontFamily:"Impact,sans-serif"}}>{p&&p.number?p.number:"?"}</span>}</div><span style={{fontSize:W*.024,color:dark?"#fff":"#111",fontWeight:700,textAlign:"center",maxWidth:sz*1.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textShadow:dark?"0 1px 5px #000":"none"}}>{p&&p.name?p.name.split(" ").pop():"—"}</span></div>);}
+  function Slot(props){const p=props.p;const sz=props.sz||W*.09;const square=props.square;const ph=getPhoto(p);return(<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,flex:"1 1 0",minWidth:0,padding:"0 2px",boxSizing:"border-box"}}><div style={{width:sz,height:sz,borderRadius:square?6:"50%",overflow:"hidden",border:"2px solid "+accent,background:dark?"rgba(0,0,0,.5)":"#e0e0e8",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:sz*.34,fontWeight:900,color:accent,fontFamily:"Impact,sans-serif"}}>{p&&p.number?p.number:"?"}</span>}</div><span style={{fontSize:W*.024,color:dark?"#fff":"#111",fontWeight:700,textAlign:"center",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textShadow:dark?"0 1px 5px #000":"none"}}>{p&&p.name?p.name.split(" ").pop():"—"}</span></div>);}
   const bg={ln1:"#030305",ln2:"#0a0000",ln3:"#02040a",ln4:"#060408",ln5:"#f2f2f4",ln6:"#fafafa"}[tpl]||"#030305";
   return(<div style={Object.assign({},root,{background:bg})}>
     {bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:dark?.14:.06}} alt=""/>}
@@ -249,13 +310,14 @@ function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScal
     {dark&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,transparent,"+accent+","+accent2+","+accent+",transparent)",zIndex:4}}/>}
     <div style={{position:"relative",zIndex:3,padding:(W*.03)+"px "+(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
       <Logo url={logoUrl} sz={W*.09}/>
-      <div style={{textAlign:"center"}}>{competition&&<div style={{fontSize:W*.022,color:dark?rgba(accent,.7):"#666",letterSpacing:".13em",textTransform:"uppercase"}}>{competition}</div>}<div style={{fontSize:W*.03,fontWeight:700,color:dark?"#fff":"#111",fontFamily:"Impact,sans-serif",letterSpacing:".05em"}}>XI · {fm}</div></div>
+      <div style={{textAlign:"center",overflow:"hidden",maxWidth:W*.6}}>{competition&&<div style={{fontSize:W*.022,color:dark?rgba(accent,.7):"#666",letterSpacing:".13em",textTransform:"uppercase",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{competition}</div>}<div style={{fontSize:W*.03,fontWeight:700,color:dark?"#fff":"#111",fontFamily:"Impact,sans-serif",letterSpacing:".05em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>XI · {fm}{ld&&ld.opponent?" · vs "+ld.opponent:""}</div></div>
       <Logo url={logo2Url} sz={W*.08}/>
     </div>
     <div style={{position:"relative",zIndex:3,flex:1,display:"flex",flexDirection:"column",justifyContent:"space-around",padding:"0 "+(W*.018)+"px"}}>
       {[].concat(rows).reverse().map(function(row,ri){return(<div key={ri} style={{display:"flex",justifyContent:"space-around",alignItems:"center"}}>{Array.from({length:row.n}).map(function(_,pi){return<Slot key={pi} p={row.players[pi]} sz={W*.088*slotScale} square={tpl==="ln4"}/>})}</div>);})}
     </div>
     {subs.length>0&&<div style={{position:"relative",zIndex:3,borderTop:"1px solid "+rgba(accent,.3),background:rgba(dark?"#000":"#f0f0f0",.55),padding:(W*.012)+"px "+(W*.035)+"px"}}><div style={{fontSize:W*.02,color:rgba(dark?"#fff":"#000",.38),letterSpacing:".1em",marginBottom:2}}>REMPLAÇANTS</div><div style={{display:"flex",gap:W*.016,flexWrap:"wrap",alignItems:"center"}}>{subs.map(function(s,i){const ph=getPhoto(s);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.009}}>{ph?<img src={ph} style={{width:W*.046,height:W*.046,borderRadius:"50%",objectFit:"cover",objectPosition:"top",border:"1px solid "+rgba(accent,.4)}} alt=""/>:<div style={{width:W*.046,height:W*.046,borderRadius:"50%",background:rgba(accent,.2),display:"flex",alignItems:"center",justifyContent:"center",fontSize:W*.018,color:accent}}>{s.number||"?"}</div>}<span style={{fontSize:W*.023,color:rgba(dark?"#fff":"#000",.5)}}>{s.name?s.name.split(" ").pop():""}</span></div>);})}</div></div>}
+    <Watermark/>
   </div>);
 }
 // ─── GROUP CANVAS ─────────────────────────────────────────────
@@ -271,14 +333,14 @@ function GroupCanvas({gd,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H}){
   const root={width:W,height:H,position:"relative",overflow:"hidden",borderRadius:W<160?6:14,flexShrink:0,display:"flex",flexDirection:"column",userSelect:"none"};
   function Logo(props){const sz=props.sz||W*.1;if(!props.url)return<div style={{width:sz,height:sz,borderRadius:4,background:rgba(accent,.25),display:"flex",alignItems:"center",justifyContent:"center",color:accent,fontSize:sz*.3}}>◈</div>;return<img src={props.url} style={{width:sz,height:sz,objectFit:"contain"}} alt=""/>;}
   function PlayerRow(props){const p=props.p;const col=props.col||accent;const ph=p.photo||getPhoto(p);return(<div style={{display:"flex",alignItems:"center",gap:W*.018,marginBottom:W*.009,padding:(W*.005)+"px",borderRadius:3,background:rgba("#fff",.025)}}>{ph?<img src={ph} style={{width:W*.074,height:W*.074,borderRadius:W*.009,objectFit:"cover",objectPosition:"top",border:"1px solid "+rgba(col,.3)}} alt=""/>:<div style={{width:W*.074,height:W*.074,borderRadius:W*.009,background:rgba(col,.13),display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:W*.026,fontWeight:900,color:col}}>{p.number||"?"}</div>}<span style={{flex:1,color:"rgba(255,255,255,.82)",fontSize:W*.032}}>{p.name||"—"}{p.captain&&<span style={{color:col,fontSize:W*.024,marginLeft:W*.009}}> ©</span>}</span>{p.number&&<span style={{fontSize:W*.028,color:rgba("#fff",.16),fontFamily:"Impact,sans-serif"}}>#{p.number}</span>}</div>);}
-  if(tpl==="gr3"){const allP=[].concat(gk,def,mid,fwd).slice(0,16);return(<div style={Object.assign({},root,{background:"#fff"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.05}} alt=""/>}<div style={{position:"relative",zIndex:2,background:"linear-gradient(135deg,"+accent+","+accent2+")",padding:(W*.028)+"px "+(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}><Logo url={logoUrl} sz={W*.09}/><div style={{textAlign:"center"}}>{competition&&<div style={{fontSize:W*.022,color:"rgba(255,255,255,.76)",letterSpacing:".1em",textTransform:"uppercase"}}>{competition}</div>}<div style={{fontSize:W*.052,fontWeight:900,color:"#fff",fontFamily:"Impact,sans-serif",letterSpacing:".05em"}}>{title}</div></div><Logo url={logo2Url} sz={W*.08}/></div><div style={{position:"relative",zIndex:2,flex:1,padding:(W*.018)+"px",display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:W*.012,alignContent:"start",overflowY:"auto"}}>{allP.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}><div style={{width:W*.18,height:W*.22,borderRadius:W*.016,overflow:"hidden",border:"2px solid "+rgba(accent,.25),background:"#eee",display:"flex",alignItems:"center",justifyContent:"center"}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<div style={{fontSize:W*.05,color:"#ccc"}}>👤</div>}</div><span style={{fontSize:W*.024,fontWeight:700,color:"#111",textAlign:"center",maxWidth:W*.19,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?p.name.split(" ").pop():"—"}</span>{p.number&&<span style={{fontSize:W*.019,color:accent,fontWeight:700}}>#{p.number}</span>}</div>);})}</div></div>);}
-  if(tpl==="gr4"){const left=[].concat(gk,def),right=[].concat(mid,fwd);return(<div style={Object.assign({},root,{background:"#f5f5f7"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.06}} alt=""/>}<div style={{position:"relative",zIndex:2,background:"linear-gradient(90deg,"+accent+","+accent2+")",padding:(W*.025)+"px "+(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}><Logo url={logoUrl} sz={W*.085}/><div style={{textAlign:"center"}}>{competition&&<div style={{fontSize:W*.019,color:"rgba(255,255,255,.76)",letterSpacing:".1em",textTransform:"uppercase"}}>{competition}</div>}<div style={{fontSize:W*.04,fontWeight:900,color:"#fff",fontFamily:"Impact,sans-serif"}}>{title}</div></div><Logo url={logo2Url} sz={W*.07}/></div><div style={{position:"relative",zIndex:2,flex:1,display:"grid",gridTemplateColumns:"1fr 1px 1fr",overflowY:"auto"}}><div style={{padding:(W*.016)+"px "+(W*.018)+"px"}}><div style={{fontSize:W*.019,color:accent,fontWeight:700,letterSpacing:".1em",marginBottom:W*.012}}>GK · DEF</div>{left.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.012,marginBottom:W*.012,paddingBottom:W*.012,borderBottom:"1px solid rgba(0,0,0,.05)"}}><div style={{width:W*.078,height:W*.078,borderRadius:"50%",overflow:"hidden",border:"2px solid "+rgba(accent,.28),background:"#ddd",flexShrink:0}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:W*.026,fontWeight:900,color:accent,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>{p.number||""}</span>}</div><div><div style={{fontSize:W*.028,fontWeight:700,color:"#111",maxWidth:W*.19,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?p.name.split(" ").pop():"—"}</div>{p.number&&<div style={{fontSize:W*.018,color:accent}}>#{p.number}</div>}</div></div>);})}</div><div style={{background:"rgba(0,0,0,.08)"}}/><div style={{padding:(W*.016)+"px "+(W*.018)+"px"}}><div style={{fontSize:W*.019,color:accent2,fontWeight:700,letterSpacing:".1em",marginBottom:W*.012}}>MIL · ATT</div>{right.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.012,marginBottom:W*.012,paddingBottom:W*.012,borderBottom:"1px solid rgba(0,0,0,.05)"}}><div style={{width:W*.078,height:W*.078,borderRadius:"50%",overflow:"hidden",border:"2px solid "+rgba(accent2,.28),background:"#ddd",flexShrink:0}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:W*.026,fontWeight:900,color:accent2,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>{p.number||""}</span>}</div><div><div style={{fontSize:W*.028,fontWeight:700,color:"#111",maxWidth:W*.19,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?p.name.split(" ").pop():"—"}</div>{p.number&&<div style={{fontSize:W*.018,color:accent2}}>#{p.number}</div>}</div></div>);})}</div></div></div>);}
-  if(tpl==="gr5"){const cats=[{l:"GARDIENS",list:gk,c:accent},{l:"DÉFENSEURS",list:def,c:accent2},{l:"MILIEUX",list:mid,c:accent},{l:"ATTAQUANTS",list:fwd,c:accent2}];if(coaches.length)cats.push({l:"STAFF",list:coaches,c:"rgba(255,255,255,.5)"});return(<div style={Object.assign({},root,{background:"#f8f9fa"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.06}} alt=""/>}<div style={{position:"relative",zIndex:2,padding:(W*.03)+"px "+(W*.04)+"px",background:"#fff",borderBottom:"1px solid #e8e8e8",display:"flex",alignItems:"center",justifyContent:"space-between"}}><div style={{display:"flex",alignItems:"center",gap:W*.025}}><Logo url={logoUrl} sz={W*.1}/><div><div style={{fontSize:W*.048,fontWeight:900,color:"#111",fontFamily:"Impact,sans-serif",letterSpacing:".04em"}}>{title}</div>{competition&&<div style={{fontSize:W*.019,color:"#888",letterSpacing:".1em",textTransform:"uppercase"}}>{competition}</div>}</div></div><Logo url={logo2Url} sz={W*.082}/></div><div style={{height:3,background:"linear-gradient(90deg,"+accent+","+accent2+")"}}/>  <div style={{position:"relative",zIndex:2,flex:1,overflowY:"auto",padding:(W*.022)+"px "+(W*.03)+"px"}}>{cats.map(function(cat,ci){if(!cat.list.length)return null;return(<div key={ci} style={{marginBottom:W*.018}}><div style={{display:"flex",alignItems:"center",gap:W*.014,marginBottom:W*.012}}><div style={{width:3,height:W*.03,borderRadius:2,background:cat.c}}/><span style={{fontSize:W*.022,color:cat.c,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase"}}>{cat.l}</span><span style={{fontSize:W*.019,color:"#bbb",marginLeft:"auto"}}>{cat.list.length}</span></div>{cat.list.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.018,background:"#fff",borderRadius:W*.016,padding:(W*.01)+"px "+(W*.018)+"px",border:"1px solid #f0f0f0",marginBottom:W*.007}}>{ph?<img src={ph} style={{width:W*.072,height:W*.072,borderRadius:W*.012,objectFit:"cover",objectPosition:"top",border:"1px solid "+rgba(cat.c,.3)}} alt=""/>:<div style={{width:W*.072,height:W*.072,borderRadius:W*.012,background:rgba(cat.c,.12),display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:W*.026,fontWeight:900,color:cat.c}}>{p.number||"?"}</div>}<span style={{flex:1,fontSize:W*.032,color:"#111",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name||"—"}{p.captain&&<span style={{color:cat.c,fontSize:W*.022,marginLeft:W*.009}}>©</span>}</span>{p.number&&<span style={{fontSize:W*.028,fontWeight:700,color:cat.c,fontFamily:"Impact,sans-serif"}}>#{p.number}</span>}</div>);})}</div>);})}</div></div>);}
+  if(tpl==="gr3"){const allP=[].concat(gk,def,mid,fwd).slice(0,16);return(<div style={Object.assign({},root,{background:"#fff"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.05}} alt=""/>}<div style={{position:"relative",zIndex:2,background:"linear-gradient(135deg,"+accent+","+accent2+")",padding:(W*.028)+"px "+(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}><Logo url={logoUrl} sz={W*.09}/><div style={{textAlign:"center"}}>{competition&&<div style={{fontSize:W*.022,color:"rgba(255,255,255,.76)",letterSpacing:".1em",textTransform:"uppercase"}}>{competition}</div>}<div style={{fontSize:W*.052,fontWeight:900,color:"#fff",fontFamily:"Impact,sans-serif",letterSpacing:".05em"}}>{title}</div></div><Logo url={logo2Url} sz={W*.08}/></div><div style={{position:"relative",zIndex:2,flex:1,padding:(W*.018)+"px",display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:W*.012,alignContent:"start",overflowY:"auto"}}>{allP.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}><div style={{width:W*.18,height:W*.22,borderRadius:W*.016,overflow:"hidden",border:"2px solid "+rgba(accent,.25),background:"#eee",display:"flex",alignItems:"center",justifyContent:"center"}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<div style={{fontSize:W*.05,color:"#ccc"}}>👤</div>}</div><span style={{fontSize:W*.024,fontWeight:700,color:"#111",textAlign:"center",maxWidth:W*.19,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?p.name.split(" ").pop():"—"}</span>{p.number&&<span style={{fontSize:W*.019,color:accent,fontWeight:700}}>#{p.number}</span>}</div>);})}</div><Watermark/></div>);}
+  if(tpl==="gr4"){const left=[].concat(gk,def),right=[].concat(mid,fwd);return(<div style={Object.assign({},root,{background:"#f5f5f7"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.06}} alt=""/>}<div style={{position:"relative",zIndex:2,background:"linear-gradient(90deg,"+accent+","+accent2+")",padding:(W*.025)+"px "+(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}><Logo url={logoUrl} sz={W*.085}/><div style={{textAlign:"center"}}>{competition&&<div style={{fontSize:W*.019,color:"rgba(255,255,255,.76)",letterSpacing:".1em",textTransform:"uppercase"}}>{competition}</div>}<div style={{fontSize:W*.04,fontWeight:900,color:"#fff",fontFamily:"Impact,sans-serif"}}>{title}</div></div><Logo url={logo2Url} sz={W*.07}/></div><div style={{position:"relative",zIndex:2,flex:1,display:"grid",gridTemplateColumns:"1fr 1px 1fr",overflowY:"auto"}}><div style={{padding:(W*.016)+"px "+(W*.018)+"px"}}><div style={{fontSize:W*.019,color:accent,fontWeight:700,letterSpacing:".1em",marginBottom:W*.012}}>GK · DEF</div>{left.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.012,marginBottom:W*.012,paddingBottom:W*.012,borderBottom:"1px solid rgba(0,0,0,.05)"}}><div style={{width:W*.078,height:W*.078,borderRadius:"50%",overflow:"hidden",border:"2px solid "+rgba(accent,.28),background:"#ddd",flexShrink:0}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:W*.026,fontWeight:900,color:accent,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>{p.number||""}</span>}</div><div><div style={{fontSize:W*.028,fontWeight:700,color:"#111",maxWidth:W*.19,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?p.name.split(" ").pop():"—"}</div>{p.number&&<div style={{fontSize:W*.018,color:accent}}>#{p.number}</div>}</div></div>);})}</div><div style={{background:"rgba(0,0,0,.08)"}}/><div style={{padding:(W*.016)+"px "+(W*.018)+"px"}}><div style={{fontSize:W*.019,color:accent2,fontWeight:700,letterSpacing:".1em",marginBottom:W*.012}}>MIL · ATT</div>{right.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.012,marginBottom:W*.012,paddingBottom:W*.012,borderBottom:"1px solid rgba(0,0,0,.05)"}}><div style={{width:W*.078,height:W*.078,borderRadius:"50%",overflow:"hidden",border:"2px solid "+rgba(accent2,.28),background:"#ddd",flexShrink:0}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:W*.026,fontWeight:900,color:accent2,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>{p.number||""}</span>}</div><div><div style={{fontSize:W*.028,fontWeight:700,color:"#111",maxWidth:W*.19,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?p.name.split(" ").pop():"—"}</div>{p.number&&<div style={{fontSize:W*.018,color:accent2}}>#{p.number}</div>}</div></div>);})}</div></div><Watermark/></div>);}
+  if(tpl==="gr5"){const cats=[{l:"GARDIENS",list:gk,c:accent},{l:"DÉFENSEURS",list:def,c:accent2},{l:"MILIEUX",list:mid,c:accent},{l:"ATTAQUANTS",list:fwd,c:accent2}];if(coaches.length)cats.push({l:"STAFF",list:coaches,c:"rgba(255,255,255,.5)"});return(<div style={Object.assign({},root,{background:"#f8f9fa"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.06}} alt=""/>}<div style={{position:"relative",zIndex:2,padding:(W*.03)+"px "+(W*.04)+"px",background:"#fff",borderBottom:"1px solid #e8e8e8",display:"flex",alignItems:"center",justifyContent:"space-between"}}><div style={{display:"flex",alignItems:"center",gap:W*.025}}><Logo url={logoUrl} sz={W*.1}/><div><div style={{fontSize:W*.048,fontWeight:900,color:"#111",fontFamily:"Impact,sans-serif",letterSpacing:".04em"}}>{title}</div>{competition&&<div style={{fontSize:W*.019,color:"#888",letterSpacing:".1em",textTransform:"uppercase"}}>{competition}</div>}</div></div><Logo url={logo2Url} sz={W*.082}/></div><div style={{height:3,background:"linear-gradient(90deg,"+accent+","+accent2+")"}}/>  <div style={{position:"relative",zIndex:2,flex:1,overflowY:"auto",padding:(W*.022)+"px "+(W*.03)+"px"}}>{cats.map(function(cat,ci){if(!cat.list.length)return null;return(<div key={ci} style={{marginBottom:W*.018}}><div style={{display:"flex",alignItems:"center",gap:W*.014,marginBottom:W*.012}}><div style={{width:3,height:W*.03,borderRadius:2,background:cat.c}}/><span style={{fontSize:W*.022,color:cat.c,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase"}}>{cat.l}</span><span style={{fontSize:W*.019,color:"#bbb",marginLeft:"auto"}}>{cat.list.length}</span></div>{cat.list.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.018,background:"#fff",borderRadius:W*.016,padding:(W*.01)+"px "+(W*.018)+"px",border:"1px solid #f0f0f0",marginBottom:W*.007}}>{ph?<img src={ph} style={{width:W*.072,height:W*.072,borderRadius:W*.012,objectFit:"cover",objectPosition:"top",border:"1px solid "+rgba(cat.c,.3)}} alt=""/>:<div style={{width:W*.072,height:W*.072,borderRadius:W*.012,background:rgba(cat.c,.12),display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:W*.026,fontWeight:900,color:cat.c}}>{p.number||"?"}</div>}<span style={{flex:1,fontSize:W*.032,color:"#111",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name||"—"}{p.captain&&<span style={{color:cat.c,fontSize:W*.022,marginLeft:W*.009}}>©</span>}</span>{p.number&&<span style={{fontSize:W*.028,fontWeight:700,color:cat.c,fontFamily:"Impact,sans-serif"}}>#{p.number}</span>}</div>);})}</div>);})}</div><Watermark/></div>);}
   const isNeon=tpl==="gr6";
   const cats2=[{l:"GARDIENS",list:gk,c:isNeon?"#00ffaa":accent},{l:"DÉFENSEURS",list:def,c:isNeon?"#4488ff":accent2},{l:"MILIEUX",list:mid,c:isNeon?"#ff4499":accent},{l:"ATTAQUANTS",list:fwd,c:isNeon?"#ffcc00":accent2}];
   if(coaches.length)cats2.push({l:"STAFF / COACHS",list:coaches,c:"rgba(255,255,255,.45)"});
   const bg2={gr1:"#020208",gr2:"#02020a",gr6:"#04040c"}[tpl]||"#020208";
-  return(<div style={Object.assign({},root,{background:bg2})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.12}} alt=""/>}<div style={{position:"absolute",inset:0,background:"linear-gradient(160deg,"+rgba(accent,.11)+",transparent 50%,"+rgba(accent2,.08)+")"}}/>  <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"linear-gradient(90deg,"+accent+","+accent2+")",zIndex:4}}/><div style={{position:"relative",zIndex:3,padding:(W*.03)+"px "+(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}><Logo url={logoUrl} sz={W*.105}/><div style={{textAlign:"right"}}>{competition&&<div style={{fontSize:W*.019,color:rgba("#fff",.32),letterSpacing:".12em",textTransform:"uppercase"}}>{competition}</div>}<div style={{fontSize:W*.054,fontWeight:900,color:"#fff",fontFamily:"Impact,sans-serif",letterSpacing:".05em",textShadow:isNeon?"0 0 20px "+rgba(accent,.5):"none"}}>{title}</div></div></div><div style={{position:"relative",zIndex:3,flex:1,overflowY:"auto",padding:(W*.005)+"px "+(W*.04)+"px "+(W*.018)+"px"}}>{cats2.map(function(cat,ci){if(!cat.list.length)return null;return(<div key={ci} style={{marginBottom:W*.018}}><div style={{display:"flex",alignItems:"center",gap:W*.014,marginBottom:W*.008}}><div style={{width:W*.04,height:1,background:cat.c}}/><span style={{fontSize:W*.022,color:cat.c,fontWeight:700,letterSpacing:".12em"}}>{cat.l} ({cat.list.length})</span><div style={{flex:1,height:1,background:rgba(cat.c,.2)}}/></div>{cat.list.map(function(p,i){return<PlayerRow key={i} p={p} col={cat.c}/>;})}</div>);})}</div></div>);
+  return(<div style={Object.assign({},root,{background:bg2})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.12}} alt=""/>}<div style={{position:"absolute",inset:0,background:"linear-gradient(160deg,"+rgba(accent,.11)+",transparent 50%,"+rgba(accent2,.08)+")"}}/>  <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"linear-gradient(90deg,"+accent+","+accent2+")",zIndex:4}}/><div style={{position:"relative",zIndex:3,padding:(W*.03)+"px "+(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}><Logo url={logoUrl} sz={W*.105}/><div style={{textAlign:"right"}}>{competition&&<div style={{fontSize:W*.019,color:rgba("#fff",.32),letterSpacing:".12em",textTransform:"uppercase"}}>{competition}</div>}<div style={{fontSize:W*.054,fontWeight:900,color:"#fff",fontFamily:"Impact,sans-serif",letterSpacing:".05em",textShadow:isNeon?"0 0 20px "+rgba(accent,.5):"none"}}>{title}</div></div></div><div style={{position:"relative",zIndex:3,flex:1,overflowY:"auto",padding:(W*.005)+"px "+(W*.04)+"px "+(W*.018)+"px"}}>{cats2.map(function(cat,ci){if(!cat.list.length)return null;return(<div key={ci} style={{marginBottom:W*.018}}><div style={{display:"flex",alignItems:"center",gap:W*.014,marginBottom:W*.008}}><div style={{width:W*.04,height:1,background:cat.c}}/><span style={{fontSize:W*.022,color:cat.c,fontWeight:700,letterSpacing:".12em"}}>{cat.l} ({cat.list.length})</span><div style={{flex:1,height:1,background:rgba(cat.c,.2)}}/></div>{cat.list.map(function(p,i){return<PlayerRow key={i} p={p} col={cat.c}/>;})}</div>);})}</div><Watermark/></div>);
 }
 // ─── POST CANVAS ──────────────────────────────────────────────
 function PostCanvas({pd,tpl,logoUrl,accent,accent2,bgUrl,W,H}){
@@ -290,12 +352,12 @@ function PostCanvas({pd,tpl,logoUrl,accent,accent2,bgUrl,W,H}){
   const hashtag=pd&&pd.hashtag?pd.hashtag:"";
   const root={width:W,height:H,position:"relative",overflow:"hidden",borderRadius:W<160?6:14,flexShrink:0,display:"flex",flexDirection:"column",userSelect:"none"};
   function Logo(props){const sz=props.sz||W*.09;if(!logoUrl)return<div style={{width:sz,height:sz,borderRadius:4,background:rgba(accent,.25),display:"flex",alignItems:"center",justifyContent:"center",color:accent,fontSize:sz*.3}}>◈</div>;return<img src={logoUrl} style={{width:sz,height:sz,objectFit:"contain"}} alt=""/>;}
-  if(tpl==="pt2")return(<div style={Object.assign({},root,{background:"#06060e"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.18}} alt=""/>}<div style={{position:"absolute",inset:0,background:"linear-gradient(160deg,"+rgba(accent,.12)+",transparent 50%,"+rgba(accent2,.08)+")"}}/>  <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"linear-gradient(90deg,"+accent+","+accent2+")",zIndex:4}}/><div style={{position:"relative",zIndex:3,padding:(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}><Logo sz={W*.1}/>{date&&<div style={{fontSize:W*.022,color:"rgba(255,255,255,.3)",letterSpacing:".08em"}}>{date}</div>}</div><div style={{position:"relative",zIndex:3,flex:1,display:"flex",flexDirection:"column",justifyContent:"flex-end",padding:(W*.05)+"px"}}><div style={{fontSize:W*.022,color:accent,fontWeight:700,letterSpacing:".16em",textTransform:"uppercase",marginBottom:W*.02}}>{subtitle}</div><div style={{fontSize:W*.06,fontWeight:900,color:"#fff",fontFamily:"Impact,sans-serif",lineHeight:1.08,textTransform:"uppercase",marginBottom:W*.025}}>{title}</div><div style={{width:W*.08,height:2,background:accent,marginBottom:W*.025,borderRadius:2}}/><div style={{fontSize:W*.028,color:"rgba(255,255,255,.58)",lineHeight:1.5}}>{body}</div>{hashtag&&<div style={{marginTop:W*.04,fontSize:W*.022,color:rgba(accent,.6)}}>{hashtag}</div>}</div></div>);
-  if(tpl==="pt3")return(<div style={Object.assign({},root,{background:"#0a0000"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.2}} alt=""/>}<div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at 50% 0%,"+rgba(accent,.4)+" 0%,rgba(0,0,0,.9) 60%)"}}/><div style={{position:"relative",zIndex:3,background:"rgba(0,0,0,.7)",padding:(W*.022)+"px "+(W*.04)+"px",display:"flex",alignItems:"center",gap:W*.02}}><div style={{background:accent,borderRadius:3,padding:(W*.008)+"px "+(W*.018)+"px",fontSize:W*.024,fontWeight:900,color:"#fff",letterSpacing:".08em"}}>BREAKING</div><div style={{flex:1,height:1,background:rgba(accent,.3)}}/><Logo sz={W*.07}/></div><div style={{position:"relative",zIndex:3,flex:1,display:"flex",flexDirection:"column",justifyContent:"center",padding:(W*.05)+"px",gap:W*.03}}><div style={{fontSize:W*.019,color:rgba(accent,.8),fontWeight:700,letterSpacing:".16em",textTransform:"uppercase"}}>{subtitle}</div><div style={{fontSize:W*.056,fontWeight:900,color:"#fff",fontFamily:"Impact,sans-serif",lineHeight:1.08,textTransform:"uppercase"}}>{title}</div><div style={{width:"100%",height:1,background:rgba(accent,.25)}}/><div style={{fontSize:W*.03,color:"rgba(255,255,255,.62)",lineHeight:1.5}}>{body}</div></div>{(date||hashtag)&&<div style={{position:"relative",zIndex:3,background:"rgba(0,0,0,.7)",padding:(W*.022)+"px "+(W*.04)+"px",display:"flex",justifyContent:"space-between",fontSize:W*.022,color:"rgba(255,255,255,.3)"}}><span>{date}</span><span>{hashtag}</span></div>}</div>);
-  if(tpl==="pt4")return(<div style={Object.assign({},root,{background:"#f8f9fa"})}><div style={{position:"absolute",left:0,top:0,bottom:0,width:5,background:"linear-gradient(to bottom,"+accent+","+accent2+")",zIndex:3}}/><div style={{position:"relative",zIndex:3,padding:(W*.04)+"px "+(W*.05)+"px "+(W*.03)+"px "+(W*.065)+"px",borderBottom:"1px solid rgba(0,0,0,.06)",display:"flex",alignItems:"center",justifyContent:"space-between"}}><Logo sz={W*.09}/>{date&&<div style={{fontSize:W*.019,color:"rgba(0,0,0,.3)",letterSpacing:".08em"}}>{date}</div>}</div><div style={{position:"relative",zIndex:3,flex:1,display:"flex",flexDirection:"column",justifyContent:"center",padding:(W*.05)+"px "+(W*.05)+"px "+(W*.05)+"px "+(W*.065)+"px"}}><div style={{fontSize:W*.022,color:accent,fontWeight:700,letterSpacing:".14em",textTransform:"uppercase",marginBottom:W*.02}}>{subtitle}</div><div style={{fontSize:W*.052,fontWeight:900,color:"#111",fontFamily:"Impact,sans-serif",lineHeight:1.08,letterSpacing:".01em",marginBottom:W*.025}}>{title}</div><div style={{width:W*.06,height:3,background:accent,marginBottom:W*.025,borderRadius:2}}/><div style={{fontSize:W*.028,color:"rgba(0,0,0,.56)",lineHeight:1.55}}>{body}</div>{hashtag&&<div style={{marginTop:W*.04,fontSize:W*.022,color:rgba(accent,.7)}}>{hashtag}</div>}</div></div>);
-  if(tpl==="pt5")return(<div style={Object.assign({},root,{background:"#f0f0f2"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.07}} alt=""/>}<div style={{position:"absolute",left:0,top:0,right:0,height:"45%",background:"linear-gradient(135deg,"+accent+","+accent2+")",zIndex:1}}/><div style={{position:"relative",zIndex:3,padding:(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}><Logo sz={W*.09}/>{date&&<div style={{fontSize:W*.019,color:"rgba(255,255,255,.65)",letterSpacing:".08em"}}>{date}</div>}</div><div style={{position:"relative",zIndex:3,flex:1,display:"flex",flexDirection:"column",justifyContent:"flex-end",padding:(W*.04)+"px"}}><div style={{fontSize:W*.019,color:"rgba(255,255,255,.7)",fontWeight:700,letterSpacing:".14em",textTransform:"uppercase",marginBottom:W*.015}}>{subtitle}</div><div style={{fontSize:W*.052,fontWeight:900,color:"#fff",fontFamily:"Impact,sans-serif",lineHeight:1.08,marginBottom:W*.015}}>{title}</div></div><div style={{position:"relative",zIndex:3,background:"#fff",padding:(W*.04)+"px",flex:1,display:"flex",flexDirection:"column",justifyContent:"center",gap:W*.018}}><div style={{fontSize:W*.028,color:"#333",lineHeight:1.55}}>{body}</div>{hashtag&&<div style={{fontSize:W*.022,color:accent}}>{hashtag}</div>}</div></div>);
-  if(tpl==="pt6")return(<div style={Object.assign({},root,{background:"#000"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.3}} alt=""/>}<div style={{position:"absolute",inset:0,background:"linear-gradient(to bottom,transparent 30%,rgba(0,0,0,.92) 65%)"}}/><div style={{position:"relative",zIndex:3,padding:(W*.035)+"px "+(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}><Logo sz={W*.09}/>{date&&<div style={{fontSize:W*.019,color:"rgba(255,255,255,.5)",letterSpacing:".08em"}}>{date}</div>}</div><div style={{position:"relative",zIndex:3,flex:1}}/><div style={{position:"relative",zIndex:3,padding:(W*.04)+"px "+(W*.04)+"px "+(W*.05)+"px"}}><div style={{fontSize:W*.019,color:accent,fontWeight:700,letterSpacing:".16em",textTransform:"uppercase",marginBottom:W*.015}}>{subtitle}</div><div style={{fontSize:W*.054,fontWeight:900,color:"#fff",fontFamily:"Impact,sans-serif",lineHeight:1.08,marginBottom:W*.018}}>{title}</div><div style={{width:W*.07,height:2,background:accent,marginBottom:W*.018,borderRadius:2}}/><div style={{fontSize:W*.026,color:"rgba(255,255,255,.6)",lineHeight:1.5}}>{body}</div>{hashtag&&<div style={{marginTop:W*.025,fontSize:W*.022,color:rgba(accent,.6)}}>{hashtag}</div>}</div></div>);
-  return(<div style={Object.assign({},root,{background:"#030308"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.18}} alt=""/>}<div style={{position:"absolute",inset:0,background:"linear-gradient(to bottom,rgba(0,0,0,.85),rgba(0,0,0,.5),rgba(0,0,0,.85))"}}/><div style={{position:"absolute",top:0,left:0,right:0,height:4,background:"linear-gradient(90deg,"+accent+","+accent2+")",zIndex:4}}/><div style={{position:"relative",zIndex:3,flex:1,display:"flex",flexDirection:"column",justifyContent:"center",padding:(W*.06)+"px"}}><div style={{width:W*.1,height:3,background:accent,marginBottom:W*.04,borderRadius:2}}/><div style={{fontSize:W*.065,fontWeight:900,color:"#fff",fontFamily:"Impact,sans-serif",lineHeight:1.05,textTransform:"uppercase",marginBottom:W*.03}}>{title}</div><div style={{fontSize:W*.036,color:accent,fontWeight:600,marginBottom:W*.04}}>{subtitle}</div><div style={{fontSize:W*.028,color:"rgba(255,255,255,.6)",lineHeight:1.55}}>{body}</div>{(date||hashtag)&&<div style={{marginTop:W*.05,fontSize:W*.022,color:"rgba(255,255,255,.3)",letterSpacing:".08em"}}>{date}{date&&hashtag?" · ":""}{hashtag}</div>}</div><div style={{position:"relative",zIndex:3,padding:(W*.04)+"px "+(W*.06)+"px",borderTop:"1px solid rgba(255,255,255,.06)",display:"flex",alignItems:"center",gap:W*.025}}><Logo sz={W*.09}/><div style={{fontSize:W*.022,color:"rgba(255,255,255,.35)",letterSpacing:".06em"}}>OFFICIEL</div></div></div>);
+  if(tpl==="pt2")return(<div style={Object.assign({},root,{background:"#06060e"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.18}} alt=""/>}<div style={{position:"absolute",inset:0,background:"linear-gradient(160deg,"+rgba(accent,.12)+",transparent 50%,"+rgba(accent2,.08)+")"}}/>  <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"linear-gradient(90deg,"+accent+","+accent2+")",zIndex:4}}/><div style={{position:"relative",zIndex:3,padding:(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}><Logo sz={W*.1}/>{date&&<div style={{fontSize:W*.022,color:"rgba(255,255,255,.3)",letterSpacing:".08em"}}>{date}</div>}</div><div style={{position:"relative",zIndex:3,flex:1,display:"flex",flexDirection:"column",justifyContent:"flex-end",padding:(W*.05)+"px"}}><div style={{fontSize:W*.022,color:accent,fontWeight:700,letterSpacing:".16em",textTransform:"uppercase",marginBottom:W*.02}}>{subtitle}</div><div style={{fontSize:W*.06,fontWeight:900,color:"#fff",fontFamily:"Impact,sans-serif",lineHeight:1.08,textTransform:"uppercase",marginBottom:W*.025}}>{title}</div><div style={{width:W*.08,height:2,background:accent,marginBottom:W*.025,borderRadius:2}}/><div style={{fontSize:W*.028,color:"rgba(255,255,255,.58)",lineHeight:1.5}}>{body}</div>{hashtag&&<div style={{marginTop:W*.04,fontSize:W*.022,color:rgba(accent,.6)}}>{hashtag}</div>}</div><Watermark/></div>);
+  if(tpl==="pt3")return(<div style={Object.assign({},root,{background:"#0a0000"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.2}} alt=""/>}<div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at 50% 0%,"+rgba(accent,.4)+" 0%,rgba(0,0,0,.9) 60%)"}}/><div style={{position:"relative",zIndex:3,background:"rgba(0,0,0,.7)",padding:(W*.022)+"px "+(W*.04)+"px",display:"flex",alignItems:"center",gap:W*.02}}><div style={{background:accent,borderRadius:3,padding:(W*.008)+"px "+(W*.018)+"px",fontSize:W*.024,fontWeight:900,color:"#fff",letterSpacing:".08em"}}>BREAKING</div><div style={{flex:1,height:1,background:rgba(accent,.3)}}/><Logo sz={W*.07}/></div><div style={{position:"relative",zIndex:3,flex:1,display:"flex",flexDirection:"column",justifyContent:"center",padding:(W*.05)+"px",gap:W*.03}}><div style={{fontSize:W*.019,color:rgba(accent,.8),fontWeight:700,letterSpacing:".16em",textTransform:"uppercase"}}>{subtitle}</div><div style={{fontSize:W*.056,fontWeight:900,color:"#fff",fontFamily:"Impact,sans-serif",lineHeight:1.08,textTransform:"uppercase"}}>{title}</div><div style={{width:"100%",height:1,background:rgba(accent,.25)}}/><div style={{fontSize:W*.03,color:"rgba(255,255,255,.62)",lineHeight:1.5}}>{body}</div></div>{(date||hashtag)&&<div style={{position:"relative",zIndex:3,background:"rgba(0,0,0,.7)",padding:(W*.022)+"px "+(W*.04)+"px",display:"flex",justifyContent:"space-between",fontSize:W*.022,color:"rgba(255,255,255,.3)"}}><span>{date}</span><span>{hashtag}</span></div>}<Watermark/></div>);
+  if(tpl==="pt4")return(<div style={Object.assign({},root,{background:"#f8f9fa"})}><div style={{position:"absolute",left:0,top:0,bottom:0,width:5,background:"linear-gradient(to bottom,"+accent+","+accent2+")",zIndex:3}}/><div style={{position:"relative",zIndex:3,padding:(W*.04)+"px "+(W*.05)+"px "+(W*.03)+"px "+(W*.065)+"px",borderBottom:"1px solid rgba(0,0,0,.06)",display:"flex",alignItems:"center",justifyContent:"space-between"}}><Logo sz={W*.09}/>{date&&<div style={{fontSize:W*.019,color:"rgba(0,0,0,.3)",letterSpacing:".08em"}}>{date}</div>}</div><div style={{position:"relative",zIndex:3,flex:1,display:"flex",flexDirection:"column",justifyContent:"center",padding:(W*.05)+"px "+(W*.05)+"px "+(W*.05)+"px "+(W*.065)+"px"}}><div style={{fontSize:W*.022,color:accent,fontWeight:700,letterSpacing:".14em",textTransform:"uppercase",marginBottom:W*.02}}>{subtitle}</div><div style={{fontSize:W*.052,fontWeight:900,color:"#111",fontFamily:"Impact,sans-serif",lineHeight:1.08,letterSpacing:".01em",marginBottom:W*.025}}>{title}</div><div style={{width:W*.06,height:3,background:accent,marginBottom:W*.025,borderRadius:2}}/><div style={{fontSize:W*.028,color:"rgba(0,0,0,.56)",lineHeight:1.55}}>{body}</div>{hashtag&&<div style={{marginTop:W*.04,fontSize:W*.022,color:rgba(accent,.7)}}>{hashtag}</div>}</div><Watermark/></div>);
+  if(tpl==="pt5")return(<div style={Object.assign({},root,{background:"#f0f0f2"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.07}} alt=""/>}<div style={{position:"absolute",left:0,top:0,right:0,height:"45%",background:"linear-gradient(135deg,"+accent+","+accent2+")",zIndex:1}}/><div style={{position:"relative",zIndex:3,padding:(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}><Logo sz={W*.09}/>{date&&<div style={{fontSize:W*.019,color:"rgba(255,255,255,.65)",letterSpacing:".08em"}}>{date}</div>}</div><div style={{position:"relative",zIndex:3,flex:1,display:"flex",flexDirection:"column",justifyContent:"flex-end",padding:(W*.04)+"px"}}><div style={{fontSize:W*.019,color:"rgba(255,255,255,.7)",fontWeight:700,letterSpacing:".14em",textTransform:"uppercase",marginBottom:W*.015}}>{subtitle}</div><div style={{fontSize:W*.052,fontWeight:900,color:"#fff",fontFamily:"Impact,sans-serif",lineHeight:1.08,marginBottom:W*.015}}>{title}</div></div><div style={{position:"relative",zIndex:3,background:"#fff",padding:(W*.04)+"px",flex:1,display:"flex",flexDirection:"column",justifyContent:"center",gap:W*.018}}><div style={{fontSize:W*.028,color:"#333",lineHeight:1.55}}>{body}</div>{hashtag&&<div style={{fontSize:W*.022,color:accent}}>{hashtag}</div>}</div><Watermark/></div>);
+  if(tpl==="pt6")return(<div style={Object.assign({},root,{background:"#000"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.3}} alt=""/>}<div style={{position:"absolute",inset:0,background:"linear-gradient(to bottom,transparent 30%,rgba(0,0,0,.92) 65%)"}}/><div style={{position:"relative",zIndex:3,padding:(W*.035)+"px "+(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}><Logo sz={W*.09}/>{date&&<div style={{fontSize:W*.019,color:"rgba(255,255,255,.5)",letterSpacing:".08em"}}>{date}</div>}</div><div style={{position:"relative",zIndex:3,flex:1}}/><div style={{position:"relative",zIndex:3,padding:(W*.04)+"px "+(W*.04)+"px "+(W*.05)+"px"}}><div style={{fontSize:W*.019,color:accent,fontWeight:700,letterSpacing:".16em",textTransform:"uppercase",marginBottom:W*.015}}>{subtitle}</div><div style={{fontSize:W*.054,fontWeight:900,color:"#fff",fontFamily:"Impact,sans-serif",lineHeight:1.08,marginBottom:W*.018}}>{title}</div><div style={{width:W*.07,height:2,background:accent,marginBottom:W*.018,borderRadius:2}}/><div style={{fontSize:W*.026,color:"rgba(255,255,255,.6)",lineHeight:1.5}}>{body}</div>{hashtag&&<div style={{marginTop:W*.025,fontSize:W*.022,color:rgba(accent,.6)}}>{hashtag}</div>}</div><Watermark/></div>);
+  return(<div style={Object.assign({},root,{background:"#030308"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.18}} alt=""/>}<div style={{position:"absolute",inset:0,background:"linear-gradient(to bottom,rgba(0,0,0,.85),rgba(0,0,0,.5),rgba(0,0,0,.85))"}}/><div style={{position:"absolute",top:0,left:0,right:0,height:4,background:"linear-gradient(90deg,"+accent+","+accent2+")",zIndex:4}}/><div style={{position:"relative",zIndex:3,flex:1,display:"flex",flexDirection:"column",justifyContent:"center",padding:(W*.06)+"px"}}><div style={{width:W*.1,height:3,background:accent,marginBottom:W*.04,borderRadius:2}}/><div style={{fontSize:W*.065,fontWeight:900,color:"#fff",fontFamily:"Impact,sans-serif",lineHeight:1.05,textTransform:"uppercase",marginBottom:W*.03}}>{title}</div><div style={{fontSize:W*.036,color:accent,fontWeight:600,marginBottom:W*.04}}>{subtitle}</div><div style={{fontSize:W*.028,color:"rgba(255,255,255,.6)",lineHeight:1.55}}>{body}</div>{(date||hashtag)&&<div style={{marginTop:W*.05,fontSize:W*.022,color:"rgba(255,255,255,.3)",letterSpacing:".08em"}}>{date}{date&&hashtag?" · ":""}{hashtag}</div>}</div><div style={{position:"relative",zIndex:3,padding:(W*.04)+"px "+(W*.06)+"px",borderTop:"1px solid rgba(255,255,255,.06)",display:"flex",alignItems:"center",gap:W*.025}}><Logo sz={W*.09}/><div style={{fontSize:W*.022,color:"rgba(255,255,255,.35)",letterSpacing:".06em"}}>OFFICIEL</div></div><Watermark/></div>);
 }
 // ─── HISTORY THUMB ────────────────────────────────────────────
 function HistoryThumb({h,c1,c2}){
@@ -311,27 +373,109 @@ function HistoryThumb({h,c1,c2}){
   }catch(e){return<div style={Object.assign({},wr,{background:"#111",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20})}>{h.ct&&h.ct.icon?h.ct.icon:"📄"}</div>;}
 }
 // ─── DRAG CANVAS ──────────────────────────────────────────────
-function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,t}){
-  const cvRef=useRef(null);const dragRef=useRef(null);const[sel,setSel]=useState(null);const selL=sel?layers.find(l=>l.id===sel):null;
-  const onMD=useCallback((e,id)=>{const l=layers.find(x=>x.id===id);if(!l||l.locked)return;e.preventDefault();e.stopPropagation();setSel(id);const rect=cvRef.current.getBoundingClientRect();dragRef.current={id,ox:l.x,oy:l.y,mx0:(e.clientX-rect.left)/rect.width*100,my0:(e.clientY-rect.top)/rect.height*100};},[layers]);
-  const onMM=useCallback(e=>{if(!dragRef.current||!cvRef.current)return;const rect=cvRef.current.getBoundingClientRect();const mx=(e.clientX-rect.left)/rect.width*100,my=(e.clientY-rect.top)/rect.height*100;setLayers(prev=>prev.map(l=>l.id===dragRef.current.id?{...l,x:Math.max(0,Math.min(90,dragRef.current.ox+(mx-dragRef.current.mx0))),y:Math.max(0,Math.min(95,dragRef.current.oy+(my-dragRef.current.my0)))}:l));},[setLayers]);
-  const onMU=useCallback(()=>{dragRef.current=null;},[]);
-  function upd(f,v){setLayers(p=>p.map(l=>l.id===sel?Object.assign({},l,{[f]:v}):l));}
-  function moveZ(id,d){setLayers(prev=>{const s=[...prev].sort((a,b)=>a.z-b.z);const i=s.findIndex(l=>l.id===id),j=i+d;if(j<0||j>=s.length)return prev;const za=s[i].z,zb=s[j].z;return prev.map(l=>l.id===s[i].id?{...l,z:zb}:l.id===s[j].id?{...l,z:za}:l);});}
-  function delSel(){if(!selL||selL.locked)return;setLayers(p=>p.filter(l=>l.id!==sel));setSel(null);}
+function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,t,isMobile,mobileSheet,setMobileSheet,canvasScale}){
+  const cvRef=useRef(null);const dragRef=useRef(null);const resizeRef=useRef(null);const historyRef=useRef([]);const[sel,setSel]=useState(null);const[historyDepth,setHistoryDepth]=useState(0);const selL=sel?layers.find(l=>l.id===sel):null;
+  function pushHist(){
+    historyRef.current.push(JSON.parse(JSON.stringify(layers)));
+    if(historyRef.current.length>20)historyRef.current.shift();
+    setHistoryDepth(historyRef.current.length);
+  }
+  function undo(){
+    if(historyRef.current.length===0)return;
+    const last=historyRef.current.pop();
+    setLayers(last);
+    setHistoryDepth(historyRef.current.length);
+    setSel(null);
+  }
+  useEffect(()=>{
+    const handler=(e)=>{
+      if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&e.code==="KeyZ"){
+        const tag=e.target&&e.target.tagName?e.target.tagName.toLowerCase():"";
+        if(tag==="input"||tag==="textarea"||tag==="select")return;
+        if(historyRef.current.length===0)return;
+        e.preventDefault();
+        const last=historyRef.current.pop();
+        setLayers(last);
+        setHistoryDepth(historyRef.current.length);
+        setSel(null);
+      }
+    };
+    window.addEventListener("keydown",handler);
+    return()=>window.removeEventListener("keydown",handler);
+  },[setLayers]);
+  const onMD=useCallback((e,id)=>{const l=layers.find(x=>x.id===id);if(!l||l.locked)return;e.preventDefault();e.stopPropagation();setSel(id);historyRef.current.push(JSON.parse(JSON.stringify(layers)));if(historyRef.current.length>20)historyRef.current.shift();setHistoryDepth(historyRef.current.length);const rect=cvRef.current.getBoundingClientRect();dragRef.current={id,ox:l.x,oy:l.y,mx0:(e.clientX-rect.left)/rect.width*100,my0:(e.clientY-rect.top)/rect.height*100};},[layers]);
+  const onResize=useCallback((e,id,corner)=>{
+    const l=layers.find(x=>x.id===id);if(!l||l.locked)return;
+    setSel(id);
+    historyRef.current.push(JSON.parse(JSON.stringify(layers)));
+    if(historyRef.current.length>20)historyRef.current.shift();
+    setHistoryDepth(historyRef.current.length);
+    const rect=cvRef.current.getBoundingClientRect();
+    resizeRef.current={id,corner,ox:l.x,oy:l.y,ow:l.w,oh:l.h,startX:e.clientX,startY:e.clientY,canvasW:rect.width,canvasH:rect.height};
+  },[layers]);
+  const onMM=useCallback(e=>{
+    if(resizeRef.current&&cvRef.current){
+      const r=resizeRef.current;
+      const dxP=(e.clientX-r.startX)/r.canvasW*100;
+      const dyP=(e.clientY-r.startY)/r.canvasH*100;
+      const sx=(r.corner==="tr"||r.corner==="br")?1:-1;
+      const sy=(r.corner==="bl"||r.corner==="br")?1:-1;
+      const ratioX=(dxP*sx)/r.ow;
+      const ratioY=(dyP*sy)/r.oh;
+      let scale=1+(Math.abs(ratioX)>Math.abs(ratioY)?ratioX:ratioY);
+      const minScale=Math.max(5/r.ow,5/r.oh);
+      scale=Math.max(minScale,scale);
+      const newW=r.ow*scale, newH=r.oh*scale;
+      const newX=(r.corner==="tl"||r.corner==="bl")?r.ox+(r.ow-newW):r.ox;
+      const newY=(r.corner==="tl"||r.corner==="tr")?r.oy+(r.oh-newH):r.oy;
+      setLayers(prev=>prev.map(l=>l.id===r.id?{...l,x:newX,y:newY,w:newW,h:newH}:l));
+      return;
+    }
+    if(!dragRef.current||!cvRef.current)return;
+    const rect=cvRef.current.getBoundingClientRect();
+    const mx=(e.clientX-rect.left)/rect.width*100,my=(e.clientY-rect.top)/rect.height*100;
+    setLayers(prev=>prev.map(l=>l.id===dragRef.current.id?{...l,x:Math.max(0,Math.min(90,dragRef.current.ox+(mx-dragRef.current.mx0))),y:Math.max(0,Math.min(95,dragRef.current.oy+(my-dragRef.current.my0)))}:l));
+  },[setLayers]);
+  const onMU=useCallback(()=>{dragRef.current=null;resizeRef.current=null;},[]);
+  function addColorBlock(){
+    pushHist();
+    const newId="cb_"+Date.now();
+    const maxZ=layers.reduce((m,l)=>Math.max(m,l.z),0);
+    const newLayer={id:newId,z:maxZ+1,type:"colorblock",x:30,y:35,w:40,h:30,locked:false,label:"Couleur",color:"#ff5555",opacity:80};
+    setLayers(prev=>[...prev,newLayer]);
+    setSel(newId);
+  }
+  function upd(f,v){pushHist();setLayers(p=>p.map(l=>l.id===sel?Object.assign({},l,{[f]:v}):l));}
+  function moveZ(id,d){pushHist();setLayers(prev=>{const s=[...prev].sort((a,b)=>a.z-b.z);const i=s.findIndex(l=>l.id===id),j=i+d;if(j<0||j>=s.length)return prev;const za=s[i].z,zb=s[j].z;return prev.map(l=>l.id===s[i].id?{...l,z:zb}:l.id===s[j].id?{...l,z:za}:l);});}
+  function delSel(){if(!selL||selL.locked)return;pushHist();setLayers(p=>p.filter(l=>l.id!==sel));setSel(null);}
   function layerHit(e){const rect=cvRef.current.getBoundingClientRect();const mx=(e.clientX-rect.left)/rect.width*100,my=(e.clientY-rect.top)/rect.height*100;const c=[...layers].filter(l=>!l.locked&&mx>=l.x&&mx<=l.x+l.w&&my>=l.y&&my<=l.y+l.h).sort((a,b)=>b.z-a.z);setSel(c.length?c[0].id:null);}
   const sorted=[...layers].sort((a,b)=>a.z-b.z);
   const inp={background:t.bg4,border:"1px solid "+t.border2,borderRadius:6,padding:"5px 7px",color:t.text,fontSize:11,outline:"none",boxSizing:"border-box",width:"100%"};
   const isText=selL&&["text","watertext","heading","subtext"].includes(selL.type);
-  return(<div style={{flex:1,display:"flex",overflow:"hidden"}}>
-    <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"#030306",padding:20,gap:10}}>
-      <div ref={cvRef} className="visium-canvas" onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU} onClick={layerHit} style={{width:270,height:480,position:"relative",overflow:"hidden",borderRadius:16,border:"1px solid "+t.border,background:"#111",cursor:"default",userSelect:"none",flexShrink:0}}>
-        {sorted.map(lay=>(<LayerView key={lay.id} lay={lay} bgUrl={bgUrl} playerUrl={playerUrl} logoUrl={logoUrl} logo2Url={logo2Url} accent={accent} accent2={accent2} isSel={sel===lay.id} onMD={onMD}/>))}
+  const layersPanelStyle=isMobile?{position:"fixed",bottom:0,left:0,right:0,maxHeight:"75vh",background:t.bg2,borderTop:"1px solid "+t.border,overflowY:"auto",padding:12,flexShrink:0,zIndex:200,transform:mobileSheet==="layers"?"translateY(0)":"translateY(100%)",transition:"transform .25s ease",boxShadow:mobileSheet==="layers"?"0 -8px 24px rgba(0,0,0,.4)":"none",borderTopLeftRadius:16,borderTopRightRadius:16}:{width:230,background:t.bg2,borderLeft:"1px solid "+t.border,overflowY:"auto",padding:12,flexShrink:0};
+  const cs=isMobile?(canvasScale||1):1;
+  return(<div style={{flex:1,display:"flex",overflow:"hidden",flexDirection:isMobile?"column":"row",position:"relative"}}>
+    <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"#030306",padding:isMobile?"12px 8px 70px":20,gap:10,overflow:"auto"}}>
+      {historyDepth>0&&(
+        <button onClick={undo} title="Annuler (Ctrl+Z)" style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",color:"rgba(255,255,255,0.65)",padding:"6px 14px",borderRadius:7,fontSize:11,cursor:"pointer",fontFamily:"inherit",letterSpacing:".02em",fontWeight:500}}>↩ Undo ({historyDepth})</button>
+      )}
+      <div style={isMobile?{width:270*cs,height:480*cs,position:"relative",flexShrink:0}:{display:"contents"}}>
+        <div style={isMobile?{position:"absolute",top:0,left:0,width:270,height:480,transform:"scale("+cs+")",transformOrigin:"top left"}:{display:"contents"}}>
+          <div ref={cvRef} className="visium-canvas" onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU} onClick={layerHit} style={{width:270,height:480,position:"relative",overflow:"hidden",borderRadius:16,border:"1px solid "+t.border,background:"#111",cursor:"default",userSelect:"none",flexShrink:0}}>
+            {sorted.map(lay=>(<LayerView key={lay.id} lay={lay} bgUrl={bgUrl} playerUrl={playerUrl} logoUrl={logoUrl} logo2Url={logo2Url} accent={accent} accent2={accent2} isSel={sel===lay.id} onMD={onMD} onResize={onResize}/>))}
+            <Watermark/>
+          </div>
+        </div>
       </div>
-      <div style={{fontSize:11,color:"rgba(255,255,255,.2)"}}>Cliquer · Glisser pour déplacer</div>
+      {!isMobile&&<div style={{fontSize:11,color:"rgba(255,255,255,.2)"}}>Cliquer · Glisser pour déplacer</div>}
     </div>
-    <div style={{width:230,background:t.bg2,borderLeft:"1px solid "+t.border,overflowY:"auto",padding:12,flexShrink:0}}>
-      <div style={{fontSize:10,color:t.text3,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",marginBottom:8}}>Calques</div>
+    {isMobile&&mobileSheet==="layers"&&<div onClick={()=>setMobileSheet&&setMobileSheet(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:150}}/>}
+    <div style={layersPanelStyle}>
+      {isMobile&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingBottom:8,borderBottom:"1px solid "+t.border}}><div style={{fontSize:13,fontWeight:700,color:t.text}}>Calques</div><button onClick={()=>setMobileSheet&&setMobileSheet(null)} style={{background:"none",border:"none",color:t.text3,fontSize:18,cursor:"pointer",padding:4}}>✕</button></div>}
+      <div style={{display:"flex",alignItems:"center",justifyContent:isMobile?"flex-end":"space-between",marginBottom:8}}>
+        {!isMobile&&<div style={{fontSize:10,color:t.text3,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase"}}>Calques</div>}
+        <button onClick={addColorBlock} style={{background:rgba(accent,.15),color:accent,border:"1px solid "+rgba(accent,.35),borderRadius:6,padding:"3px 8px",fontSize:10,fontWeight:600,cursor:"pointer"}}>+ Couleur</button>
+      </div>
       <div style={{marginBottom:12}}>{[...sorted].reverse().map(lay=>(<div key={lay.id} onClick={()=>setSel(lay.id)} style={{display:"flex",alignItems:"center",gap:5,padding:"5px 7px",borderRadius:6,marginBottom:2,background:sel===lay.id?rgba(accent,.14):t.bg3,border:"1px solid "+(sel===lay.id?rgba(accent,.45):t.border),cursor:"pointer"}}><span style={{fontSize:10,color:t.text,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lay.label||lay.type}</span>{!lay.locked&&<><button onClick={e=>{e.stopPropagation();moveZ(lay.id,1);}} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:11,padding:0}}>↑</button><button onClick={e=>{e.stopPropagation();moveZ(lay.id,-1);}} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:11,padding:0}}>↓</button></>}</div>))}</div>
       {selL&&!selL.locked&&(<div>
         <div style={{fontSize:10,color:accent,fontWeight:700,letterSpacing:".1em",marginBottom:10,textTransform:"uppercase"}}>✏️ {selL.label}</div>
@@ -344,10 +488,25 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
         {isText&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Interligne ({selL.lineHeight||1.2})</div><input type="range" min={0.8} max={3} step={0.1} value={selL.lineHeight||1.2} onChange={e=>upd("lineHeight",+e.target.value)} style={{width:"100%"}}/></div>}
         {isText&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Ombre ({selL.textShadow||0}px)</div><input type="range" min={0} max={40} value={selL.textShadow||0} onChange={e=>upd("textShadow",+e.target.value)} style={{width:"100%"}}/></div>}
         {isText&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:8}}><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Fond texte</div><input type="color" value={selL.bgColor||"#000000"} onChange={e=>upd("bgColor",e.target.value)} style={{width:"100%",height:30,borderRadius:6,border:"1px solid "+t.border2,background:t.bg4,cursor:"pointer",padding:2}}/></div><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Opacité fond</div><input type="range" min={0} max={1} step={0.05} value={selL.bgOpacity||0} onChange={e=>upd("bgOpacity",+e.target.value)} style={{width:"100%"}}/></div></div>}
-        {isText&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Texte en arc ({selL.curve||0}°)</div><input type="range" min={-180} max={180} step={5} value={selL.curve||0} onChange={e=>upd("curve",+e.target.value)} style={{width:"100%"}}/>{(selL.curve||0)!==0&&<button onClick={()=>upd("curve",0)} style={{background:"none",border:"none",color:t.accent,cursor:"pointer",fontSize:9,padding:0,textDecoration:"underline"}}>Reset</button>}</div>}
+        {isText&&<div style={{marginBottom:8}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+            <span style={{fontSize:9,color:t.text3}}>Texte en arc</span>
+            <span style={{fontSize:11,color:t.accent,fontWeight:600,fontVariantNumeric:"tabular-nums"}}>{(selL.curve||0)+"°"}</span>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:isMobile?8:5}}>
+            <button onClick={()=>upd("curve",Math.max(-180,(selL.curve||0)-1))} className="viz-touch-btn" style={{background:t.bg4,border:"1px solid "+t.border2,color:t.text2,borderRadius:isMobile?7:5,padding:0,fontSize:isMobile?18:13,cursor:"pointer",fontWeight:700,lineHeight:1,width:isMobile?44:24,height:isMobile?44:undefined,flexShrink:0,fontFamily:"inherit"}}>−</button>
+            <input type="range" min={-180} max={180} step={1} value={selL.curve||0} onChange={e=>upd("curve",+e.target.value)} style={{flex:1,minWidth:0,height:isMobile?28:undefined}}/>
+            <button onClick={()=>upd("curve",Math.min(180,(selL.curve||0)+1))} className="viz-touch-btn" style={{background:t.bg4,border:"1px solid "+t.border2,color:t.text2,borderRadius:isMobile?7:5,padding:0,fontSize:isMobile?18:13,cursor:"pointer",fontWeight:700,lineHeight:1,width:isMobile?44:24,height:isMobile?44:undefined,flexShrink:0,fontFamily:"inherit"}}>+</button>
+          </div>
+          {(selL.curve||0)!==0&&<button onClick={()=>upd("curve",0)} style={{background:"none",border:"none",color:t.accent,cursor:"pointer",fontSize:9,padding:0,textDecoration:"underline",marginTop:3}}>Reset</button>}
+        </div>}
         {selL.type==="watertext"&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Opacité filigrane ({selL.opacity||15}%)</div><input type="range" min={1} max={60} value={selL.opacity||15} onChange={e=>upd("opacity",+e.target.value)} style={{width:"100%"}}/></div>}
         {selL.type==="overlay"&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Intensité ({selL.opacity||60}%)</div><input type="range" min={0} max={100} value={selL.opacity||60} onChange={e=>upd("opacity",+e.target.value)} style={{width:"100%"}}/></div>}
         {selL.type==="stripe"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:8}}><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Couleur 1</div><input type="color" value={selL.color||accent} onChange={e=>upd("color",e.target.value)} style={{width:"100%",height:30,borderRadius:6,border:"1px solid "+t.border2,background:t.bg4,cursor:"pointer",padding:2}}/></div><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Couleur 2</div><input type="color" value={selL.color2||accent2} onChange={e=>upd("color2",e.target.value)} style={{width:"100%",height:30,borderRadius:6,border:"1px solid "+t.border2,background:t.bg4,cursor:"pointer",padding:2}}/></div></div>}
+        {selL.type==="colorblock"&&<>
+          <div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Couleur</div><input type="color" value={selL.color||"#ff5555"} onChange={e=>upd("color",e.target.value)} style={{width:"100%",height:32,borderRadius:6,border:"1px solid "+t.border2,background:t.bg4,cursor:"pointer",padding:2}}/></div>
+          <div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Opacité ({selL.opacity==null?80:selL.opacity}%)</div><input type="range" min={0} max={100} value={selL.opacity==null?80:selL.opacity} onChange={e=>upd("opacity",+e.target.value)} style={{width:"100%"}}/></div>
+        </>}
         {(selL.type==="scoreblock"||selL.type==="scorebig")&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:8}}><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Nous</div><input value={selL.scoreHome||"0"} onChange={e=>upd("scoreHome",e.target.value)} style={inp}/></div><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Eux</div><input value={selL.scoreAway||"0"} onChange={e=>upd("scoreAway",e.target.value)} style={inp}/></div></div>}
         <div style={{background:t.bg3,borderRadius:8,padding:9,marginBottom:8}}><div style={{fontSize:9,color:t.text3,fontWeight:700,marginBottom:6}}>POSITION & TAILLE</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginBottom:4}}><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>X %</div><input type="number" value={Math.round(selL.x||0)} onChange={e=>upd("x",+e.target.value)} style={inp}/></div><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Y %</div><input type="number" value={Math.round(selL.y||0)} onChange={e=>upd("y",+e.target.value)} style={inp}/></div></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Larg %</div><input type="number" value={Math.round(selL.w||20)} onChange={e=>upd("w",+e.target.value)} style={inp}/></div><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Haut %</div><input type="number" value={Math.round(selL.h||10)} onChange={e=>upd("h",+e.target.value)} style={inp}/></div></div></div>
         <div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Nom du calque</div><input value={selL.label||""} onChange={e=>upd("label",e.target.value)} style={inp}/></div>
@@ -512,6 +671,20 @@ export default function App({session}){
   const[limitError,setLimitError]=useState("");
   const[onboardingSkipped,setOnboardingSkipped]=useState(()=>localStorage.getItem("onboarding_skipped")==="1");
   const[slotScale,setSlotScale]=useState(1);
+  const isMobile=useIsMobile();
+  const canvasScale=useCanvasScale();
+  const[mobileSheet,setMobileSheet]=useState(null);
+  useEffect(()=>{
+    if(document.getElementById("viz-mobile-css"))return;
+    const s=document.createElement("style");
+    s.id="viz-mobile-css";
+    s.textContent='@media (max-width: 767px){'
+      +'input:not([type="color"]):not([type="range"]):not([type="file"]):not([type="checkbox"]):not([type="radio"]),'
+      +'select,textarea{min-height:44px;font-size:14px;}'
+      +'.viz-touch-btn{min-height:44px;}'
+      +'}';
+    document.head.appendChild(s);
+  },[]);
   const mRef=useRef();
   const t=useMemo(()=>buildTheme(club?.color1,club?.color2,club?.theme_mode||"dark"),[club]);
   // ── LOAD DATA ───────────────────────────────────────────────
@@ -683,9 +856,12 @@ export default function App({session}){
     const tpls=isL?LINEUP_TPLS:isP?POST_TPLS:GROUP_TPLS;
     const tpl=isL?lineupTpl:isP?postTpl:groupTpl;
     const setTpl=isL?setLineupTpl:isP?setPostTpl:setGroupTpl;
-    return(<div style={{flex:1,display:"flex",overflow:"hidden"}}>
-      <div style={{width:268,background:t.bg2,borderRight:"1px solid "+t.border,overflowY:"auto",padding:14,flexShrink:0}}>
-        <BackBtn/>
+    const panelStyle=isMobile?{position:"fixed",bottom:0,left:0,right:0,maxHeight:"75vh",background:t.bg2,borderTop:"1px solid "+t.border,overflowY:"auto",padding:14,flexShrink:0,zIndex:200,transform:mobileSheet==="options"?"translateY(0)":"translateY(100%)",transition:"transform .25s ease",boxShadow:mobileSheet==="options"?"0 -8px 24px rgba(0,0,0,.4)":"none",borderTopLeftRadius:16,borderTopRightRadius:16}:{width:268,background:t.bg2,borderRight:"1px solid "+t.border,overflowY:"auto",padding:14,flexShrink:0};
+    return(<div style={{flex:1,display:"flex",overflow:"hidden",position:"relative",flexDirection:isMobile?"column":"row"}}>
+      {isMobile&&mobileSheet==="options"&&<div onClick={()=>setMobileSheet(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:150}}/>}
+      <div style={panelStyle}>
+        {isMobile&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingBottom:8,borderBottom:"1px solid "+t.border}}><div style={{fontSize:13,fontWeight:700,color:t.text}}>Options</div><button onClick={()=>setMobileSheet(null)} style={{background:"none",border:"none",color:t.text3,fontSize:18,cursor:"pointer",padding:4}}>✕</button></div>}
+        {!isMobile&&<BackBtn/>}
         <PBox t={t}><SHdr label="Template" t={t}/><TplGrid tpls={tpls} sel={tpl} onSel={setTpl} t={t} maxTemplates={club?.max_templates}/></PBox>
         <PBox t={t}>
           <SHdr label="Image de fond" t={t}/>
@@ -713,20 +889,34 @@ export default function App({session}){
         </PBox>
         <SaveBtn/>
       </div>
-      <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",background:"#030306",flexDirection:"column",gap:14}}>
-        <div className="visium-canvas" style={{display:"inline-block"}}>
-          {isL&&<LineupCanvas ld={lineupData} tpl={lineupTpl} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl} slotScale={slotScale}/>}
-          {isG&&<GroupCanvas gd={groupData} tpl={groupTpl} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl}/>}
-          {isP&&<PostCanvas pd={postData} tpl={postTpl} logoUrl={logoUrl||club?.logo_url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl}/>}
+      <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",background:"#030306",flexDirection:"column",gap:14,padding:isMobile?"12px 8px 70px":0,overflow:"auto"}}>
+        <div style={isMobile?{width:270*canvasScale,height:480*canvasScale,position:"relative",overflow:"visible",flexShrink:0}:{display:"inline-block"}}>
+          <div style={isMobile?{position:"absolute",top:0,left:0,width:270,height:480,transform:"scale("+canvasScale+")",transformOrigin:"top left"}:{display:"contents"}}>
+            <div className="visium-canvas" style={{display:"inline-block"}}>
+              {isL&&<LineupCanvas ld={lineupData} tpl={lineupTpl} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl} slotScale={slotScale}/>}
+              {isG&&<GroupCanvas gd={groupData} tpl={groupTpl} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl}/>}
+              {isP&&<PostCanvas pd={postData} tpl={postTpl} logoUrl={logoUrl||club?.logo_url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl}/>}
+            </div>
+          </div>
         </div>
-        <div style={{fontSize:11,color:"rgba(255,255,255,.18)",letterSpacing:".1em",textTransform:"uppercase"}}>Aperçu en temps réel</div>
+        {!isMobile&&<div style={{fontSize:11,color:"rgba(255,255,255,.18)",letterSpacing:".1em",textTransform:"uppercase"}}>Aperçu en temps réel</div>}
       </div>
+      {isMobile&&(
+        <div style={{position:"fixed",bottom:0,left:0,right:0,height:60,background:t.bg2,borderTop:"1px solid "+t.border,display:"flex",gap:8,alignItems:"center",padding:"0 12px",zIndex:90}}>
+          <button onClick={()=>setSelType(null)} className="viz-touch-btn" style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:8,padding:"10px 14px",color:t.text2,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>↩</button>
+          <button onClick={()=>setMobileSheet("options")} className="viz-touch-btn" style={{flex:1,background:rgba(t.accent,.15),color:t.accent,border:"1px solid "+rgba(t.accent,.3),borderRadius:8,padding:"10px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>⚙ Options</button>
+          <button onClick={save} className="viz-touch-btn" style={{flex:1,background:saveFlash?"#22c55e":t.accent,color:saveFlash?"#fff":contrastText(t.accent),border:"none",borderRadius:8,padding:"10px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{saveFlash?"✓":"💾 Sauver"}</button>
+        </div>
+      )}
     </div>);
   }
   function renderStandard(){
-    return(<div style={{flex:1,display:"flex",overflow:"hidden"}}>
-      <div style={{width:250,background:t.bg2,borderRight:"1px solid "+t.border,overflowY:"auto",padding:14,flexShrink:0}}>
-        <BackBtn/>
+    const stdPanelStyle=isMobile?{position:"fixed",bottom:0,left:0,right:0,maxHeight:"75vh",background:t.bg2,borderTop:"1px solid "+t.border,overflowY:"auto",padding:14,flexShrink:0,zIndex:200,transform:mobileSheet==="options"?"translateY(0)":"translateY(100%)",transition:"transform .25s ease",boxShadow:mobileSheet==="options"?"0 -8px 24px rgba(0,0,0,.4)":"none",borderTopLeftRadius:16,borderTopRightRadius:16}:{width:250,background:t.bg2,borderRight:"1px solid "+t.border,overflowY:"auto",padding:14,flexShrink:0};
+    return(<div style={{flex:1,display:"flex",overflow:"hidden",position:"relative",flexDirection:isMobile?"column":"row"}}>
+      {isMobile&&mobileSheet==="options"&&<div onClick={()=>setMobileSheet(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:150}}/>}
+      <div style={stdPanelStyle}>
+        {isMobile&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingBottom:8,borderBottom:"1px solid "+t.border}}><div style={{fontSize:13,fontWeight:700,color:t.text}}>Options</div><button onClick={()=>setMobileSheet(null)} style={{background:"none",border:"none",color:t.text3,fontSize:18,cursor:"pointer",padding:4}}>✕</button></div>}
+        {!isMobile&&<BackBtn/>}
         <PBox t={t}><SHdr label="Joueur & photo" t={t}/><PhotoPanel players={players} selId={selPid} onSel={selPlayer} selUrl={selPhoto} onSelUrl={setSelPhoto} onAdd={addPhoto} onAddUrl={addPhotoUrl} onFav={toggleFav} t={t}/></PBox>
         <PBox t={t}>
           <SHdr label="Image de fond" t={t}/>
@@ -742,15 +932,23 @@ export default function App({session}){
         </PBox>
         <SaveBtn/>
       </div>
-      <DragCanvas layers={layers} setLayers={setLayers} bgUrl={bgUrl} playerUrl={selPhoto} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={t.accent} accent2={t.accent2} t={t}/>
+      <DragCanvas key={editId||("new_"+selType)} layers={layers} setLayers={setLayers} bgUrl={bgUrl} playerUrl={selPhoto} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={t.accent} accent2={t.accent2} t={t} isMobile={isMobile} mobileSheet={mobileSheet} setMobileSheet={setMobileSheet} canvasScale={canvasScale}/>
+      {isMobile&&(
+        <div style={{position:"fixed",bottom:0,left:0,right:0,height:60,background:t.bg2,borderTop:"1px solid "+t.border,display:"flex",gap:6,alignItems:"center",padding:"0 10px",zIndex:90}}>
+          <button onClick={()=>setSelType(null)} className="viz-touch-btn" style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:8,padding:"10px 12px",color:t.text2,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>↩</button>
+          <button onClick={()=>setMobileSheet("options")} className="viz-touch-btn" style={{flex:1,background:rgba(t.accent,.15),color:t.accent,border:"1px solid "+rgba(t.accent,.3),borderRadius:8,padding:"10px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>⚙ Options</button>
+          <button onClick={()=>setMobileSheet("layers")} className="viz-touch-btn" style={{flex:1,background:rgba(t.accent,.15),color:t.accent,border:"1px solid "+rgba(t.accent,.3),borderRadius:8,padding:"10px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>≡ Calques</button>
+          <button onClick={save} className="viz-touch-btn" style={{flex:1,background:saveFlash?"#22c55e":t.accent,color:saveFlash?"#fff":contrastText(t.accent),border:"none",borderRadius:8,padding:"10px",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{saveFlash?"✓":"💾"}</button>
+        </div>
+      )}
     </div>);
   }
   return(
     <div style={{height:"100vh",display:"flex",background:t.bg,color:t.text,fontFamily:"system-ui,-apple-system,sans-serif",fontSize:13,overflow:"hidden"}}>
-      <div style={{width:192,background:t.bg2,borderRight:"1px solid "+t.border,display:"flex",flexDirection:"column",flexShrink:0}}>
+      {!isMobile&&!(nav==="create"&&selType)&&(<div style={{width:192,background:t.bg2,borderRight:"1px solid "+t.border,display:"flex",flexDirection:"column",flexShrink:0}}>
         <div style={{padding:"15px 14px 13px",borderBottom:"1px solid "+t.border,display:"flex",alignItems:"center",gap:10}}>
           {club?.logo_url?<img src={club.logo_url} style={{width:34,height:34,objectFit:"contain",borderRadius:7}} alt=""/>:<div style={{width:34,height:34,borderRadius:7,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:contrastText(mixC(club?.color1||"#e63329",club?.color2||"#1a1a2e",.5)),flexShrink:0}}>{(club?.name||"E")[0].toUpperCase()}</div>}
-          <div style={{overflow:"hidden",flex:1}}><div style={{fontSize:14,fontWeight:700,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{club?.name||"Visium Sport"}</div><div style={{fontSize:10,color:t.text3,marginTop:1}}>Studio visuel</div></div>
+          <div style={{overflow:"hidden",flex:1}}><div style={{fontSize:14,fontWeight:700,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{club?.name||"Viziona"}</div><div style={{fontSize:10,color:t.text3,marginTop:1}}>Studio visuel</div></div>
         </div>
         <nav style={{padding:"10px 8px",flex:1}}>
           {NAV.map(n=>(<button key={n.id} onClick={()=>{setNav(n.id);if(n.id!=="create")setSelType(null);}} style={{display:"flex",alignItems:"center",gap:10,width:"100%",background:nav===n.id?rgba(t.accent,.15):"transparent",border:"none",borderRadius:9,padding:"9px 11px",color:nav===n.id?t.accent:t.text2,cursor:"pointer",fontSize:13,marginBottom:1,textAlign:"left",fontWeight:nav===n.id?600:400}}><span style={{fontSize:15,lineHeight:1}}>{n.icon}</span><span>{n.label}</span>{n.id==="history"&&history.length>0&&<span style={{marginLeft:"auto",background:rgba(t.accent,.2),color:t.accent,fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{history.length}</span>}</button>))}
@@ -759,8 +957,8 @@ export default function App({session}){
           <button onClick={()=>openCreate("goal")} style={{background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",color:contrastText(mixC(club?.color1||"#e63329",club?.color2||"#1a1a2e",.5)),border:"none",borderRadius:9,padding:10,fontSize:12,fontWeight:700,cursor:"pointer",width:"100%",letterSpacing:".05em",textTransform:"uppercase"}}>✨ Créer un visuel</button>
           <button onClick={signOut} style={{background:"transparent",color:t.text3,border:"1px solid "+t.border,borderRadius:8,padding:"7px",fontSize:11,cursor:"pointer",width:"100%"}}>Déconnexion</button>
         </div>
-      </div>
-      <div style={{flex:1,display:"flex",overflow:"hidden"}}>
+      </div>)}
+      <div style={{flex:1,display:"flex",overflow:"hidden",paddingBottom:isMobile&&!(nav==="create"&&selType)?60:0,boxSizing:"border-box"}}>
         {nav==="home"&&(<div style={{flex:1,overflowY:"auto",background:t.bg}}>
           <div style={{padding:"28px 28px 0"}}><h1 style={{fontSize:24,fontWeight:700,color:t.text,marginBottom:4}}>{"Bonjour"+(club?.name?", "+club.name:"")+" 👋"}</h1><p style={{color:t.text3,marginBottom:24,fontSize:14}}>Que souhaitez-vous créer aujourd'hui ?</p></div>
           {(()=>{
@@ -805,8 +1003,8 @@ export default function App({session}){
               </div>
             );
           })()}
-          <div style={{padding:"0 28px",display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:28}}>{CTYPES.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,padding:"20px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(club?.color1||"#e63329",.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}><div style={{fontSize:26,marginBottom:8}}>{c.icon}</div><div style={{fontWeight:700,color:t.text,fontSize:13,marginBottom:3}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.4}}>{c.desc}</div></div>))}</div>
-          <div style={{padding:"0 28px 28px",display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>{[[history.length,"Visuels"],[players.length,"Joueurs"],[media.length,"Médias"],[LINEUP_TPLS.length+GROUP_TPLS.length+POST_TPLS.length,"Templates"]].map(([v,l])=>(<div key={l} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:22,fontWeight:700,color:t.accent,lineHeight:1}}>{v}</div><div style={{fontSize:11,color:t.text3,marginTop:4}}>{l}</div></div>))}</div>
+          <div style={{padding:"0 28px",display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:12,marginBottom:28}}>{CTYPES.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,padding:"20px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(club?.color1||"#e63329",.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}><div style={{fontSize:26,marginBottom:8}}>{c.icon}</div><div style={{fontWeight:700,color:t.text,fontSize:13,marginBottom:3}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.4}}>{c.desc}</div></div>))}</div>
+          <div style={{padding:"0 28px 28px",display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10}}>{[[history.length,"Visuels"],[players.length,"Joueurs"],[media.length,"Médias"],[LINEUP_TPLS.length+GROUP_TPLS.length+POST_TPLS.length,"Templates"]].map(([v,l])=>(<div key={l} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:22,fontWeight:700,color:t.accent,lineHeight:1}}>{v}</div><div style={{fontSize:11,color:t.text3,marginTop:4}}>{l}</div></div>))}</div>
         </div>)}
         {nav==="club"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontSize:20,fontWeight:700,marginBottom:4,color:t.text}}>Mon Club</h2>
@@ -838,7 +1036,7 @@ export default function App({session}){
             <div>{media.length===0?<div style={Object.assign({},card,{padding:"40px 20px",textAlign:"center",color:t.text3})}><div style={{fontSize:32,marginBottom:10}}>🖼️</div><div>Médiathèque vide</div></div>:(<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>{media.map(m=>(<div key={m.id} style={{borderRadius:11,overflow:"hidden",border:"1px solid "+t.border}}><div style={{aspectRatio:"16/9",overflow:"hidden"}}><img src={m.url} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div><div style={{padding:"6px 10px",fontSize:11,color:t.text2,background:t.bg2,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"80%"}}>{m.name||"Image"}</span><button onClick={()=>deleteMedia(m.id)} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:14}}>✕</button></div></div>))}</div>)}</div>
           </div>
         </div>)}
-        {nav==="create"&&(!selType?(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}><h2 style={{fontSize:20,fontWeight:700,marginBottom:4,color:t.text}}>Choisir un type</h2><p style={{color:t.text3,marginBottom:22,fontSize:13}}>Sélectionnez ce que vous souhaitez créer.</p><div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,maxWidth:680}}>{CTYPES.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:"22px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(t.accent,.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}>  <div style={{fontSize:28,marginBottom:10}}>{c.icon}</div><div style={{fontWeight:700,color:t.text,fontSize:14,marginBottom:4}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.5}}>{c.desc}</div></div>))}</div></div>):(selType==="lineup"||selType==="group"||selType==="post")?renderSpecial():renderStandard())}
+        {nav==="create"&&(!selType?(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}><h2 style={{fontSize:20,fontWeight:700,marginBottom:4,color:t.text}}>Choisir un type</h2><p style={{color:t.text3,marginBottom:22,fontSize:13}}>Sélectionnez ce que vous souhaitez créer.</p><div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:14,maxWidth:680}}>{CTYPES.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:"22px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(t.accent,.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}>  <div style={{fontSize:28,marginBottom:10}}>{c.icon}</div><div style={{fontWeight:700,color:t.text,fontSize:14,marginBottom:4}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.5}}>{c.desc}</div></div>))}</div></div>):(selType==="lineup"||selType==="group"||selType==="post")?renderSpecial():renderStandard())}
         {nav==="history"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontSize:20,fontWeight:700,marginBottom:4,color:t.text}}>Historique</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>{history.length+" visuel"+(history.length!==1?"s":"")+" · Cloud ☁️"}</p>
@@ -848,10 +1046,25 @@ export default function App({session}){
           <h2 style={{fontSize:20,fontWeight:700,marginBottom:4,color:t.text}}>Paramètres</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>Interface et données.</p>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,maxWidth:650}}>
-            <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Thème</div>{[["dark","🌑 Sombre","Interface noire premium"],["club","🎨 Couleurs du club","Adapté à vos couleurs"]].map(([mode,label,desc])=>(<div key={mode} onClick={()=>updateClub({theme_mode:mode})} style={{display:"flex",alignItems:"center",gap:12,padding:"13px 14px",borderRadius:10,border:"2px solid "+((club?.theme_mode||"dark")===mode?t.accent:t.border),background:(club?.theme_mode||"dark")===mode?rgba(t.accent,.12):t.bg3,cursor:"pointer",marginBottom:8}}><div style={{width:20,height:20,borderRadius:"50%",border:"2px solid "+t.accent,background:(club?.theme_mode||"dark")===mode?t.accent:"transparent",flexShrink:0}}/><div><div style={{fontSize:13,fontWeight:600,color:t.text}}>{label}</div><div style={{fontSize:11,color:t.text3,marginTop:2}}>{desc}</div></div></div>))}</div>
+            <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Thème</div>{[["dark","🌑 Sombre","Interface noire premium"],["light","☀️ Clair","Interface blanche minimaliste"],["club","🎨 Couleurs du club","Adapté à vos couleurs"]].map(([mode,label,desc])=>(<div key={mode} onClick={()=>updateClub({theme_mode:mode})} style={{display:"flex",alignItems:"center",gap:12,padding:"13px 14px",borderRadius:10,border:"2px solid "+((club?.theme_mode||"dark")===mode?t.accent:t.border),background:(club?.theme_mode||"dark")===mode?rgba(t.accent,.12):t.bg3,cursor:"pointer",marginBottom:8}}><div style={{width:20,height:20,borderRadius:"50%",border:"2px solid "+t.accent,background:(club?.theme_mode||"dark")===mode?t.accent:"transparent",flexShrink:0}}/><div><div style={{fontSize:13,fontWeight:600,color:t.text}}>{label}</div><div style={{fontSize:11,color:t.text3,marginTop:2}}>{desc}</div></div></div>))}</div>
             <div style={Object.assign({},card,{display:"flex",flexDirection:"column",gap:14})}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase"}}>Votre club</div><div style={{display:"flex",alignItems:"center",gap:12}}>{club?.logo_url?<img src={club.logo_url} style={{width:52,height:52,objectFit:"contain",borderRadius:8}} alt=""/>:<div style={{width:52,height:52,borderRadius:8,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:700,color:contrastText(mixC(club?.color1||"#e63329",club?.color2||"#1a1a2e",.5))}}>{(club?.name||"?")[0].toUpperCase()}</div>}<div><div style={{fontSize:16,fontWeight:700,color:t.text}}>{club?.name||"Club non configuré"}</div><div style={{fontSize:12,color:t.text3,marginTop:3}}>{session.user.email}</div><div style={{fontSize:12,color:t.text3}}>{players.length+" joueurs · "+media.length+" médias · "+history.length+" visuels"}</div></div></div><button onClick={()=>setNav("club")} style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:9,padding:"9px 16px",color:t.text2,cursor:"pointer",fontSize:12,fontWeight:500,textAlign:"left"}}>Modifier les infos du club →</button><button onClick={signOut} style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.2)",borderRadius:9,padding:"9px 16px",color:"#fca5a5",cursor:"pointer",fontSize:12,textAlign:"left"}}>Se déconnecter</button></div>
+          </div>
+          <div style={{marginTop:28,paddingTop:18,borderTop:"1px solid "+t.border,maxWidth:650}}>
+            <a href="/#cgu" target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:t.text3,textDecoration:"underline",letterSpacing:".02em"}}>Conditions générales d'utilisation</a>
           </div>
         </div>)}
       </div>
+      {isMobile&&!(nav==="create"&&selType)&&(
+        <div style={{position:"fixed",bottom:0,left:0,right:0,height:60,background:t.bg2,borderTop:"1px solid "+t.border,display:"flex",justifyContent:"space-around",alignItems:"stretch",zIndex:100,paddingBottom:"env(safe-area-inset-bottom,0)"}}>
+          {NAV.map(n=>(
+            <button key={n.id} onClick={()=>{setNav(n.id);if(n.id!=="create")setSelType(null);}}
+              style={{flex:1,background:"none",border:"none",padding:"6px 2px",color:nav===n.id?t.accent:t.text2,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,fontWeight:nav===n.id?600:400,position:"relative"}}>
+              <span style={{fontSize:18,lineHeight:1}}>{n.icon}</span>
+              <span style={{fontSize:9}}>{n.label}</span>
+              {n.id==="history"&&history.length>0&&<span style={{position:"absolute",top:4,right:"22%",background:t.accent,color:contrastText(t.accent),fontSize:8,fontWeight:700,padding:"1px 4px",borderRadius:8,minWidth:14,textAlign:"center"}}>{history.length}</span>}
+            </button>
+          ))}
+        </div>
+      )}
     </div>);
 }

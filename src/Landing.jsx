@@ -20,17 +20,17 @@ export default function Landing({ onEnter }) {
         boxSizing: "border-box",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <img src="/team/logo.jpg" alt="Visium Sport" style={{ width: 28, height: 28, display: "block" }} />
-          <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: "0.08em" }}>Visium Sport</span>
+          <img src="/team/logo.jpg" alt="Viziona" style={{ width: 28, height: 28, display: "block" }} />
+          <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: "0.08em" }}>Viziona</span>
         </div>
-        <a href="mailto:info@visium-sport.ch" style={{
+        <a href="mailto:info@viziona.ch" style={{
           fontSize: 13,
           color: "#0a0a0a",
           textDecoration: "none",
           letterSpacing: "0.04em",
           opacity: 0.5,
         }}>
-          info@visium-sport.ch
+          info@viziona.ch
         </a>
       </nav>
       {/* HERO */}
@@ -77,7 +77,7 @@ export default function Landing({ onEnter }) {
           margin: "0 0 52px",
           fontWeight: 400,
         }}>
-          Visium Sport permet aux clubs de football de créer des visuels professionnels en quelques secondes — aux couleurs de leur équipe, depuis leur téléphone.
+          Viziona permet aux clubs de football de créer des visuels professionnels en quelques secondes — aux couleurs de leur équipe, depuis leur téléphone.
         </p>
         {/* CTAs */}
         <div style={{
@@ -101,10 +101,10 @@ export default function Landing({ onEnter }) {
               textTransform: "uppercase",
             }}
           >
-            Accéder à Visium Sport
+            Accéder à Viziona
           </button>
           <a
-            href="mailto:info@visium-sport.ch"
+            href="mailto:info@viziona.ch"
             style={{
               background: "transparent",
               color: "#0a0a0a",
@@ -226,6 +226,81 @@ export default function Landing({ onEnter }) {
           ))}
         </div>
       </section>
+      {/* CGU */}
+      <section id="cgu" style={{
+        width: "100%",
+        background: "#fafafa",
+        borderTop: "1px solid rgba(0,0,0,0.06)",
+        borderBottom: "1px solid rgba(0,0,0,0.06)",
+        padding: "48px 0",
+        display: "flex",
+        justifyContent: "center",
+      }}>
+        <div style={{
+          width: "100%",
+          maxWidth: 900,
+          padding: "0 40px",
+          boxSizing: "border-box",
+        }}>
+          <p style={{
+            fontSize: 11,
+            letterSpacing: "0.18em",
+            textTransform: "uppercase",
+            color: "#888",
+            marginBottom: 8,
+            fontWeight: 600,
+          }}>
+            Conditions générales d'utilisation
+          </p>
+          <p style={{ fontSize: 11, color: "#aaa", marginBottom: 28, letterSpacing: "0.02em" }}>
+            En vigueur au 7 mai 2026
+          </p>
+
+          <div style={{ fontSize: 12, color: "#555", lineHeight: 1.7, display: "grid", gap: 18 }}>
+            <div>
+              <div style={{ fontWeight: 600, color: "#0a0a0a", marginBottom: 4 }}>1. Nature du service</div>
+              <p style={{ margin: 0 }}>
+                Viziona est un outil SaaS permettant aux clubs sportifs de créer des visuels (compositions, scores, annonces, recrues) à partir de leurs propres données. L'accès est délivré sur demande après validation manuelle. Viziona se réserve le droit de refuser, suspendre ou révoquer un accès à tout moment, sans justification.
+              </p>
+            </div>
+
+            <div>
+              <div style={{ fontWeight: 600, color: "#0a0a0a", marginBottom: 4 }}>2. Données personnelles</div>
+              <p style={{ margin: 0 }}>
+                Les données saisies par l'utilisateur (nom du club, joueurs, photos, médias) sont stockées de manière sécurisée chez nos prestataires d'hébergement. Elles ne sont jamais transmises à des tiers à des fins commerciales. Le traitement est conforme au Règlement Général sur la Protection des Données (RGPD) et à la Loi fédérale suisse sur la protection des données (nLPD). L'utilisateur peut demander à tout moment la suppression de ses données en écrivant à <a href="mailto:info@viziona.ch" style={{ color: "#0a0a0a" }}>info@viziona.ch</a>.
+              </p>
+            </div>
+
+            <div>
+              <div style={{ fontWeight: 600, color: "#0a0a0a", marginBottom: 4 }}>3. Propriété intellectuelle</div>
+              <p style={{ margin: 0 }}>
+                Les visuels créés via Viziona appartiennent intégralement au club utilisateur, qui en conserve l'usage exclusif. Viziona se réserve néanmoins le droit d'utiliser des captures anonymisées (sans nom de club identifiable) à des fins de démonstration commerciale, marketing ou de présentation du produit.
+              </p>
+            </div>
+
+            <div>
+              <div style={{ fontWeight: 600, color: "#0a0a0a", marginBottom: 4 }}>4. Limitation de responsabilité</div>
+              <p style={{ margin: 0 }}>
+                Le service est fourni en l'état, sans garantie de disponibilité continue. Viziona ne saurait être tenu responsable d'une interruption de service, d'une perte de données, d'une indisponibilité temporaire, ni d'un usage inapproprié des visuels créés par l'utilisateur (notamment publication à caractère diffamatoire, contrefaisant ou violant les droits de tiers).
+              </p>
+            </div>
+
+            <div>
+              <div style={{ fontWeight: 600, color: "#0a0a0a", marginBottom: 4 }}>5. Droit applicable et juridiction</div>
+              <p style={{ margin: 0 }}>
+                Les présentes conditions sont soumises au droit suisse. Tout litige relatif à leur interprétation ou à leur exécution relève de la compétence exclusive des tribunaux de Genève, sous réserve des voies de recours auprès du Tribunal fédéral.
+              </p>
+            </div>
+
+            <div>
+              <div style={{ fontWeight: 600, color: "#0a0a0a", marginBottom: 4 }}>6. Contact</div>
+              <p style={{ margin: 0 }}>
+                Pour toute question relative aux présentes conditions ou au service : <a href="mailto:info@viziona.ch" style={{ color: "#0a0a0a" }}>info@viziona.ch</a>.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
       {/* FOOTER */}
       <footer style={{
         width: "100%",
@@ -240,16 +315,34 @@ export default function Landing({ onEnter }) {
         gap: 10,
       }}>
         <span style={{ fontSize: 12, color: "#ccc", letterSpacing: "0.04em" }}>
-          © 2025 Visium Sport · Suisse
+          © 2025 Viziona · Suisse
         </span>
-        <a href="mailto:info@visium-sport.ch" style={{
-          fontSize: 12,
-          color: "#aaa",
-          textDecoration: "none",
-          letterSpacing: "0.04em",
-        }}>
-          info@visium-sport.ch
-        </a>
+        <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+          <a href="mailto:info@viziona.ch" style={{
+            fontSize: 12,
+            color: "#aaa",
+            textDecoration: "none",
+            letterSpacing: "0.04em",
+          }}>
+            info@viziona.ch
+          </a>
+          <a href="mailto:hugo@viziona.ch" style={{
+            fontSize: 12,
+            color: "#aaa",
+            textDecoration: "none",
+            letterSpacing: "0.04em",
+          }}>
+            hugo@viziona.ch
+          </a>
+          <a href="mailto:lucas@viziona.ch" style={{
+            fontSize: 12,
+            color: "#aaa",
+            textDecoration: "none",
+            letterSpacing: "0.04em",
+          }}>
+            lucas@viziona.ch
+          </a>
+        </div>
       </footer>
     </div>
   );

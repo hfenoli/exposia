@@ -51,6 +51,7 @@ export default function Auth({ onBack }) {
       if (data.user) {
         await supabase.from("clubs").insert({
           user_id: data.user.id,
+          email: email,
           name: clubName || "Mon Club",
           approved: false
         });
@@ -119,8 +120,8 @@ export default function Auth({ onBack }) {
           </button>
         ) : <span />}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <img src="/team/logo.jpg" alt="Visium Sport" style={{ width: 28, height: 28, display: "block" }} />
-          <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: "0.08em" }}>Visium Sport</span>
+          <img src="/team/logo.jpg" alt="Viziona" style={{ width: 28, height: 28, display: "block" }} />
+          <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: "0.08em" }}>Viziona</span>
         </div>
       </nav>
 
@@ -321,7 +322,7 @@ export default function Auth({ onBack }) {
         textAlign: "center",
       }}>
         <span style={{ fontSize: 12, color: "#ccc", letterSpacing: "0.04em" }}>
-          © 2025 Visium Sport · Suisse
+          © 2025 Viziona · Suisse
         </span>
       </footer>
     </div>
