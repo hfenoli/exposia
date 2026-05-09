@@ -237,6 +237,7 @@ function renderLayerContent(lay, bgUrl, playerUrl, logoUrl, logo2Url, accent, ac
   if(lay.type==="photo") return(<div style={{width:"100%",height:"100%",overflow:"hidden"}}>{playerUrl?<img src={playerUrl} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:36}}>👤</div>}</div>);
   if(lay.type==="logo") return(<div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center"}}>{logoUrl?<img src={logoUrl} style={{width:"100%",height:"100%",objectFit:"contain"}} alt=""/>:<div style={{width:"100%",height:"100%",background:rgba(accent,.2),borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:accent}}>LOGO</div>}</div>);
   if(lay.type==="logo2") return(<div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center"}}>{logo2Url?<img src={logo2Url} style={{width:"100%",height:"100%",objectFit:"contain"}} alt=""/>:<div style={{width:"100%",height:"100%",background:"rgba(255,255,255,.07)",borderRadius:4,border:"1px solid rgba(255,255,255,.14)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"rgba(255,255,255,.3)"}}>ADV</div>}</div>);
+  if(lay.type==="sponsor") return(<div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center"}}>{lay.url?<img src={lay.url} style={{width:"100%",height:"100%",objectFit:"contain"}} alt=""/>:<div style={{width:"100%",height:"100%",background:"rgba(255,255,255,.05)",border:"1px dashed rgba(255,255,255,.22)",borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"rgba(255,255,255,.4)",letterSpacing:".12em"}}>SPONSOR</div>}</div>);
   if(isTextType){
     const txt = lay.upper?(lay.text||"").toUpperCase():(lay.text||"");
     const hasBg = (lay.bgOpacity||0)>0;
@@ -257,9 +258,9 @@ function renderLayerContent(lay, bgUrl, playerUrl, logoUrl, logo2Url, accent, ac
   }
   return null;
 }
-function LayerView({lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,isSel,onMD,onResize}){
+function LayerView({lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,isSel,onMD,onResize,hideHandles}){
   const s={position:"absolute",left:lay.x+"%",top:lay.y+"%",width:lay.w+"%",height:lay.h+"%",cursor:lay.locked?"default":"grab",boxSizing:"border-box",outline:isSel&&!lay.locked?"2px solid "+accent:"none",outlineOffset:1,zIndex:lay.z};
-  const showHandles=isSel&&!lay.locked&&(lay.type==="photo"||lay.type==="colorblock");
+  const showHandles=!hideHandles&&isSel&&!lay.locked&&(lay.type==="photo"||lay.type==="colorblock"||lay.type==="sponsor");
   return(<div style={s} onMouseDown={lay.locked?undefined:e=>onMD(e,lay.id)}>
     {renderLayerContent(lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2)}
     {showHandles&&["tl","tr","bl","br"].map(c=>(
@@ -282,7 +283,7 @@ function LayerView({lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,isSel,on
 // ─── LINEUP CANVAS ────────────────────────────────────────────
 function Watermark(){
   // Filigrane non-amovible : pas un calque, pointerEvents:none, hardcodé dans chaque canvas
-  return <div aria-hidden="true" style={{position:"absolute",bottom:5,right:6,fontSize:9,color:"rgba(255,255,255,0.92)",background:"rgba(0,0,0,0.42)",padding:"2px 7px",borderRadius:3,fontFamily:"system-ui,-apple-system,sans-serif",letterSpacing:"0.02em",fontWeight:500,whiteSpace:"nowrap",pointerEvents:"none",userSelect:"none",zIndex:999}}>Powered by Viziona</div>;
+  return <div aria-hidden="true" style={{position:"absolute",bottom:5,right:6,fontSize:9,color:"rgba(255,255,255,0.92)",background:"rgba(0,0,0,0.42)",padding:"2px 7px",borderRadius:3,fontFamily:"system-ui,-apple-system,sans-serif",letterSpacing:"0.02em",fontWeight:500,whiteSpace:"nowrap",pointerEvents:"none",userSelect:"none",zIndex:999}}>Powered by Viziona Sport</div>;
 }
 function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScale}){
   W=W||270; H=H||480; slotScale=slotScale||1;
@@ -310,11 +311,11 @@ function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScal
     {dark&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,transparent,"+accent+","+accent2+","+accent+",transparent)",zIndex:4}}/>}
     <div style={{position:"relative",zIndex:3,padding:(W*.03)+"px "+(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
       <Logo url={logoUrl} sz={W*.09}/>
-      <div style={{textAlign:"center",overflow:"hidden",maxWidth:W*.6}}>{competition&&<div style={{fontSize:W*.022,color:dark?rgba(accent,.7):"#666",letterSpacing:".13em",textTransform:"uppercase",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{competition}</div>}<div style={{fontSize:W*.03,fontWeight:700,color:dark?"#fff":"#111",fontFamily:"Impact,sans-serif",letterSpacing:".05em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>XI · {fm}{ld&&ld.opponent?" · vs "+ld.opponent:""}</div></div>
+      <div style={{textAlign:"center",overflow:"hidden",maxWidth:W*.6}}>{competition&&<div style={{fontSize:W*.022,color:dark?rgba(accent,.7):"#666",letterSpacing:".13em",textTransform:"uppercase",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{competition}</div>}<div style={{fontSize:W*.03,fontWeight:700,color:dark?"#fff":"#111",fontFamily:"Impact,sans-serif",letterSpacing:".05em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>XI · {fm}</div>{ld&&ld.opponent&&<div style={{fontSize:W*.024,color:dark?"rgba(255,255,255,.6)":"#555",fontFamily:"Impact,sans-serif",fontStyle:"italic",letterSpacing:".04em",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>vs {ld.opponent}</div>}</div>
       <Logo url={logo2Url} sz={W*.08}/>
     </div>
     <div style={{position:"relative",zIndex:3,flex:1,display:"flex",flexDirection:"column",justifyContent:"space-around",padding:"0 "+(W*.018)+"px"}}>
-      {[].concat(rows).reverse().map(function(row,ri){return(<div key={ri} style={{display:"flex",justifyContent:"space-around",alignItems:"center"}}>{Array.from({length:row.n}).map(function(_,pi){return<Slot key={pi} p={row.players[pi]} sz={W*.088*slotScale} square={tpl==="ln4"}/>})}</div>);})}
+      {[].concat(rows).reverse().map(function(row,ri){const rowSz=Math.min(W*0.088,W*0.75/row.n)*slotScale;const denseRow=row.n>=5;return(<div key={ri} style={{display:"flex",justifyContent:denseRow?"space-evenly":"space-around",alignItems:"center",overflow:"hidden",gap:W*(row.n>4?0.005:0.01)}}>{Array.from({length:row.n}).map(function(_,pi){return<Slot key={pi} p={row.players[pi]} sz={rowSz} square={tpl==="ln4"}/>})}</div>);})}
     </div>
     {subs.length>0&&<div style={{position:"relative",zIndex:3,borderTop:"1px solid "+rgba(accent,.3),background:rgba(dark?"#000":"#f0f0f0",.55),padding:(W*.012)+"px "+(W*.035)+"px"}}><div style={{fontSize:W*.02,color:rgba(dark?"#fff":"#000",.38),letterSpacing:".1em",marginBottom:2}}>REMPLAÇANTS</div><div style={{display:"flex",gap:W*.016,flexWrap:"wrap",alignItems:"center"}}>{subs.map(function(s,i){const ph=getPhoto(s);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.009}}>{ph?<img src={ph} style={{width:W*.046,height:W*.046,borderRadius:"50%",objectFit:"cover",objectPosition:"top",border:"1px solid "+rgba(accent,.4)}} alt=""/>:<div style={{width:W*.046,height:W*.046,borderRadius:"50%",background:rgba(accent,.2),display:"flex",alignItems:"center",justifyContent:"center",fontSize:W*.018,color:accent}}>{s.number||"?"}</div>}<span style={{fontSize:W*.023,color:rgba(dark?"#fff":"#000",.5)}}>{s.name?s.name.split(" ").pop():""}</span></div>);})}</div></div>}
     <Watermark/>
@@ -445,6 +446,44 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
     setLayers(prev=>[...prev,newLayer]);
     setSel(newId);
   }
+  function addSponsor(){
+    pushHist();
+    const newId="sp_"+Date.now();
+    const maxZ=layers.reduce((m,l)=>Math.max(m,l.z),0);
+    const newLayer={id:newId,z:maxZ+1,type:"sponsor",x:70,y:84,w:25,h:10,locked:false,label:"Sponsor",url:null};
+    setLayers(prev=>[...prev,newLayer]);
+    setSel(newId);
+  }
+  const[removingBg,setRemovingBg]=useState(false);
+  function removeBgOnSelected(){
+    if(!selL||!selL.url)return;
+    setRemovingBg(true);
+    const img=new Image();
+    img.crossOrigin="anonymous";
+    img.onload=()=>{
+      try{
+        const c=document.createElement("canvas");
+        c.width=img.naturalWidth||img.width;c.height=img.naturalHeight||img.height;
+        const ctx=c.getContext("2d");
+        ctx.drawImage(img,0,0);
+        const d=ctx.getImageData(0,0,c.width,c.height);
+        const data=d.data;
+        for(let i=0;i<data.length;i+=4){
+          const r=data[i],g=data[i+1],b=data[i+2];
+          const avg=(r+g+b)/3;
+          const variance=Math.max(r,g,b)-Math.min(r,g,b);
+          if(avg>220&&variance<30) data[i+3]=0;
+        }
+        ctx.putImageData(d,0,0);
+        const newUrl=c.toDataURL("image/png");
+        pushHist();
+        setLayers(p=>p.map(l=>l.id===sel?{...l,url:newUrl}:l));
+      }catch(e){console.error("removeBg sponsor failed:",e);}
+      setRemovingBg(false);
+    };
+    img.onerror=()=>setRemovingBg(false);
+    img.src=selL.url;
+  }
   function upd(f,v){pushHist();setLayers(p=>p.map(l=>l.id===sel?Object.assign({},l,{[f]:v}):l));}
   function moveZ(id,d){pushHist();setLayers(prev=>{const s=[...prev].sort((a,b)=>a.z-b.z);const i=s.findIndex(l=>l.id===id),j=i+d;if(j<0||j>=s.length)return prev;const za=s[i].z,zb=s[j].z;return prev.map(l=>l.id===s[i].id?{...l,z:zb}:l.id===s[j].id?{...l,z:za}:l);});}
   function delSel(){if(!selL||selL.locked)return;pushHist();setLayers(p=>p.filter(l=>l.id!==sel));setSel(null);}
@@ -462,19 +501,29 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
       <div style={isMobile?{width:270*cs,height:480*cs,position:"relative",flexShrink:0}:{display:"contents"}}>
         <div style={isMobile?{position:"absolute",top:0,left:0,width:270,height:480,transform:"scale("+cs+")",transformOrigin:"top left"}:{display:"contents"}}>
           <div ref={cvRef} className="visium-canvas" onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU} onClick={layerHit} style={{width:270,height:480,position:"relative",overflow:"hidden",borderRadius:16,border:"1px solid "+t.border,background:"#111",cursor:"default",userSelect:"none",flexShrink:0}}>
-            {sorted.map(lay=>(<LayerView key={lay.id} lay={lay} bgUrl={bgUrl} playerUrl={playerUrl} logoUrl={logoUrl} logo2Url={logo2Url} accent={accent} accent2={accent2} isSel={sel===lay.id} onMD={onMD} onResize={onResize}/>))}
+            {sorted.map(lay=>(<LayerView key={lay.id} lay={lay} bgUrl={bgUrl} playerUrl={playerUrl} logoUrl={logoUrl} logo2Url={logo2Url} accent={accent} accent2={accent2} isSel={sel===lay.id} onMD={onMD} onResize={onResize} hideHandles={isMobile}/>))}
             <Watermark/>
           </div>
         </div>
       </div>
       {!isMobile&&<div style={{fontSize:11,color:"rgba(255,255,255,.2)"}}>Cliquer · Glisser pour déplacer</div>}
+      {isMobile&&selL&&!selL.locked&&(selL.type==="photo"||selL.type==="colorblock"||selL.type==="sponsor")&&(
+        <div style={{display:"flex",alignItems:"center",gap:8,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,padding:"6px 10px"}}>
+          <span style={{fontSize:10,color:"rgba(255,255,255,.6)",letterSpacing:".06em",textTransform:"uppercase"}}>{selL.label||"Calque"}</span>
+          <button onClick={()=>{pushHist();setLayers(p=>p.map(l=>l.id===sel?{...l,w:Math.max(5,l.w*0.95),h:Math.max(5,l.h*0.95)}:l));}} className="viz-touch-btn" style={{background:t.bg4,border:"1px solid "+t.border2,color:t.text,borderRadius:8,padding:0,fontSize:18,cursor:"pointer",fontWeight:700,lineHeight:1,width:44,height:44,fontFamily:"inherit"}}>−</button>
+          <button onClick={()=>{pushHist();setLayers(p=>p.map(l=>l.id===sel?{...l,w:Math.min(120,l.w*1.05),h:Math.min(120,l.h*1.05)}:l));}} className="viz-touch-btn" style={{background:t.bg4,border:"1px solid "+t.border2,color:t.text,borderRadius:8,padding:0,fontSize:18,cursor:"pointer",fontWeight:700,lineHeight:1,width:44,height:44,fontFamily:"inherit"}}>+</button>
+        </div>
+      )}
     </div>
     {isMobile&&mobileSheet==="layers"&&<div onClick={()=>setMobileSheet&&setMobileSheet(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:150}}/>}
     <div style={layersPanelStyle}>
       {isMobile&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingBottom:8,borderBottom:"1px solid "+t.border}}><div style={{fontSize:13,fontWeight:700,color:t.text}}>Calques</div><button onClick={()=>setMobileSheet&&setMobileSheet(null)} style={{background:"none",border:"none",color:t.text3,fontSize:18,cursor:"pointer",padding:4}}>✕</button></div>}
       <div style={{display:"flex",alignItems:"center",justifyContent:isMobile?"flex-end":"space-between",marginBottom:8}}>
         {!isMobile&&<div style={{fontSize:10,color:t.text3,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase"}}>Calques</div>}
-        <button onClick={addColorBlock} style={{background:rgba(accent,.15),color:accent,border:"1px solid "+rgba(accent,.35),borderRadius:6,padding:"3px 8px",fontSize:10,fontWeight:600,cursor:"pointer"}}>+ Couleur</button>
+        <div style={{display:"flex",gap:5}}>
+          <button onClick={addColorBlock} style={{background:rgba(accent,.15),color:accent,border:"1px solid "+rgba(accent,.35),borderRadius:6,padding:"3px 8px",fontSize:10,fontWeight:600,cursor:"pointer"}}>+ Couleur</button>
+          <button onClick={addSponsor} style={{background:rgba(accent,.15),color:accent,border:"1px solid "+rgba(accent,.35),borderRadius:6,padding:"3px 8px",fontSize:10,fontWeight:600,cursor:"pointer"}}>+ Sponsor</button>
+        </div>
       </div>
       <div style={{marginBottom:12}}>{[...sorted].reverse().map(lay=>(<div key={lay.id} onClick={()=>setSel(lay.id)} style={{display:"flex",alignItems:"center",gap:5,padding:"5px 7px",borderRadius:6,marginBottom:2,background:sel===lay.id?rgba(accent,.14):t.bg3,border:"1px solid "+(sel===lay.id?rgba(accent,.45):t.border),cursor:"pointer"}}><span style={{fontSize:10,color:t.text,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lay.label||lay.type}</span>{!lay.locked&&<><button onClick={e=>{e.stopPropagation();moveZ(lay.id,1);}} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:11,padding:0}}>↑</button><button onClick={e=>{e.stopPropagation();moveZ(lay.id,-1);}} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:11,padding:0}}>↓</button></>}</div>))}</div>
       {selL&&!selL.locked&&(<div>
@@ -506,6 +555,20 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
         {selL.type==="colorblock"&&<>
           <div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Couleur</div><input type="color" value={selL.color||"#ff5555"} onChange={e=>upd("color",e.target.value)} style={{width:"100%",height:32,borderRadius:6,border:"1px solid "+t.border2,background:t.bg4,cursor:"pointer",padding:2}}/></div>
           <div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Opacité ({selL.opacity==null?80:selL.opacity}%)</div><input type="range" min={0} max={100} value={selL.opacity==null?80:selL.opacity} onChange={e=>upd("opacity",+e.target.value)} style={{width:"100%"}}/></div>
+        </>}
+        {selL.type==="sponsor"&&<>
+          <div style={{marginBottom:8}}>
+            <div style={{fontSize:9,color:t.text3,marginBottom:4}}>Logo sponsor</div>
+            <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
+              <UpBtn val={selL.url} on={url=>{pushHist();upd("url",url);}} w={64} h={48} r={6} label="Upload" t={t}/>
+              {selL.url&&<button onClick={()=>{pushHist();upd("url",null);}} style={{fontSize:10,color:t.text3,background:"none",border:"none",cursor:"pointer",padding:"4px 0",alignSelf:"center"}}>✕ Retirer</button>}
+            </div>
+          </div>
+          {selL.url&&(
+            <button onClick={removeBgOnSelected} disabled={removingBg} style={{width:"100%",background:rgba(accent,.12),color:accent,border:"1px solid "+rgba(accent,.3),borderRadius:7,padding:"7px",fontSize:11,fontWeight:600,cursor:removingBg?"wait":"pointer",marginBottom:8}}>
+              {removingBg?"Traitement…":"✂ Supprimer le fond blanc"}
+            </button>
+          )}
         </>}
         {(selL.type==="scoreblock"||selL.type==="scorebig")&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:8}}><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Nous</div><input value={selL.scoreHome||"0"} onChange={e=>upd("scoreHome",e.target.value)} style={inp}/></div><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Eux</div><input value={selL.scoreAway||"0"} onChange={e=>upd("scoreAway",e.target.value)} style={inp}/></div></div>}
         <div style={{background:t.bg3,borderRadius:8,padding:9,marginBottom:8}}><div style={{fontSize:9,color:t.text3,fontWeight:700,marginBottom:6}}>POSITION & TAILLE</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginBottom:4}}><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>X %</div><input type="number" value={Math.round(selL.x||0)} onChange={e=>upd("x",+e.target.value)} style={inp}/></div><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Y %</div><input type="number" value={Math.round(selL.y||0)} onChange={e=>upd("y",+e.target.value)} style={inp}/></div></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Larg %</div><input type="number" value={Math.round(selL.w||20)} onChange={e=>upd("w",+e.target.value)} style={inp}/></div><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Haut %</div><input type="number" value={Math.round(selL.h||10)} onChange={e=>upd("h",+e.target.value)} style={inp}/></div></div></div>
@@ -686,7 +749,7 @@ export default function App({session}){
     document.head.appendChild(s);
   },[]);
   const mRef=useRef();
-  const t=useMemo(()=>buildTheme(club?.color1,club?.color2,club?.theme_mode||"dark"),[club]);
+  const t=useMemo(()=>buildTheme(club?.color1,club?.color2,club?.theme_mode||"light"),[club]);
   // ── LOAD DATA ───────────────────────────────────────────────
   useEffect(()=>{
     if(!session)return;
@@ -695,8 +758,21 @@ export default function App({session}){
       const uid=session.user.id;
       let{data:clubData}=await supabase.from("clubs").select("*").eq("user_id",uid).single();
       if(!clubData){
-        const{data:newClub}=await supabase.from("clubs").insert({user_id:uid,name:"Mon Club",approved:false}).select().single();
+        // Première connexion via magic link : créer la ligne clubs avec le nom de club passé en user_metadata au signup.
+        const meta=session.user.user_metadata||{};
+        const newName=meta.club_name||"Mon Club";
+        const newEmail=session.user.email||null;
+        const{data:newClub,error:cErr}=await supabase.from("clubs").insert({user_id:uid,email:newEmail,name:newName,approved:false}).select().single();
+        if(cErr)console.error("[load] insert clubs failed:",cErr);
         clubData=newClub;
+        // Notifier l'admin uniquement à la création initiale (pas à chaque login).
+        if(newClub){
+          fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/notify-signup`,{
+            method:"POST",
+            headers:{"Content-Type":"application/json","Authorization":`Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`},
+            body:JSON.stringify({club_name:newName,email:newEmail}),
+          }).catch(e=>console.warn("[load] notify-signup failed:",e));
+        }
       }
       if(!clubData?.approved){await supabase.auth.signOut();return;}
       setClub(clubData);
@@ -795,11 +871,13 @@ export default function App({session}){
     const payload={club_id:club.id,type:selType,label:ct?.label||"",icon:ct?.icon||"",layers,lineup_data:lineupData,group_data:groupData,post_data:postData,lineup_tpl:lineupTpl,group_tpl:groupTpl,post_tpl:postTpl,bg_url:bgUrl,logo_url:logoUrl,logo2_url:logo2Url,player_url:selPhoto,updated_at:new Date().toISOString()};
     let saved;
     if(editId){
-      const{data}=await supabase.from("visuals").update(payload).eq("id",editId).select().single();
+      const{data,error}=await supabase.from("visuals").update(payload).eq("id",editId).select().single();
+      if(error){console.error("[save] update visuals failed:",error,"payload:",payload);setLimitError("Erreur lors de la sauvegarde : "+error.message);setTimeout(()=>setLimitError(""),4000);return;}
       saved=data;
       if(saved)setHistory(h=>h.map(x=>x.id===editId?{...saved,layers:saved.layers||[],lineupData:saved.lineup_data||{},groupData:saved.group_data||{},postData:saved.post_data||{},lineupTpl:saved.lineup_tpl,groupTpl:saved.group_tpl,postTpl:saved.post_tpl,bgUrl:saved.bg_url,logoUrl:saved.logo_url,logo2Url:saved.logo2_url,playerUrl:saved.player_url,ct}:x));
     } else {
-      const{data}=await supabase.from("visuals").insert(payload).select().single();
+      const{data,error}=await supabase.from("visuals").insert(payload).select().single();
+      if(error){console.error("[save] insert visuals failed:",error,"payload:",payload);setLimitError("Erreur lors de la sauvegarde : "+error.message);setTimeout(()=>setLimitError(""),4000);return;}
       saved=data;
       if(saved)setHistory(h=>[{...saved,layers:saved.layers||[],lineupData:saved.lineup_data||{},groupData:saved.group_data||{},postData:saved.post_data||{},lineupTpl:saved.lineup_tpl,groupTpl:saved.group_tpl,postTpl:saved.post_tpl,bgUrl:saved.bg_url,logoUrl:saved.logo_url,logo2Url:saved.logo2_url,playerUrl:saved.player_url,ct},...h]);
     }
@@ -814,31 +892,44 @@ export default function App({session}){
     if(!el){setLimitError("Aperçu introuvable.");setTimeout(()=>setLimitError(""),2000);return;}
     try{
       const canvas=await html2canvas(el,{backgroundColor:null,scale:4,useCORS:true,allowTaint:true,logging:false});
-      const filename="visium-"+(selType||"visuel")+"-"+Date.now()+".png";
+      const filename="viziona-"+(selType||"visuel")+"-"+Date.now()+".png";
       const ua=navigator.userAgent;
-      const isIOS=/iPad|iPhone|iPod/.test(ua);
-      const isSafari=/Safari/.test(ua)&&!/CriOS|FxiOS|Chrome/.test(ua);
+      const isIOS=/iPad|iPhone|iPod/.test(ua)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+      const isSafari=/Safari/.test(ua)&&!/CriOS|FxiOS|Chrome|Edg/.test(ua);
+      // Convertit canvas → blob de manière promisifiée
+      const blob=await new Promise(res=>canvas.toBlob(res,"image/png"));
+      if(!blob){console.error("[downloadPng] toBlob a renvoyé null");setLimitError("Erreur génération du PNG.");setTimeout(()=>setLimitError(""),3000);return;}
+      // Sur iOS Safari : tenter d'abord navigator.share (l'utilisateur peut alors enregistrer dans Photos)
       if(isIOS&&isSafari){
+        const file=new File([blob],filename,{type:"image/png"});
+        if(navigator.canShare&&navigator.canShare({files:[file]})){
+          try{await navigator.share({files:[file],title:"Visuel Viziona Sport"});return;}
+          catch(shareErr){if(shareErr&&shareErr.name==="AbortError")return;console.warn("[downloadPng] navigator.share a échoué, fallback:",shareErr);}
+        }
+        // Fallback : ouvrir l'image dans un nouvel onglet (long-press → Ajouter aux Photos)
         const dataUrl=canvas.toDataURL("image/png");
         const w=window.open();
         if(w&&w.document){
           w.document.write('<html><head><title>'+filename+'</title><meta name="viewport" content="width=device-width, initial-scale=1"/></head><body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;font-family:system-ui;"><img src="'+dataUrl+'" style="max-width:100%;height:auto;display:block"/><p style="color:#fff;text-align:center;font-size:14px;padding:16px;">Appuyez longuement sur l\'image puis « Ajouter aux Photos ».</p></body></html>');
           w.document.close();
-        }else{
-          window.location.href=dataUrl;
+          return;
         }
-      }else{
-        canvas.toBlob(blob=>{
-          if(!blob)return;
-          const url=URL.createObjectURL(blob);
-          const a=document.createElement("a");
-          a.href=url;a.download=filename;
-          document.body.appendChild(a);a.click();document.body.removeChild(a);
-          setTimeout(()=>URL.revokeObjectURL(url),1000);
-        },"image/png");
+        // window.open bloqué : forcer un <a download> (dernier recours, peut juste afficher l'image sur iOS)
+        const url=URL.createObjectURL(blob);
+        const a=document.createElement("a");
+        a.href=url;a.download=filename;a.target="_blank";a.rel="noopener";
+        document.body.appendChild(a);a.click();document.body.removeChild(a);
+        setTimeout(()=>URL.revokeObjectURL(url),2000);
+        return;
       }
+      // Tous les autres navigateurs : <a download> standard
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");
+      a.href=url;a.download=filename;
+      document.body.appendChild(a);a.click();document.body.removeChild(a);
+      setTimeout(()=>URL.revokeObjectURL(url),1000);
     }catch(e){
-      console.error("Download failed:",e);
+      console.error("[downloadPng] échec:",e);
       setLimitError("Erreur lors de l'export PNG.");
       setTimeout(()=>setLimitError(""),3000);
     }
@@ -944,11 +1035,11 @@ export default function App({session}){
     </div>);
   }
   return(
-    <div style={{height:"100vh",display:"flex",background:t.bg,color:t.text,fontFamily:"system-ui,-apple-system,sans-serif",fontSize:13,overflow:"hidden"}}>
+    <div style={{height:"100vh",display:"flex",background:t.bg,color:t.text,fontFamily:"'Helvetica Neue',Helvetica,Arial,sans-serif",fontSize:13,overflow:"hidden",letterSpacing:"-0.005em"}}>
       {!isMobile&&!(nav==="create"&&selType)&&(<div style={{width:192,background:t.bg2,borderRight:"1px solid "+t.border,display:"flex",flexDirection:"column",flexShrink:0}}>
         <div style={{padding:"15px 14px 13px",borderBottom:"1px solid "+t.border,display:"flex",alignItems:"center",gap:10}}>
           {club?.logo_url?<img src={club.logo_url} style={{width:34,height:34,objectFit:"contain",borderRadius:7}} alt=""/>:<div style={{width:34,height:34,borderRadius:7,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:contrastText(mixC(club?.color1||"#e63329",club?.color2||"#1a1a2e",.5)),flexShrink:0}}>{(club?.name||"E")[0].toUpperCase()}</div>}
-          <div style={{overflow:"hidden",flex:1}}><div style={{fontSize:14,fontWeight:700,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{club?.name||"Viziona"}</div><div style={{fontSize:10,color:t.text3,marginTop:1}}>Studio visuel</div></div>
+          <div style={{overflow:"hidden",flex:1}}><div style={{fontSize:14,fontWeight:700,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{club?.name||"Viziona Sport"}</div><div style={{fontSize:10,color:t.text3,marginTop:1}}>Studio visuel</div></div>
         </div>
         <nav style={{padding:"10px 8px",flex:1}}>
           {NAV.map(n=>(<button key={n.id} onClick={()=>{setNav(n.id);if(n.id!=="create")setSelType(null);}} style={{display:"flex",alignItems:"center",gap:10,width:"100%",background:nav===n.id?rgba(t.accent,.15):"transparent",border:"none",borderRadius:9,padding:"9px 11px",color:nav===n.id?t.accent:t.text2,cursor:"pointer",fontSize:13,marginBottom:1,textAlign:"left",fontWeight:nav===n.id?600:400}}><span style={{fontSize:15,lineHeight:1}}>{n.icon}</span><span>{n.label}</span>{n.id==="history"&&history.length>0&&<span style={{marginLeft:"auto",background:rgba(t.accent,.2),color:t.accent,fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{history.length}</span>}</button>))}
@@ -975,9 +1066,9 @@ export default function App({session}){
             return(
               <div style={{padding:"0 28px 24px"}}>
                 <div style={{background:t.bg2,border:"1px solid "+rgba(t.accent,.25),borderRadius:12,padding:20}}>
-                  <div style={{fontSize:11,color:t.accent,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",marginBottom:6}}>Premiers pas</div>
+                  <div data-section="premiers-pas" style={{fontSize:11,color:t.accent,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",marginBottom:6}}>Premiers pas</div>
                   <div style={{fontSize:14,color:t.text,marginBottom:14}}>Bienvenue ! Configurez votre club en 3 étapes.</div>
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+                  <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:10}}>
                     {steps.map((s,i)=>(
                       <button key={i} onClick={s.done?undefined:s.onClick} disabled={s.done}
                         style={{
@@ -1054,17 +1145,22 @@ export default function App({session}){
           </div>
         </div>)}
       </div>
-      {isMobile&&!(nav==="create"&&selType)&&(
-        <div style={{position:"fixed",bottom:0,left:0,right:0,height:60,background:t.bg2,borderTop:"1px solid "+t.border,display:"flex",justifyContent:"space-around",alignItems:"stretch",zIndex:100,paddingBottom:"env(safe-area-inset-bottom,0)"}}>
-          {NAV.map(n=>(
-            <button key={n.id} onClick={()=>{setNav(n.id);if(n.id!=="create")setSelType(null);}}
-              style={{flex:1,background:"none",border:"none",padding:"6px 2px",color:nav===n.id?t.accent:t.text2,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,fontWeight:nav===n.id?600:400,position:"relative"}}>
-              <span style={{fontSize:18,lineHeight:1}}>{n.icon}</span>
-              <span style={{fontSize:9}}>{n.label}</span>
-              {n.id==="history"&&history.length>0&&<span style={{position:"absolute",top:4,right:"22%",background:t.accent,color:contrastText(t.accent),fontSize:8,fontWeight:700,padding:"1px 4px",borderRadius:8,minWidth:14,textAlign:"center"}}>{history.length}</span>}
-            </button>
-          ))}
-        </div>
-      )}
+      {isMobile&&!(nav==="create"&&selType)&&(()=>{
+        const mobileNav=NAV.filter(n=>n.id!=="media"&&n.id!=="history");
+        return(
+        <div style={{position:"fixed",bottom:0,left:0,right:0,height:64,background:t.bg2,borderTop:"1px solid "+t.border,display:"flex",justifyContent:"space-around",alignItems:"stretch",zIndex:100,paddingBottom:"env(safe-area-inset-bottom,0)"}}>
+          {mobileNav.map(n=>{
+            const isCreate=n.id==="create";
+            const active=nav===n.id;
+            return(
+              <button key={n.id} onClick={()=>{setNav(n.id);if(n.id!=="create")setSelType(null);}}
+                style={{flex:isCreate?1.4:1,background:isCreate?(active?t.accent:rgba(t.accent,.18)):"none",border:"none",padding:"6px 2px",color:isCreate?(active?contrastText(t.accent):t.accent):(active?t.accent:t.text2),cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,fontWeight:active?700:500,position:"relative",margin:isCreate?"4px 6px":0,borderRadius:isCreate?14:0,transition:"all .15s"}}>
+                <span style={{fontSize:isCreate?22:18,lineHeight:1}}>{n.icon}</span>
+                <span style={{fontSize:isCreate?10:9,letterSpacing:isCreate?".04em":0,textTransform:isCreate?"uppercase":"none"}}>{n.label}</span>
+              </button>
+            );
+          })}
+        </div>);
+      })()}
     </div>);
 }

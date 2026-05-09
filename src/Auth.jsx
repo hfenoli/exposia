@@ -26,9 +26,8 @@ const labelStyle = {
 };
 
 export default function Auth({ onBack }) {
-  const [mode, setMode] = useState("login");
+  const [mode, setMode] = useState("login"); // login | signup
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [clubName, setClubName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -42,43 +41,36 @@ export default function Auth({ onBack }) {
 
   async function handleSubmit() {
     setError(""); setSuccess(""); setLoading(true);
-    if (mode === "login") {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) setError(error.message);
-    } else if (mode === "signup") {
-      const { data, error } = await supabase.auth.signUp({ email, password });
-      if (error) { setError(error.message); setLoading(false); return; }
-      if (data.user) {
-        await supabase.from("clubs").insert({
-          user_id: data.user.id,
-          email: email,
-          name: clubName || "Mon Club",
-          approved: false
-        });
-        // Notifier par email
-        await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/notify-signup`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-            },
-            body: JSON.stringify({
-              club_name: clubName || "Mon Club",
-              email: email,
-            }),
-          }
-        );
-        setSuccess("Demande envoyée. Vous recevrez un accès sous 24h après validation.");
-        setMode("login");
-      }
-    } else if (mode === "forgot") {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: import.meta.env.VITE_APP_URL
-      });
-      if (error) setError(error.message);
-      else setSuccess("Un lien de réinitialisation a été envoyé à votre email.");
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setError("Veuillez saisir votre adresse email.");
+      setLoading(false);
+      return;
+    }
+    if (mode === "signup" && !clubName.trim()) {
+      setError("Veuillez saisir le nom de votre club.");
+      setLoading(false);
+      return;
+    }
+
+    const options = {
+      emailRedirectTo: window.location.origin,
+    };
+    if (mode === "signup") {
+      // Le nom de club voyage dans le user_metadata Supabase ; il sera lu côté App pour créer la ligne clubs au premier login.
+      options.data = { club_name: clubName.trim() };
+      // shouldCreateUser = true par défaut, donc le compte est créé au premier clic du lien.
+    } else {
+      // Connexion : on ne crée pas un nouveau compte si l'email n'existe pas.
+      options.shouldCreateUser = false;
+    }
+
+    const { error } = await supabase.auth.signInWithOtp({ email: trimmedEmail, options });
+    if (error) {
+      setError(error.message);
+    } else {
+      setSuccess("Un lien de connexion a été envoyé à votre adresse email. Vérifiez votre boîte mail.");
     }
     setLoading(false);
   }
@@ -94,7 +86,7 @@ export default function Auth({ onBack }) {
       fontFamily: FONT,
       position: "relative",
     }}>
-      {/* NAV identique à la landing */}
+      {/* NAV */}
       <nav style={{
         width: "100%",
         maxWidth: 900,
@@ -120,8 +112,8 @@ export default function Auth({ onBack }) {
           </button>
         ) : <span />}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <img src="/team/logo.jpg" alt="Viziona" style={{ width: 28, height: 28, display: "block" }} />
-          <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: "0.08em" }}>Viziona</span>
+          <img src="/team/logo.jpg" alt="Viziona Sport" style={{ width: 28, height: 28, display: "block" }} />
+          <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: "0.08em" }}>Viziona Sport</span>
         </div>
       </nav>
 
@@ -144,7 +136,7 @@ export default function Auth({ onBack }) {
           marginBottom: 18,
           fontWeight: 500,
         }}>
-          {mode === "forgot" ? "Réinitialisation" : mode === "signup" ? "Demande d'accès" : "Connexion"}
+          {mode === "signup" ? "Demande d'accès" : "Connexion"}
         </p>
 
         <h1 style={{
@@ -155,39 +147,37 @@ export default function Auth({ onBack }) {
           margin: "0 0 36px",
           color: "#0a0a0a",
         }}>
-          {mode === "forgot" ? "Réinitialiser votre mot de passe." : mode === "signup" ? "Créer un accès club." : "Accéder à votre studio."}
+          {mode === "signup" ? "Créer un accès club." : "Accéder à votre studio."}
         </h1>
 
-        {/* Onglets, masqués en mode forgot */}
-        {mode !== "forgot" && (
-          <div style={{
-            display: "flex",
-            gap: 0,
-            marginBottom: 28,
-            borderBottom: "1px solid rgba(0,0,0,0.1)",
-          }}>
-            {["login", "signup"].map(m => (
-              <button key={m} onClick={() => switchMode(m)}
-                style={{
-                  flex: 1,
-                  background: "none",
-                  border: "none",
-                  borderBottom: "2px solid " + (mode === m ? "#0a0a0a" : "transparent"),
-                  padding: "10px 0",
-                  fontSize: 13,
-                  fontWeight: mode === m ? 600 : 500,
-                  color: mode === m ? "#0a0a0a" : "#888",
-                  cursor: "pointer",
-                  letterSpacing: "0.04em",
-                  fontFamily: FONT,
-                  marginBottom: -1,
-                  transition: "all .2s",
-                }}>
-                {m === "login" ? "Connexion" : "Demander l'accès"}
-              </button>
-            ))}
-          </div>
-        )}
+        {/* Onglets */}
+        <div style={{
+          display: "flex",
+          gap: 0,
+          marginBottom: 28,
+          borderBottom: "1px solid rgba(0,0,0,0.1)",
+        }}>
+          {["login", "signup"].map(m => (
+            <button key={m} onClick={() => switchMode(m)}
+              style={{
+                flex: 1,
+                background: "none",
+                border: "none",
+                borderBottom: "2px solid " + (mode === m ? "#0a0a0a" : "transparent"),
+                padding: "10px 0",
+                fontSize: 13,
+                fontWeight: mode === m ? 600 : 500,
+                color: mode === m ? "#0a0a0a" : "#888",
+                cursor: "pointer",
+                letterSpacing: "0.04em",
+                fontFamily: FONT,
+                marginBottom: -1,
+                transition: "all .2s",
+              }}>
+              {m === "login" ? "Connexion" : "Demander l'accès"}
+            </button>
+          ))}
+        </div>
 
         {mode === "signup" && (
           <div style={{ marginBottom: 18 }}>
@@ -196,32 +186,24 @@ export default function Auth({ onBack }) {
           </div>
         )}
 
-        <div style={{ marginBottom: 18 }}>
+        <div style={{ marginBottom: 24 }}>
           <div style={labelStyle}>Email</div>
           <input value={email} onChange={e => setEmail(e.target.value)} placeholder="club@email.com" type="email" style={inputStyle} />
         </div>
 
-        {mode !== "forgot" && (
-          <div style={{ marginBottom: 24 }}>
-            <div style={labelStyle}>Mot de passe</div>
-            <input value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" type="password" style={inputStyle} />
-          </div>
-        )}
-
-        {mode === "signup" && (
-          <div style={{
-            background: "#fafafa",
-            border: "1px solid rgba(0,0,0,0.08)",
-            borderRadius: 4,
-            padding: "12px 14px",
-            fontSize: 12,
-            color: "#555",
-            marginBottom: 20,
-            lineHeight: 1.55,
-          }}>
-            Votre demande sera examinée sous 24h. Vous recevrez un email de confirmation dès validation.
-          </div>
-        )}
+        <div style={{
+          background: "#fafafa",
+          border: "1px solid rgba(0,0,0,0.08)",
+          borderRadius: 4,
+          padding: "12px 14px",
+          fontSize: 12,
+          color: "#555",
+          marginBottom: 20,
+          lineHeight: 1.55,
+        }}>
+          Vous recevrez un lien sécurisé par email, valable 1 heure.
+          {mode === "signup" && " Votre demande sera examinée sous 24h."}
+        </div>
 
         {error && (
           <div style={{
@@ -253,7 +235,7 @@ export default function Auth({ onBack }) {
           </div>
         )}
 
-        <button onClick={handleSubmit} disabled={loading}
+        <button onClick={handleSubmit} disabled={loading || !!success}
           style={{
             width: "100%",
             background: "#0a0a0a",
@@ -263,53 +245,15 @@ export default function Auth({ onBack }) {
             padding: "14px",
             fontSize: 14,
             fontWeight: 600,
-            cursor: loading ? "wait" : "pointer",
-            opacity: loading ? 0.5 : 1,
+            cursor: loading ? "wait" : success ? "default" : "pointer",
+            opacity: loading || success ? 0.5 : 1,
             letterSpacing: "0.06em",
             textTransform: "uppercase",
             fontFamily: FONT,
             transition: "opacity .2s",
           }}>
-          {loading ? "Chargement..." : mode === "login" ? "Se connecter" : mode === "signup" ? "Envoyer la demande" : "Envoyer le lien"}
+          {loading ? "Envoi..." : mode === "signup" ? "Créer mon accès" : "Recevoir un lien de connexion"}
         </button>
-
-        {mode === "login" && (
-          <div style={{ textAlign: "center", marginTop: 18 }}>
-            <button onClick={() => switchMode("forgot")}
-              style={{
-                background: "none",
-                border: "none",
-                color: "#555",
-                fontSize: 12,
-                cursor: "pointer",
-                padding: 0,
-                textDecoration: "underline",
-                fontFamily: FONT,
-                letterSpacing: "0.02em",
-              }}>
-              Mot de passe oublié ?
-            </button>
-          </div>
-        )}
-
-        {mode === "forgot" && (
-          <div style={{ textAlign: "center", marginTop: 18 }}>
-            <button onClick={() => switchMode("login")}
-              style={{
-                background: "none",
-                border: "none",
-                color: "#555",
-                fontSize: 12,
-                cursor: "pointer",
-                padding: 0,
-                textDecoration: "underline",
-                fontFamily: FONT,
-                letterSpacing: "0.02em",
-              }}>
-              Retour à la connexion
-            </button>
-          </div>
-        )}
       </main>
 
       {/* Footer minimal */}
@@ -322,7 +266,7 @@ export default function Auth({ onBack }) {
         textAlign: "center",
       }}>
         <span style={{ fontSize: 12, color: "#ccc", letterSpacing: "0.04em" }}>
-          © 2025 Viziona · Suisse
+          © 2025 Viziona Sport · Suisse
         </span>
       </footer>
     </div>

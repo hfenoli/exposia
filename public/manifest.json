@@ -1,6 +1,6 @@
 {
-  "name": "Viziona",
-  "short_name": "Viziona",
+  "name": "Viziona Sport",
+  "short_name": "Viziona Sport",
   "description": "Créateur de visuels football",
   "start_url": "/",
   "display": "standalone",
@@ -9,9 +9,9 @@
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/favicon.svg",
+      "src": "/team/logo.jpg",
       "sizes": "any",
-      "type": "image/svg+xml",
+      "type": "image/jpeg",
       "purpose": "any maskable"
     }
   ]
