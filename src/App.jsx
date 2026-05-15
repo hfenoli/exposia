@@ -1,6 +1,14 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import html2canvas from "html2canvas";
 import { supabase } from "./supabase";
+// ─── FILE VALIDATION ──────────────────────────────────────────
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+function validateImageFile(f){
+  if(!f) return false;
+  if(!f.type||!f.type.startsWith("image/")){alert("Format non supporté. Sélectionnez une image (JPG, PNG, WebP…).");return false;}
+  if(f.size>MAX_UPLOAD_BYTES){alert("Fichier trop volumineux. Taille maximale : 10 Mo.");return false;}
+  return true;
+}
 // ─── MOBILE HOOKS ─────────────────────────────────────────────
 const MOBILE_BREAKPOINT = 768;
 function useIsMobile(){
@@ -582,7 +590,7 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
 // ─── SMALL UI ATOMS ───────────────────────────────────────────
 function TIn({v,on,ph,type,t,st,min}){return<input value={v} type={type||"text"} placeholder={ph||""} min={min} onChange={e=>on(e.target.value)} style={Object.assign({},{background:t.bg3,border:"1px solid "+t.border2,borderRadius:7,padding:"8px 10px",color:t.text,fontSize:13,outline:"none",width:"100%",boxSizing:"border-box"},st||{})}/>;}
 function TSel({v,on,opts,t}){return<select value={v} onChange={e=>on(e.target.value)} style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:7,padding:"8px 10px",color:t.text,fontSize:13,outline:"none",width:"100%",boxSizing:"border-box"}}>{opts.map(o=>typeof o==="string"?<option key={o} value={o}>{o}</option>:<option key={o.v} value={o.v}>{o.l}</option>)}</select>;}
-function UpBtn({val,on,w,h,r,label,t}){w=w||52;h=h||44;r=r||8;const ref=useRef();const pick=e=>{const f=e.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=ev=>on(ev.target.result);rd.readAsDataURL(f);};return(<div onClick={()=>ref.current.click()} style={{width:w,height:h,borderRadius:r,border:"2px dashed "+(val?t.accent:t.border2),background:t.bg3,cursor:"pointer",overflow:"hidden",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flexShrink:0,gap:2}}>{val?<img src={val} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>:<><span style={{color:t.text3,fontSize:20,lineHeight:1}}>+</span>{label&&<span style={{fontSize:9,color:t.text3,textAlign:"center",padding:"0 3px",lineHeight:1.2}}>{label}</span>}</>}<input ref={ref} type="file" accept="image/*" style={{display:"none"}} onChange={pick}/></div>);}
+function UpBtn({val,on,w,h,r,label,t}){w=w||52;h=h||44;r=r||8;const ref=useRef();const pick=e=>{const f=e.target.files[0];if(!validateImageFile(f)){e.target.value="";return;}const rd=new FileReader();rd.onload=ev=>on(ev.target.result);rd.readAsDataURL(f);};return(<div onClick={()=>ref.current.click()} style={{width:w,height:h,borderRadius:r,border:"2px dashed "+(val?t.accent:t.border2),background:t.bg3,cursor:"pointer",overflow:"hidden",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flexShrink:0,gap:2}}>{val?<img src={val} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>:<><span style={{color:t.text3,fontSize:20,lineHeight:1}}>+</span>{label&&<span style={{fontSize:9,color:t.text3,textAlign:"center",padding:"0 3px",lineHeight:1.2}}>{label}</span>}</>}<input ref={ref} type="file" accept="image/*" style={{display:"none"}} onChange={pick}/></div>);}
 function Av({photo,name,size}){size=size||40;const[err,setErr]=useState(false);const ini=(name||"?").trim().split(/\s+/).map(w=>w[0]).join("").slice(0,2).toUpperCase();return(<div style={{width:size,height:size,borderRadius:"50%",overflow:"hidden",background:"linear-gradient(135deg,#e63329,#1a1a2e)",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*.32,fontWeight:700,color:"#fff"}}>{photo&&!err?<img src={photo} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt="" onError={()=>setErr(true)}/>:ini}</div>);}
 function PBox({children,t,mb}){return<div style={{background:t.bg3,borderRadius:10,padding:12,marginBottom:mb||10}}>{children}</div>;}
 function SHdr({label,t}){return<div style={{fontSize:10,color:t.text3,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",marginBottom:8,paddingBottom:6,borderBottom:"1px solid "+t.border}}>{label}</div>;}
@@ -618,7 +626,7 @@ function PhotoPanel({players,selId,onSel,selUrl,onSelUrl,onAdd,onAddUrl,onFav,t}
   const[removing,setRemoving]=useState(null);
   const player=players.find(p=>p.id===selId);
   const photos=player?[...(player.photos||[])].sort((a,b)=>((b.is_fav||b.fav)?1:0)-((a.is_fav||a.fav)?1:0)):[];
-  const pick=e=>[...e.target.files].forEach(f=>{const r=new FileReader();r.onload=ev=>onAdd(selId,f);r.readAsDataURL(f);});
+  const pick=e=>{[...e.target.files].forEach(f=>{if(!validateImageFile(f))return;const r=new FileReader();r.onload=ev=>onAdd(selId,f);r.readAsDataURL(f);});e.target.value="";};
   function handleRemoveBg(ph){
     setRemoving(ph.id);
     const img=new Image();
@@ -698,7 +706,7 @@ function GroupEditor({gd,setGd,players,t}){
   const inp={background:t.bg2,border:"1px solid "+t.border,borderRadius:4,padding:"2px 5px",color:t.text,fontSize:11,outline:"none"};
   return(<div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Titre</div><TIn v={title} on={v=>setGd(d=>Object.assign({},d,{title:v}))} ph="GROUPE A" t={t}/></div><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Compétition</div><TIn v={competition} on={v=>setGd(d=>Object.assign({},d,{competition:v}))} ph="Ligue 1..." t={t}/></div></div>
-    {cats.map(cat=>{const list=gd[cat.k]||[];const avail=players.filter(p=>(cat.pos?p.position===cat.pos:true)&&!list.some(x=>x.id===p.id));return(<div key={cat.k} style={{marginBottom:7,background:t.bg3,borderRadius:8,padding:"9px 10px"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:11,color:t.text,fontWeight:600}}>{cat.l} <span style={{color:t.text3,fontWeight:400}}>({list.length})</span></span><button onClick={()=>add(cat.k)} style={{fontSize:10,color:t.accent,background:rgba(t.accent,.12),border:"1px solid "+rgba(t.accent,.3),borderRadius:5,padding:"3px 7px",cursor:"pointer"}}>+ Manuel</button></div>{avail.length>0&&(<div style={{display:"flex",gap:5,marginBottom:7}}><select value={impSel[cat.k]||""} onChange={e=>setImpSel(s=>Object.assign({},s,{[cat.k]:e.target.value}))} style={{flex:1,background:t.bg4,border:"1px solid "+t.border,borderRadius:5,padding:"5px 7px",color:t.text,fontSize:11,outline:"none"}}><option value="">— Ajouter depuis l'effectif —</option>{avail.map(p=><option key={p.id} value={p.id}>{"#"+p.number+" "+p.name}</option>)}</select><button onClick={()=>importOne(cat.k)} style={{background:impSel[cat.k]?t.accent:"#2a2a2a",color:"#fff",border:"none",borderRadius:5,padding:"5px 11px",fontSize:12,cursor:"pointer",fontWeight:600}}>↓</button></div>)}{list.length===0&&<div style={{fontSize:10,color:t.text3,textAlign:"center",padding:"3px 0",fontStyle:"italic"}}>Aucun joueur</div>}{list.map(p=>(<div key={p.id} style={{display:"flex",alignItems:"center",gap:5,marginBottom:4,background:t.bg4,borderRadius:6,padding:"4px 6px"}}><div style={{width:24,height:24,borderRadius:4,overflow:"hidden",background:t.bg2,flexShrink:0,cursor:"pointer",border:"1px solid "+(p.photo?t.accent:t.border)}} onClick={()=>{const i=document.createElement("input");i.type="file";i.accept="image/*";i.onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>upd(cat.k,p.id,"photo",ev.target.result);r.readAsDataURL(f);};i.click();}}>{p.photo?<img src={p.photo} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:12,color:t.text3,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>+</span>}</div><input value={p.number||""} onChange={e=>upd(cat.k,p.id,"number",e.target.value)} placeholder="#" style={Object.assign({},inp,{width:25})}/><input value={p.name||""} onChange={e=>upd(cat.k,p.id,"name",e.target.value)} placeholder="Nom" style={Object.assign({},inp,{flex:1})}/><span onClick={()=>upd(cat.k,p.id,"captain",!p.captain)} style={{cursor:"pointer",fontSize:14,opacity:p.captain?1:.2,color:t.accent}}>©</span><button onClick={()=>rem(cat.k,p.id)} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:12,padding:0}}>✕</button></div>))}</div>);})}
+    {cats.map(cat=>{const list=gd[cat.k]||[];const avail=players.filter(p=>(cat.pos?p.position===cat.pos:true)&&!list.some(x=>x.id===p.id));return(<div key={cat.k} style={{marginBottom:7,background:t.bg3,borderRadius:8,padding:"9px 10px"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:11,color:t.text,fontWeight:600}}>{cat.l} <span style={{color:t.text3,fontWeight:400}}>({list.length})</span></span><button onClick={()=>add(cat.k)} style={{fontSize:10,color:t.accent,background:rgba(t.accent,.12),border:"1px solid "+rgba(t.accent,.3),borderRadius:5,padding:"3px 7px",cursor:"pointer"}}>+ Manuel</button></div>{avail.length>0&&(<div style={{display:"flex",gap:5,marginBottom:7}}><select value={impSel[cat.k]||""} onChange={e=>setImpSel(s=>Object.assign({},s,{[cat.k]:e.target.value}))} style={{flex:1,background:t.bg4,border:"1px solid "+t.border,borderRadius:5,padding:"5px 7px",color:t.text,fontSize:11,outline:"none"}}><option value="">— Ajouter depuis l'effectif —</option>{avail.map(p=><option key={p.id} value={p.id}>{"#"+p.number+" "+p.name}</option>)}</select><button onClick={()=>importOne(cat.k)} style={{background:impSel[cat.k]?t.accent:"#2a2a2a",color:"#fff",border:"none",borderRadius:5,padding:"5px 11px",fontSize:12,cursor:"pointer",fontWeight:600}}>↓</button></div>)}{list.length===0&&<div style={{fontSize:10,color:t.text3,textAlign:"center",padding:"3px 0",fontStyle:"italic"}}>Aucun joueur</div>}{list.map(p=>(<div key={p.id} style={{display:"flex",alignItems:"center",gap:5,marginBottom:4,background:t.bg4,borderRadius:6,padding:"4px 6px"}}><div style={{width:24,height:24,borderRadius:4,overflow:"hidden",background:t.bg2,flexShrink:0,cursor:"pointer",border:"1px solid "+(p.photo?t.accent:t.border)}} onClick={()=>{const i=document.createElement("input");i.type="file";i.accept="image/*";i.onchange=e=>{const f=e.target.files[0];if(!validateImageFile(f))return;const r=new FileReader();r.onload=ev=>upd(cat.k,p.id,"photo",ev.target.result);r.readAsDataURL(f);};i.click();}}>{p.photo?<img src={p.photo} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:12,color:t.text3,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>+</span>}</div><input value={p.number||""} onChange={e=>upd(cat.k,p.id,"number",e.target.value)} placeholder="#" style={Object.assign({},inp,{width:25})}/><input value={p.name||""} onChange={e=>upd(cat.k,p.id,"name",e.target.value)} placeholder="Nom" style={Object.assign({},inp,{flex:1})}/><span onClick={()=>upd(cat.k,p.id,"captain",!p.captain)} style={{cursor:"pointer",fontSize:14,opacity:p.captain?1:.2,color:t.accent}}>©</span><button onClick={()=>rem(cat.k,p.id)} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:12,padding:0}}>✕</button></div>))}</div>);})}
   </div>);
 }
 function PostEditor({pd,setPd,t}){
@@ -803,6 +811,7 @@ export default function App({session}){
   }
   async function deletePlayer(id){await supabase.from("players").delete().eq("id",id);setPlayers(p=>p.filter(x=>x.id!==id));}
   const addPhoto=useCallback((playerId,file)=>{
+    if(!validateImageFile(file))return;
     const reader=new FileReader();
     reader.onload=async(e)=>{
       const url=e.target.result;
@@ -824,6 +833,7 @@ export default function App({session}){
   },[players]);
   async function pickMedia(e){
     [...e.target.files].forEach(file=>{
+      if(!validateImageFile(file))return;
       const reader=new FileReader();
       reader.onload=async(ev)=>{
         const url=ev.target.result;
@@ -832,6 +842,7 @@ export default function App({session}){
       };
       reader.readAsDataURL(file);
     });
+    e.target.value="";
   }
   async function deleteMedia(id){await supabase.from("media").delete().eq("id",id);setMedia(m=>m.filter(x=>x.id!==id));}
   function selPlayer(id){
@@ -872,12 +883,12 @@ export default function App({session}){
     let saved;
     if(editId){
       const{data,error}=await supabase.from("visuals").update(payload).eq("id",editId).select().single();
-      if(error){console.error("[save] update visuals failed:",error,"payload:",payload);setLimitError("Erreur lors de la sauvegarde : "+error.message);setTimeout(()=>setLimitError(""),4000);return;}
+      if(error){console.error("[save] update failed:",error.message);setLimitError("Erreur lors de la sauvegarde : "+error.message);setTimeout(()=>setLimitError(""),4000);return;}
       saved=data;
       if(saved)setHistory(h=>h.map(x=>x.id===editId?{...saved,layers:saved.layers||[],lineupData:saved.lineup_data||{},groupData:saved.group_data||{},postData:saved.post_data||{},lineupTpl:saved.lineup_tpl,groupTpl:saved.group_tpl,postTpl:saved.post_tpl,bgUrl:saved.bg_url,logoUrl:saved.logo_url,logo2Url:saved.logo2_url,playerUrl:saved.player_url,ct}:x));
     } else {
       const{data,error}=await supabase.from("visuals").insert(payload).select().single();
-      if(error){console.error("[save] insert visuals failed:",error,"payload:",payload);setLimitError("Erreur lors de la sauvegarde : "+error.message);setTimeout(()=>setLimitError(""),4000);return;}
+      if(error){console.error("[save] insert failed:",error.message);setLimitError("Erreur lors de la sauvegarde : "+error.message);setTimeout(()=>setLimitError(""),4000);return;}
       saved=data;
       if(saved)setHistory(h=>[{...saved,layers:saved.layers||[],lineupData:saved.lineup_data||{},groupData:saved.group_data||{},postData:saved.post_data||{},lineupTpl:saved.lineup_tpl,groupTpl:saved.group_tpl,postTpl:saved.post_tpl,bgUrl:saved.bg_url,logoUrl:saved.logo_url,logo2Url:saved.logo2_url,playerUrl:saved.player_url,ct},...h]);
     }
