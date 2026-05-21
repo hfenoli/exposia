@@ -15,6 +15,7 @@ function Root() {
   const [session, setSession] = useState(undefined)
   const [showLanding, setShowLanding] = useState(true)
   const [showAdmin, setShowAdmin] = useState(detectAdminFromUrl)
+  const [authMode, setAuthMode] = useState("login") // pré-sélection onglet Auth ("login" | "signup")
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -53,17 +54,22 @@ function Root() {
     </div>
   )
 
+  function enterAuth(mode) {
+    if (mode === "login" || mode === "signup") setAuthMode(mode)
+    setShowLanding(false)
+  }
+
   // Admin : prioritaire sur tout le reste si activé
   if (showAdmin) {
-    if (!session) return <Auth onBack={closeAdmin} />
+    if (!session) return <Auth onBack={closeAdmin} initialMode={authMode}/>
     return <Admin session={session} onClose={closeAdmin} />
   }
 
   // Permettre l'accès à la landing (CGU notamment) même quand authentifié
-  if (typeof window !== "undefined" && window.location.hash === "#cgu") return <Landing onEnter={() => { window.location.hash = ""; setShowLanding(false); }} />
+  if (typeof window !== "undefined" && window.location.hash === "#cgu") return <Landing onEnter={(mode) => { window.location.hash = ""; enterAuth(mode); }} />
 
-  if (showLanding && !session) return <Landing onEnter={() => setShowLanding(false)} />
-  if (!session) return <Auth onBack={() => setShowLanding(true)} />
+  if (showLanding && !session) return <Landing onEnter={enterAuth} />
+  if (!session) return <Auth onBack={() => setShowLanding(true)} initialMode={authMode}/>
   return <App session={session} />
 }
 

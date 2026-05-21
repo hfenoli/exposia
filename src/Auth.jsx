@@ -1,7 +1,16 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabase";
 
-const FONT = "'Helvetica Neue', Helvetica, Arial, sans-serif";
+const FONT = "'DM Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif";
+const FONT_H = "'Bebas Neue', Impact, sans-serif";
+// Inject Google Fonts (idempotent — partagé avec Landing.jsx)
+if (typeof document !== "undefined" && !document.getElementById("viziona-landing-fonts")) {
+  const l = document.createElement("link");
+  l.id = "viziona-landing-fonts";
+  l.rel = "stylesheet";
+  l.href = "https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700&family=DM+Mono:wght@400;500&display=swap";
+  document.head.appendChild(l);
+}
 const TURNSTILE_SITE_KEY = "0x4AAAAAADQBrsbjQ5h5zySt";
 const TURNSTILE_SCRIPT_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
 
@@ -27,8 +36,8 @@ const labelStyle = {
   fontWeight: 500,
 };
 
-export default function Auth({ onBack }) {
-  const [mode, setMode] = useState("login"); // login | signup
+export default function Auth({ onBack, initialMode }) {
+  const [mode, setMode] = useState(initialMode === "signup" ? "signup" : "login"); // login | signup
   const [email, setEmail] = useState("");
   const [clubName, setClubName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -199,8 +208,8 @@ export default function Auth({ onBack }) {
           </button>
         ) : <span />}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <img src="/team/logo.jpg" alt="Viziona Sport" style={{ width: 28, height: 28, display: "block" }} />
-          <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: "0.08em" }}>Viziona Sport</span>
+          <img src="/team/logo.jpg" alt="Viziona" style={{ width: 28, height: 28, display: "block" }} />
+          <span style={{ fontFamily: FONT_H, fontSize: 19, fontWeight: 400, letterSpacing: "0.16em" }}>Viziona</span>
         </div>
       </nav>
 
@@ -227,10 +236,11 @@ export default function Auth({ onBack }) {
         </p>
 
         <h1 style={{
-          fontSize: 32,
-          fontWeight: 700,
-          lineHeight: 1.15,
-          letterSpacing: "-0.02em",
+          fontFamily: FONT_H,
+          fontSize: 48,
+          fontWeight: 400,
+          lineHeight: 1.0,
+          letterSpacing: "0.005em",
           margin: "0 0 36px",
           color: "#0a0a0a",
         }}>
@@ -261,7 +271,7 @@ export default function Auth({ onBack }) {
                 marginBottom: -1,
                 transition: "all .2s",
               }}>
-              {m === "login" ? "Connexion" : "Demander l'accès"}
+              {m === "login" ? "Je suis déjà membre" : "Demander l'accès"}
             </button>
           ))}
         </div>

@@ -186,15 +186,11 @@ function makeLayers(type,c1,c2){
       L("ps",7,"text",6,90,88,7,"Poste",Object.assign({},TD,{text:"Attaquant · #9",fontSize:14,color:c2})),
     ],
     post:[
-      L("bg",0,"bg",0,0,100,100,"Fond",{locked:true}),
-      L("ov",1,"overlay",0,0,100,100,"Assombrissement",{locked:true,opacity:40}),
-      L("lg",2,"logo",4,4,13,13,"Logo club"),
-      L("st",3,"stripe",0,0,100,1.5,"Bande",{color:c1,color2:c2}),
-      L("h1",4,"text",4,28,92,18,"Titre principal",Object.assign({},TD,{text:"TITRE DE L'ANNONCE",fontSize:38,color:"#ffffff",bold:true,upper:true,letterSpacing:2})),
-      L("h2",5,"text",4,48,92,10,"Sous-titre",Object.assign({},TD,{text:"Sous-titre ou description",fontSize:18,color:c1})),
-      L("h3",6,"text",4,60,92,8,"Corps de texte",Object.assign({},TD,{text:"Texte complémentaire ici",fontSize:14,color:"rgba(255,255,255,0.65)"})),
-      L("dv",7,"stripe",35,45,30,0.6,"Séparateur",{color:c1,color2:c2}),
-      L("dt",8,"text",4,88,92,6,"Date / Hashtag",Object.assign({},TD,{text:"#monclub · 12 avril 2025",fontSize:11,color:"rgba(255,255,255,0.35)"})),
+      L("bg",0,"bg",0,0,100,100,"Fond",{locked:true,fillColor:"#000000"}),
+      L("lg",1,"logo",4,4,14,14,"Logo club"),
+      L("h1",2,"text",6,30,88,16,"Titre",Object.assign({},TD,{text:"TITRE DE L'ANNONCE",fontSize:38,color:"#ffffff",bold:true,upper:true,letterSpacing:1})),
+      L("h2",3,"text",6,48,88,9,"Sous-titre",Object.assign({},TD,{text:"Sous-titre ou catégorie",fontSize:18,color:c1})),
+      L("bd",4,"text",6,60,88,18,"Corps",Object.assign({},TD,{text:"Texte du message.",fontSize:14,color:"rgba(255,255,255,0.7)",align:"left",lineHeight:1.5})),
     ],
   };
   return JSON.parse(JSON.stringify(sets[type]||sets.goal));
@@ -236,9 +232,9 @@ function CurvedText({lay,containerW}){
   );
 }
 // ─── LAYER RENDERER ───────────────────────────────────────────
-function renderLayerContent(lay, bgUrl, playerUrl, logoUrl, logo2Url, accent, accent2){
+function renderLayerContent(lay, bgUrl, playerUrl, logoUrl, logo2Url, accent, accent2, clubName){
   const isTextType = ["text","watertext","heading","subtext"].includes(lay.type);
-  if(lay.type==="bg") return(<div style={{width:"100%",height:"100%",overflow:"hidden"}}>{bgUrl?<img src={bgUrl} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>:<div style={{width:"100%",height:"100%",background:"linear-gradient(160deg,#0a0a1a,#1a0a2e)"}}/>}</div>);
+  if(lay.type==="bg") return(<div style={{width:"100%",height:"100%",overflow:"hidden",background:lay.fillColor||"transparent"}}>{bgUrl?<img src={bgUrl} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>:(lay.fillColor?null:<div style={{width:"100%",height:"100%",background:"linear-gradient(160deg,#0a0a1a,#1a0a2e)"}}/>)}</div>);
   if(lay.type==="overlay") return(<div style={{width:"100%",height:"100%",background:"linear-gradient(to bottom,rgba(0,0,0,"+((lay.opacity||60)/200)+"),rgba(0,0,0,"+((lay.opacity||60)/100)+")"}}/>);
   if(lay.type==="stripe") return(<div style={{width:"100%",height:"100%",background:"linear-gradient(90deg,"+(lay.color||accent)+","+(lay.color2||accent2)+")"}}/>);
   if(lay.type==="colorblock") return(<div style={{width:"100%",height:"100%",background:lay.color||"#ff5555",opacity:(lay.opacity==null?80:lay.opacity)/100}}/>);
@@ -256,21 +252,39 @@ function renderLayerContent(lay, bgUrl, playerUrl, logoUrl, logo2Url, accent, ac
   }
   if(lay.type==="scoreblock"||lay.type==="scorebig"){
     const fs = lay.fontSize||(lay.type==="scorebig"?44:22);
-    return(<div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:"5%"}}><span style={{fontSize:fs,fontWeight:900,color:lay.color||"#fff",fontFamily:(lay.font||"Impact")+",sans-serif"}}>{lay.scoreHome||"0"}</span><span style={{fontSize:fs*.5,color:"rgba(255,255,255,.3)",fontFamily:"Impact,sans-serif"}}>-</span><span style={{fontSize:fs,fontWeight:900,color:lay.color||"#fff",fontFamily:(lay.font||"Impact")+",sans-serif"}}>{lay.scoreAway||"0"}</span></div>);
+    const homeName = lay.homeLabel||clubName||"";
+    const awayName = lay.awayLabel||"Adversaire";
+    const showNames = lay.showNames!==false;
+    const nameFs = Math.max(9, fs*0.22);
+    return(<div style={{width:"100%",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:fs*0.05}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:"5%",width:"100%"}}>
+        <span style={{fontSize:fs,fontWeight:900,color:lay.color||"#fff",fontFamily:(lay.font||"Impact")+",sans-serif"}}>{lay.scoreHome||"0"}</span>
+        <span style={{fontSize:fs*.5,color:"rgba(255,255,255,.3)",fontFamily:"Impact,sans-serif"}}>-</span>
+        <span style={{fontSize:fs,fontWeight:900,color:lay.color||"#fff",fontFamily:(lay.font||"Impact")+",sans-serif"}}>{lay.scoreAway||"0"}</span>
+      </div>
+      {showNames&&(homeName||awayName)&&(
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"0 4%"}}>
+          <span style={{fontSize:nameFs,color:lay.color||"#fff",opacity:.75,fontWeight:600,letterSpacing:".06em",textTransform:"uppercase",maxWidth:"45%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{homeName}</span>
+          <span style={{fontSize:nameFs,color:lay.color||"#fff",opacity:.75,fontWeight:600,letterSpacing:".06em",textTransform:"uppercase",maxWidth:"45%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textAlign:"right"}}>{awayName}</span>
+        </div>
+      )}
+    </div>);
   }
   if(lay.type==="resultlabel"){
     const sh=parseInt(lay.scoreHome||"0"), sa=parseInt(lay.scoreAway||"0");
-    const lbl=sh>sa?"VICTOIRE":sh===sa?"MATCH NUL":"DÉFAITE";
-    const lc=sh>sa?"#22c55e":sh===sa?"#f59e0b":"#ef4444";
-    return <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:11,fontWeight:700,color:lc,letterSpacing:".16em"}}>{lbl}</span></div>;
+    const autoLbl=sh>sa?"VICTOIRE":sh===sa?"MATCH NUL":"DÉFAITE";
+    const lbl=(lay.text!=null&&lay.text!=="")?(lay.upper?lay.text.toUpperCase():lay.text):autoLbl;
+    const autoCol=sh>sa?"#22c55e":sh===sa?"#f59e0b":"#ef4444";
+    const lc=lay.color||autoCol;
+    return <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:lay.fontSize||11,fontWeight:700,color:lc,letterSpacing:".16em",fontFamily:(lay.font||"Impact")+",sans-serif"}}>{lbl}</span></div>;
   }
   return null;
 }
-function LayerView({lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,isSel,onMD,onResize,hideHandles}){
+function LayerView({lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,isSel,onMD,onResize,hideHandles,clubName}){
   const s={position:"absolute",left:lay.x+"%",top:lay.y+"%",width:lay.w+"%",height:lay.h+"%",cursor:lay.locked?"default":"grab",boxSizing:"border-box",outline:isSel&&!lay.locked?"2px solid "+accent:"none",outlineOffset:1,zIndex:lay.z};
   const showHandles=!hideHandles&&isSel&&!lay.locked&&(lay.type==="photo"||lay.type==="colorblock"||lay.type==="sponsor");
   return(<div style={s} onMouseDown={lay.locked?undefined:e=>onMD(e,lay.id)}>
-    {renderLayerContent(lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2)}
+    {renderLayerContent(lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,clubName)}
     {showHandles&&["tl","tr","bl","br"].map(c=>(
       <div key={c}
         onMouseDown={e=>{e.preventDefault();e.stopPropagation();onResize&&onResize(e,lay.id,c);}}
@@ -291,7 +305,7 @@ function LayerView({lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,isSel,on
 // ─── LINEUP CANVAS ────────────────────────────────────────────
 function Watermark(){
   // Filigrane non-amovible : pas un calque, pointerEvents:none, hardcodé dans chaque canvas
-  return <div aria-hidden="true" style={{position:"absolute",bottom:5,right:6,fontSize:9,color:"rgba(255,255,255,0.92)",background:"rgba(0,0,0,0.42)",padding:"2px 7px",borderRadius:3,fontFamily:"system-ui,-apple-system,sans-serif",letterSpacing:"0.02em",fontWeight:500,whiteSpace:"nowrap",pointerEvents:"none",userSelect:"none",zIndex:999}}>Powered by Viziona Sport</div>;
+  return <div aria-hidden="true" style={{position:"absolute",bottom:5,right:6,fontSize:9,color:"rgba(255,255,255,0.92)",background:"rgba(0,0,0,0.42)",padding:"2px 7px",borderRadius:3,fontFamily:"system-ui,-apple-system,sans-serif",letterSpacing:"0.02em",fontWeight:500,whiteSpace:"nowrap",pointerEvents:"none",userSelect:"none",zIndex:999}}>Powered by Viziona</div>;
 }
 function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScale}){
   W=W||270; H=H||480; slotScale=slotScale||1;
@@ -307,19 +321,35 @@ function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScal
   const root={width:W,height:H,position:"relative",overflow:"hidden",borderRadius:W<160?6:14,flexShrink:0,display:"flex",flexDirection:"column",userSelect:"none"};
   function Logo(props){const sz=props.sz||W*.1;if(!props.url)return<div style={{width:sz,height:sz,borderRadius:4,background:rgba(accent,.25),display:"flex",alignItems:"center",justifyContent:"center",color:accent,fontSize:sz*.3}}>◈</div>;return<img src={props.url} style={{width:sz,height:sz,objectFit:"contain"}} alt=""/>;}
   function Slot(props){const p=props.p;const sz=props.sz||W*.09;const square=props.square;const ph=getPhoto(p);return(<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,flex:"1 1 0",minWidth:0,padding:"0 2px",boxSizing:"border-box"}}><div style={{width:sz,height:sz,borderRadius:square?6:"50%",overflow:"hidden",border:"2px solid "+accent,background:dark?"rgba(0,0,0,.5)":"#e0e0e8",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:sz*.34,fontWeight:900,color:accent,fontFamily:"Impact,sans-serif"}}>{p&&p.number?p.number:"?"}</span>}</div><span style={{fontSize:W*.024,color:dark?"#fff":"#111",fontWeight:700,textAlign:"center",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textShadow:dark?"0 1px 5px #000":"none"}}>{p&&p.name?p.name.split(" ").pop():"—"}</span></div>);}
-  const bg={ln1:"#030305",ln2:"#0a0000",ln3:"#02040a",ln4:"#060408",ln5:"#f2f2f4",ln6:"#fafafa"}[tpl]||"#030305";
+  const bg={ln1:"#030305",ln2:"#0a0000",ln3:"#0a0805",ln4:"#060408",ln5:"#f2f2f4",ln6:"#fafafa"}[tpl]||"#030305";
+  const GOLD="#FFD700";
+  const isGold=tpl==="ln3";
+  const fieldStroke=isGold?GOLD:(dark?accent:"#666");
   return(<div style={Object.assign({},root,{background:bg})}>
-    {bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:dark?.14:.06}} alt=""/>}
-    {dark&&<div style={{position:"absolute",inset:0,background:"linear-gradient(to bottom,rgba(0,0,0,.88),rgba(0,0,0,.55),rgba(0,0,0,.82))"}}/>}
+    {bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:dark?.44:.36}} alt=""/>}
+    {dark&&<div style={{position:"absolute",inset:0,background:"linear-gradient(to bottom,rgba(0,0,0,.7),rgba(0,0,0,.42),rgba(0,0,0,.7))"}}/>}
     {tpl==="ln2"&&<div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at 50% 100%,"+rgba(accent,.5)+" 0%,transparent 65%)"}}/>}
+    {/* ln3 "Minuit Doré" : dégradé chaud or + halo doré en haut à droite */}
+    {isGold&&<div style={{position:"absolute",inset:0,background:"radial-gradient(circle at 78% 18%,rgba(255,215,0,.22) 0%,transparent 55%),linear-gradient(160deg,rgba(255,180,0,.08) 0%,transparent 45%,rgba(120,70,0,.18) 100%)"}}/>}
     {tpl==="ln4"&&<svg style={{position:"absolute",inset:0,width:"100%",height:"100%",opacity:.06}} viewBox="0 0 270 480"><polygon points="0,0 200,0 0,240" fill={rgba(accent,.2)}/><polygon points="270,480 70,480 270,240" fill={rgba(accent2,.2)}/></svg>}
-    {(tpl==="ln1"||tpl==="ln3")&&<svg style={{position:"absolute",inset:0,width:"100%",height:"100%",opacity:.1}} viewBox="0 0 270 480"><rect x="18" y="6" width="234" height="375" rx="3" fill="none" stroke={accent} strokeWidth="1"/><line x1="18" y1="193" x2="252" y2="193" stroke={accent} strokeWidth=".8"/><ellipse cx="135" cy="193" rx="36" ry="36" fill="none" stroke={accent} strokeWidth=".8"/></svg>}
+    {/* Field lines : sur TOUS les templates lineup, couleur adaptée */}
+    <svg style={{position:"absolute",inset:0,width:"100%",height:"100%",opacity:dark?.12:.09,pointerEvents:"none"}} viewBox="0 0 270 480">
+      <rect x="18" y="6" width="234" height="375" rx="3" fill="none" stroke={fieldStroke} strokeWidth="1"/>
+      <line x1="18" y1="193" x2="252" y2="193" stroke={fieldStroke} strokeWidth=".8"/>
+      <ellipse cx="135" cy="193" rx="36" ry="36" fill="none" stroke={fieldStroke} strokeWidth=".8"/>
+      <rect x="18" y="6" width="234" height="50" fill="none" stroke={fieldStroke} strokeWidth=".5" opacity=".7"/>
+      <rect x="18" y="331" width="234" height="50" fill="none" stroke={fieldStroke} strokeWidth=".5" opacity=".7"/>
+      <ellipse cx="135" cy="6" rx="22" ry="11" fill="none" stroke={fieldStroke} strokeWidth=".5" opacity=".6"/>
+      <ellipse cx="135" cy="381" rx="22" ry="11" fill="none" stroke={fieldStroke} strokeWidth=".5" opacity=".6"/>
+    </svg>
     {tpl==="ln6"&&<div style={{position:"absolute",left:0,top:0,bottom:0,width:4,background:"linear-gradient(to bottom,"+accent+","+accent2+")",zIndex:3}}/>}
     {tpl==="ln5"&&<div style={{position:"absolute",top:0,left:0,right:0,height:"27%",background:"linear-gradient(135deg,"+accent+","+accent2+")",zIndex:1}}/>}
-    {dark&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,transparent,"+accent+","+accent2+","+accent+",transparent)",zIndex:4}}/>}
+    {dark&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:isGold?"linear-gradient(90deg,transparent,"+GOLD+",#fff7c2,"+GOLD+",transparent)":"linear-gradient(90deg,transparent,"+accent+","+accent2+","+accent+",transparent)",zIndex:4}}/>}
+    {/* ln3 : second filet doré tout en bas pour cadrer */}
+    {isGold&&<div style={{position:"absolute",bottom:0,left:0,right:0,height:1,background:"linear-gradient(90deg,transparent,"+GOLD+",transparent)",zIndex:4,opacity:.7}}/>}
     <div style={{position:"relative",zIndex:3,padding:(W*.03)+"px "+(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
       <Logo url={logoUrl} sz={W*.09}/>
-      <div style={{textAlign:"center",overflow:"hidden",maxWidth:W*.6}}>{competition&&<div style={{fontSize:W*.022,color:dark?rgba(accent,.7):"#666",letterSpacing:".13em",textTransform:"uppercase",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{competition}</div>}<div style={{fontSize:W*.03,fontWeight:700,color:dark?"#fff":"#111",fontFamily:"Impact,sans-serif",letterSpacing:".05em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>XI · {fm}</div>{ld&&ld.opponent&&<div style={{fontSize:W*.024,color:dark?"rgba(255,255,255,.6)":"#555",fontFamily:"Impact,sans-serif",fontStyle:"italic",letterSpacing:".04em",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>vs {ld.opponent}</div>}</div>
+      <div style={{textAlign:"center",overflow:"hidden",maxWidth:W*.6}}>{competition&&<div style={{fontSize:W*.022,color:isGold?GOLD:(dark?rgba(accent,.7):"#666"),letterSpacing:".13em",textTransform:"uppercase",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{competition}</div>}<div style={{fontSize:W*.032,fontWeight:isGold?400:700,color:isGold?GOLD:(dark?"#fff":"#111"),fontFamily:isGold?"Georgia,'Times New Roman',serif":"Impact,sans-serif",fontStyle:isGold?"italic":"normal",letterSpacing:isGold?".02em":".05em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>XI · {fm}</div>{ld&&ld.opponent&&<div style={{fontSize:W*.024,color:isGold?"rgba(255,215,0,.65)":(dark?"rgba(255,255,255,.6)":"#555"),fontFamily:isGold?"Georgia,serif":"Impact,sans-serif",fontStyle:"italic",letterSpacing:".04em",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>vs {ld.opponent}</div>}</div>
       <Logo url={logo2Url} sz={W*.08}/>
     </div>
     <div style={{position:"relative",zIndex:3,flex:1,display:"flex",flexDirection:"column",justifyContent:"space-around",padding:"0 "+(W*.018)+"px"}}>
@@ -339,17 +369,148 @@ function GroupCanvas({gd,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H}){
   const mid=gd&&gd.mid?gd.mid:[];
   const fwd=gd&&gd.fwd?gd.fwd:[];
   const coaches=gd&&gd.coaches?gd.coaches:[];
+  // Titre éditable : font/size/color avec fallback aux défauts du template
+  const titleFont=(gd&&gd.titleFont)||"Impact";
+  const titleSizeOv=gd&&gd.titleSize;
+  const titleColorOv=gd&&gd.titleColor;
+  function tFont(){return titleFont+",sans-serif";}
+  function tSize(defPx){return titleSizeOv||defPx;}
+  function tColor(defC){return titleColorOv||defC;}
   const root={width:W,height:H,position:"relative",overflow:"hidden",borderRadius:W<160?6:14,flexShrink:0,display:"flex",flexDirection:"column",userSelect:"none"};
   function Logo(props){const sz=props.sz||W*.1;if(!props.url)return<div style={{width:sz,height:sz,borderRadius:4,background:rgba(accent,.25),display:"flex",alignItems:"center",justifyContent:"center",color:accent,fontSize:sz*.3}}>◈</div>;return<img src={props.url} style={{width:sz,height:sz,objectFit:"contain"}} alt=""/>;}
   function PlayerRow(props){const p=props.p;const col=props.col||accent;const ph=p.photo||getPhoto(p);return(<div style={{display:"flex",alignItems:"center",gap:W*.018,marginBottom:W*.009,padding:(W*.005)+"px",borderRadius:3,background:rgba("#fff",.025)}}>{ph?<img src={ph} style={{width:W*.074,height:W*.074,borderRadius:W*.009,objectFit:"cover",objectPosition:"top",border:"1px solid "+rgba(col,.3)}} alt=""/>:<div style={{width:W*.074,height:W*.074,borderRadius:W*.009,background:rgba(col,.13),display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:W*.026,fontWeight:900,color:col}}>{p.number||"?"}</div>}<span style={{flex:1,color:"rgba(255,255,255,.82)",fontSize:W*.032}}>{p.name||"—"}{p.captain&&<span style={{color:col,fontSize:W*.024,marginLeft:W*.009}}> ©</span>}</span>{p.number&&<span style={{fontSize:W*.028,color:rgba("#fff",.16),fontFamily:"Impact,sans-serif"}}>#{p.number}</span>}</div>);}
-  if(tpl==="gr3"){const allP=[].concat(gk,def,mid,fwd).slice(0,16);return(<div style={Object.assign({},root,{background:"#fff"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.05}} alt=""/>}<div style={{position:"relative",zIndex:2,background:"linear-gradient(135deg,"+accent+","+accent2+")",padding:(W*.028)+"px "+(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}><Logo url={logoUrl} sz={W*.09}/><div style={{textAlign:"center"}}>{competition&&<div style={{fontSize:W*.022,color:"rgba(255,255,255,.76)",letterSpacing:".1em",textTransform:"uppercase"}}>{competition}</div>}<div style={{fontSize:W*.052,fontWeight:900,color:"#fff",fontFamily:"Impact,sans-serif",letterSpacing:".05em"}}>{title}</div></div><Logo url={logo2Url} sz={W*.08}/></div><div style={{position:"relative",zIndex:2,flex:1,padding:(W*.018)+"px",display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:W*.012,alignContent:"start",overflowY:"auto"}}>{allP.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}><div style={{width:W*.18,height:W*.22,borderRadius:W*.016,overflow:"hidden",border:"2px solid "+rgba(accent,.25),background:"#eee",display:"flex",alignItems:"center",justifyContent:"center"}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<div style={{fontSize:W*.05,color:"#ccc"}}>👤</div>}</div><span style={{fontSize:W*.024,fontWeight:700,color:"#111",textAlign:"center",maxWidth:W*.19,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?p.name.split(" ").pop():"—"}</span>{p.number&&<span style={{fontSize:W*.019,color:accent,fontWeight:700}}>#{p.number}</span>}</div>);})}</div><Watermark/></div>);}
-  if(tpl==="gr4"){const left=[].concat(gk,def),right=[].concat(mid,fwd);return(<div style={Object.assign({},root,{background:"#f5f5f7"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.06}} alt=""/>}<div style={{position:"relative",zIndex:2,background:"linear-gradient(90deg,"+accent+","+accent2+")",padding:(W*.025)+"px "+(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}><Logo url={logoUrl} sz={W*.085}/><div style={{textAlign:"center"}}>{competition&&<div style={{fontSize:W*.019,color:"rgba(255,255,255,.76)",letterSpacing:".1em",textTransform:"uppercase"}}>{competition}</div>}<div style={{fontSize:W*.04,fontWeight:900,color:"#fff",fontFamily:"Impact,sans-serif"}}>{title}</div></div><Logo url={logo2Url} sz={W*.07}/></div><div style={{position:"relative",zIndex:2,flex:1,display:"grid",gridTemplateColumns:"1fr 1px 1fr",overflowY:"auto"}}><div style={{padding:(W*.016)+"px "+(W*.018)+"px"}}><div style={{fontSize:W*.019,color:accent,fontWeight:700,letterSpacing:".1em",marginBottom:W*.012}}>GK · DEF</div>{left.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.012,marginBottom:W*.012,paddingBottom:W*.012,borderBottom:"1px solid rgba(0,0,0,.05)"}}><div style={{width:W*.078,height:W*.078,borderRadius:"50%",overflow:"hidden",border:"2px solid "+rgba(accent,.28),background:"#ddd",flexShrink:0}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:W*.026,fontWeight:900,color:accent,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>{p.number||""}</span>}</div><div><div style={{fontSize:W*.028,fontWeight:700,color:"#111",maxWidth:W*.19,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?p.name.split(" ").pop():"—"}</div>{p.number&&<div style={{fontSize:W*.018,color:accent}}>#{p.number}</div>}</div></div>);})}</div><div style={{background:"rgba(0,0,0,.08)"}}/><div style={{padding:(W*.016)+"px "+(W*.018)+"px"}}><div style={{fontSize:W*.019,color:accent2,fontWeight:700,letterSpacing:".1em",marginBottom:W*.012}}>MIL · ATT</div>{right.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.012,marginBottom:W*.012,paddingBottom:W*.012,borderBottom:"1px solid rgba(0,0,0,.05)"}}><div style={{width:W*.078,height:W*.078,borderRadius:"50%",overflow:"hidden",border:"2px solid "+rgba(accent2,.28),background:"#ddd",flexShrink:0}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:W*.026,fontWeight:900,color:accent2,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>{p.number||""}</span>}</div><div><div style={{fontSize:W*.028,fontWeight:700,color:"#111",maxWidth:W*.19,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?p.name.split(" ").pop():"—"}</div>{p.number&&<div style={{fontSize:W*.018,color:accent2}}>#{p.number}</div>}</div></div>);})}</div></div><Watermark/></div>);}
-  if(tpl==="gr5"){const cats=[{l:"GARDIENS",list:gk,c:accent},{l:"DÉFENSEURS",list:def,c:accent2},{l:"MILIEUX",list:mid,c:accent},{l:"ATTAQUANTS",list:fwd,c:accent2}];if(coaches.length)cats.push({l:"STAFF",list:coaches,c:"rgba(255,255,255,.5)"});return(<div style={Object.assign({},root,{background:"#f8f9fa"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.06}} alt=""/>}<div style={{position:"relative",zIndex:2,padding:(W*.03)+"px "+(W*.04)+"px",background:"#fff",borderBottom:"1px solid #e8e8e8",display:"flex",alignItems:"center",justifyContent:"space-between"}}><div style={{display:"flex",alignItems:"center",gap:W*.025}}><Logo url={logoUrl} sz={W*.1}/><div><div style={{fontSize:W*.048,fontWeight:900,color:"#111",fontFamily:"Impact,sans-serif",letterSpacing:".04em"}}>{title}</div>{competition&&<div style={{fontSize:W*.019,color:"#888",letterSpacing:".1em",textTransform:"uppercase"}}>{competition}</div>}</div></div><Logo url={logo2Url} sz={W*.082}/></div><div style={{height:3,background:"linear-gradient(90deg,"+accent+","+accent2+")"}}/>  <div style={{position:"relative",zIndex:2,flex:1,overflowY:"auto",padding:(W*.022)+"px "+(W*.03)+"px"}}>{cats.map(function(cat,ci){if(!cat.list.length)return null;return(<div key={ci} style={{marginBottom:W*.018}}><div style={{display:"flex",alignItems:"center",gap:W*.014,marginBottom:W*.012}}><div style={{width:3,height:W*.03,borderRadius:2,background:cat.c}}/><span style={{fontSize:W*.022,color:cat.c,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase"}}>{cat.l}</span><span style={{fontSize:W*.019,color:"#bbb",marginLeft:"auto"}}>{cat.list.length}</span></div>{cat.list.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.018,background:"#fff",borderRadius:W*.016,padding:(W*.01)+"px "+(W*.018)+"px",border:"1px solid #f0f0f0",marginBottom:W*.007}}>{ph?<img src={ph} style={{width:W*.072,height:W*.072,borderRadius:W*.012,objectFit:"cover",objectPosition:"top",border:"1px solid "+rgba(cat.c,.3)}} alt=""/>:<div style={{width:W*.072,height:W*.072,borderRadius:W*.012,background:rgba(cat.c,.12),display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:W*.026,fontWeight:900,color:cat.c}}>{p.number||"?"}</div>}<span style={{flex:1,fontSize:W*.032,color:"#111",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name||"—"}{p.captain&&<span style={{color:cat.c,fontSize:W*.022,marginLeft:W*.009}}>©</span>}</span>{p.number&&<span style={{fontSize:W*.028,fontWeight:700,color:cat.c,fontFamily:"Impact,sans-serif"}}>#{p.number}</span>}</div>);})}</div>);})}</div><Watermark/></div>);}
+  function StaffSep(props){
+    const isDark=props.dark!==false;
+    const lineCol=isDark?"rgba(255,255,255,.18)":"rgba(0,0,0,.1)";
+    const txtCol=isDark?"rgba(255,255,255,.6)":"#888";
+    return(<div style={{display:"flex",alignItems:"center",gap:W*.012,margin:(W*.022)+"px 0 "+(W*.012)+"px"}}>
+      <div style={{flex:1,height:1,background:lineCol}}/>
+      <span style={{fontSize:W*.02,color:txtCol,letterSpacing:".22em",fontWeight:700,textTransform:"uppercase"}}>Staff</span>
+      <div style={{flex:1,height:1,background:lineCol}}/>
+    </div>);
+  }
+  if(tpl==="gr3"){
+    const allP=[].concat(gk,def,mid,fwd).slice(0,16);
+    return(<div style={Object.assign({},root,{background:"#fff"})}>
+      {bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.05}} alt=""/>}
+      <div style={{position:"relative",zIndex:2,background:"linear-gradient(135deg,"+accent+","+accent2+")",padding:(W*.028)+"px "+(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <Logo url={logoUrl} sz={W*.09}/>
+        <div style={{textAlign:"center"}}>{competition&&<div style={{fontSize:W*.022,color:"rgba(255,255,255,.76)",letterSpacing:".1em",textTransform:"uppercase"}}>{competition}</div>}<div style={{fontSize:tSize(W*.052),fontWeight:900,color:tColor("#fff"),fontFamily:tFont(),letterSpacing:".05em"}}>{title}</div></div>
+        <Logo url={logo2Url} sz={W*.08}/>
+      </div>
+      <div style={{position:"relative",zIndex:2,flex:1,padding:(W*.018)+"px",overflowY:"auto"}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:W*.012,alignContent:"start"}}>{allP.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}><div style={{width:W*.18,height:W*.22,borderRadius:W*.016,overflow:"hidden",border:"2px solid "+rgba(accent,.25),background:"#eee",display:"flex",alignItems:"center",justifyContent:"center"}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<div style={{fontSize:W*.05,color:"#ccc"}}>👤</div>}</div><span style={{fontSize:W*.024,fontWeight:700,color:"#111",textAlign:"center",maxWidth:W*.19,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?p.name.split(" ").pop():"—"}</span>{p.number&&<span style={{fontSize:W*.019,color:accent,fontWeight:700}}>#{p.number}</span>}</div>);})}</div>
+        {coaches.length>0&&<>
+          <StaffSep dark={false}/>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:W*.012,alignContent:"start"}}>{coaches.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={"st"+i} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}><div style={{width:W*.15,height:W*.18,borderRadius:W*.016,overflow:"hidden",border:"1px solid rgba(0,0,0,.12)",background:"#eee",display:"flex",alignItems:"center",justifyContent:"center"}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<div style={{fontSize:W*.04,color:"#bbb"}}>👤</div>}</div><span style={{fontSize:W*.021,fontWeight:600,color:"#555",textAlign:"center",maxWidth:W*.17,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?p.name.split(" ").pop():"—"}</span></div>);})}</div>
+        </>}
+      </div>
+      <Watermark/>
+    </div>);
+  }
+  if(tpl==="gr4"){
+    const left=[].concat(gk,def),right=[].concat(mid,fwd);
+    return(<div style={Object.assign({},root,{background:"#f5f5f7"})}>
+      {bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.06}} alt=""/>}
+      <div style={{position:"relative",zIndex:2,background:"linear-gradient(90deg,"+accent+","+accent2+")",padding:(W*.025)+"px "+(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <Logo url={logoUrl} sz={W*.085}/>
+        <div style={{textAlign:"center"}}>{competition&&<div style={{fontSize:W*.019,color:"rgba(255,255,255,.76)",letterSpacing:".1em",textTransform:"uppercase"}}>{competition}</div>}<div style={{fontSize:tSize(W*.04),fontWeight:900,color:tColor("#fff"),fontFamily:tFont()}}>{title}</div></div>
+        <Logo url={logo2Url} sz={W*.07}/>
+      </div>
+      <div style={{position:"relative",zIndex:2,flex:1,display:"flex",flexDirection:"column",overflowY:"auto"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1px 1fr"}}>
+          <div style={{padding:(W*.016)+"px "+(W*.018)+"px"}}><div style={{fontSize:W*.019,color:accent,fontWeight:700,letterSpacing:".1em",marginBottom:W*.012}}>GK · DEF</div>{left.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.012,marginBottom:W*.012,paddingBottom:W*.012,borderBottom:"1px solid rgba(0,0,0,.05)"}}><div style={{width:W*.078,height:W*.078,borderRadius:"50%",overflow:"hidden",border:"2px solid "+rgba(accent,.28),background:"#ddd",flexShrink:0}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:W*.026,fontWeight:900,color:accent,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>{p.number||""}</span>}</div><div><div style={{fontSize:W*.028,fontWeight:700,color:"#111",maxWidth:W*.19,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?p.name.split(" ").pop():"—"}</div>{p.number&&<div style={{fontSize:W*.018,color:accent}}>#{p.number}</div>}</div></div>);})}</div>
+          <div style={{background:"rgba(0,0,0,.08)"}}/>
+          <div style={{padding:(W*.016)+"px "+(W*.018)+"px"}}><div style={{fontSize:W*.019,color:accent2,fontWeight:700,letterSpacing:".1em",marginBottom:W*.012}}>MIL · ATT</div>{right.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.012,marginBottom:W*.012,paddingBottom:W*.012,borderBottom:"1px solid rgba(0,0,0,.05)"}}><div style={{width:W*.078,height:W*.078,borderRadius:"50%",overflow:"hidden",border:"2px solid "+rgba(accent2,.28),background:"#ddd",flexShrink:0}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:W*.026,fontWeight:900,color:accent2,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>{p.number||""}</span>}</div><div><div style={{fontSize:W*.028,fontWeight:700,color:"#111",maxWidth:W*.19,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?p.name.split(" ").pop():"—"}</div>{p.number&&<div style={{fontSize:W*.018,color:accent2}}>#{p.number}</div>}</div></div>);})}</div>
+        </div>
+        {coaches.length>0&&<div style={{padding:"0 "+(W*.018)+"px "+(W*.018)+"px"}}>
+          <StaffSep dark={false}/>
+          <div style={{display:"flex",flexWrap:"wrap",gap:W*.018}}>{coaches.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={"st"+i} style={{display:"flex",alignItems:"center",gap:W*.01}}>{ph?<img src={ph} style={{width:W*.05,height:W*.05,borderRadius:"50%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<div style={{width:W*.05,height:W*.05,borderRadius:"50%",background:"#ddd"}}/>}<span style={{fontSize:W*.022,color:"#555",fontWeight:600}}>{p.name||"—"}</span></div>);})}</div>
+        </div>}
+      </div>
+      <Watermark/>
+    </div>);
+  }
+  if(tpl==="gr5"){const cats=[{l:"GARDIENS",list:gk,c:accent},{l:"DÉFENSEURS",list:def,c:accent2},{l:"MILIEUX",list:mid,c:accent},{l:"ATTAQUANTS",list:fwd,c:accent2}];if(coaches.length)cats.push({l:"STAFF",list:coaches,c:"rgba(255,255,255,.5)"});return(<div style={Object.assign({},root,{background:"#f8f9fa"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.06}} alt=""/>}<div style={{position:"relative",zIndex:2,padding:(W*.03)+"px "+(W*.04)+"px",background:"#fff",borderBottom:"1px solid #e8e8e8",display:"flex",alignItems:"center",justifyContent:"space-between"}}><div style={{display:"flex",alignItems:"center",gap:W*.025}}><Logo url={logoUrl} sz={W*.1}/><div><div style={{fontSize:tSize(W*.048),fontWeight:900,color:tColor("#111"),fontFamily:tFont(),letterSpacing:".04em"}}>{title}</div>{competition&&<div style={{fontSize:W*.019,color:"#888",letterSpacing:".1em",textTransform:"uppercase"}}>{competition}</div>}</div></div><Logo url={logo2Url} sz={W*.082}/></div><div style={{height:3,background:"linear-gradient(90deg,"+accent+","+accent2+")"}}/>  <div style={{position:"relative",zIndex:2,flex:1,overflowY:"auto",padding:(W*.022)+"px "+(W*.03)+"px"}}>{cats.map(function(cat,ci){if(!cat.list.length)return null;return(<div key={ci} style={{marginBottom:W*.018}}><div style={{display:"flex",alignItems:"center",gap:W*.014,marginBottom:W*.012}}><div style={{width:3,height:W*.03,borderRadius:2,background:cat.c}}/><span style={{fontSize:W*.022,color:cat.c,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase"}}>{cat.l}</span><span style={{fontSize:W*.019,color:"#bbb",marginLeft:"auto"}}>{cat.list.length}</span></div>{cat.list.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.018,background:"#fff",borderRadius:W*.016,padding:(W*.01)+"px "+(W*.018)+"px",border:"1px solid #f0f0f0",marginBottom:W*.007}}>{ph?<img src={ph} style={{width:W*.072,height:W*.072,borderRadius:W*.012,objectFit:"cover",objectPosition:"top",border:"1px solid "+rgba(cat.c,.3)}} alt=""/>:<div style={{width:W*.072,height:W*.072,borderRadius:W*.012,background:rgba(cat.c,.12),display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:W*.026,fontWeight:900,color:cat.c}}>{p.number||"?"}</div>}<span style={{flex:1,fontSize:W*.032,color:"#111",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name||"—"}{p.captain&&<span style={{color:cat.c,fontSize:W*.022,marginLeft:W*.009}}>©</span>}</span>{p.number&&<span style={{fontSize:W*.028,fontWeight:700,color:cat.c,fontFamily:"Impact,sans-serif"}}>#{p.number}</span>}</div>);})}</div>);})}</div><Watermark/></div>);}
+  // gr2 "Élite Dark" — style magazine sportif : grande photo de fond, typo massive, bandes diagonales
+  if(tpl==="gr2"){
+    const allP=[].concat(gk,def,mid,fwd);
+    const staffList=coaches||[];
+    return(<div style={Object.assign({},root,{background:"#020208"})}>
+      {bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.6,filter:"contrast(1.05) saturate(1.1)"}} alt=""/>}
+      {/* Voile dégradé : opaque en bas, semi en haut pour laisser respirer la photo */}
+      <div style={{position:"absolute",inset:0,background:"linear-gradient(to bottom,rgba(0,0,0,.55) 0%,rgba(0,0,0,.25) 35%,rgba(0,0,0,.85) 75%,rgba(0,0,0,.95) 100%)"}}/>
+      {/* Bandes diagonales magazine */}
+      <svg style={{position:"absolute",inset:0,width:"100%",height:"100%",pointerEvents:"none"}} viewBox="0 0 270 480" preserveAspectRatio="none">
+        <polygon points="0,40 270,0 270,18 0,58" fill={accent} opacity=".9"/>
+        <polygon points="0,62 270,22 270,30 0,70" fill={accent2} opacity=".75"/>
+        <polygon points="0,420 270,400 270,408 0,428" fill={accent} opacity=".55"/>
+      </svg>
+      {/* Header logos */}
+      <div style={{position:"relative",zIndex:3,padding:(W*.04)+"px "+(W*.045)+"px "+(W*.025)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <Logo url={logoUrl} sz={W*.11}/>
+        {competition&&<div style={{fontSize:W*.022,color:rgba("#fff",.55),letterSpacing:".18em",textTransform:"uppercase",fontWeight:600}}>{competition}</div>}
+        <Logo url={logo2Url} sz={W*.085}/>
+      </div>
+      {/* Titre massif */}
+      <div style={{position:"relative",zIndex:3,padding:"0 "+(W*.045)+"px",marginTop:W*.01,marginBottom:W*.025}}>
+        <div style={{fontSize:tSize(W*.105),fontWeight:900,color:tColor("#fff"),fontFamily:tFont(),letterSpacing:"-.01em",lineHeight:.95,textTransform:"uppercase",textShadow:"0 4px 18px rgba(0,0,0,.5)"}}>{title}</div>
+        <div style={{width:W*.18,height:3,background:accent,marginTop:W*.018,borderRadius:1}}/>
+      </div>
+      {/* Liste joueurs condensée */}
+      <div style={{position:"relative",zIndex:3,flex:1,overflowY:"auto",padding:(W*.012)+"px "+(W*.045)+"px"}}>
+        {allP.map(function(p,i){
+          const ph=p.photo||getPhoto(p);
+          return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.018,padding:(W*.008)+"px 0",borderBottom:"1px solid rgba(255,255,255,.07)"}}>
+            <span style={{fontSize:W*.022,color:rgba(accent,.85),fontWeight:700,fontFamily:"Impact,sans-serif",letterSpacing:".06em",minWidth:W*.05}}>{String(i+1).padStart(2,"0")}</span>
+            {ph?<img src={ph} style={{width:W*.062,height:W*.062,borderRadius:"50%",objectFit:"cover",objectPosition:"top",border:"1px solid "+rgba(accent,.4)}} alt=""/>:<div style={{width:W*.062,height:W*.062,borderRadius:"50%",background:rgba(accent,.18),display:"flex",alignItems:"center",justifyContent:"center",fontSize:W*.022,fontWeight:900,color:accent}}>{p.number||"?"}</div>}
+            <span style={{flex:1,fontSize:W*.028,color:"#fff",fontWeight:600,letterSpacing:".01em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name||"—"}{p.captain&&<span style={{color:accent,marginLeft:6}}>©</span>}</span>
+            {p.number&&<span style={{fontSize:W*.028,color:rgba("#fff",.4),fontFamily:"Impact,sans-serif",fontWeight:900}}>#{p.number}</span>}
+          </div>);
+        })}
+        {/* Séparateur staff */}
+        {staffList.length>0&&<>
+          <div style={{display:"flex",alignItems:"center",gap:W*.014,marginTop:W*.022,marginBottom:W*.012}}>
+            <div style={{flex:1,height:1,background:rgba("#fff",.18)}}/>
+            <span style={{fontSize:W*.02,color:rgba("#fff",.6),letterSpacing:".22em",fontWeight:700,textTransform:"uppercase"}}>Staff</span>
+            <div style={{flex:1,height:1,background:rgba("#fff",.18)}}/>
+          </div>
+          {staffList.map(function(p,i){
+            const ph=p.photo||getPhoto(p);
+            return(<div key={"st"+i} style={{display:"flex",alignItems:"center",gap:W*.018,padding:(W*.006)+"px 0"}}>
+              {ph?<img src={ph} style={{width:W*.05,height:W*.05,borderRadius:"50%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<div style={{width:W*.05,height:W*.05,borderRadius:"50%",background:"rgba(255,255,255,.1)"}}/>}
+              <span style={{flex:1,fontSize:W*.025,color:rgba("#fff",.78),letterSpacing:".02em"}}>{p.name||"—"}</span>
+            </div>);
+          })}
+        </>}
+      </div>
+      <Watermark/>
+    </div>);
+  }
   const isNeon=tpl==="gr6";
   const cats2=[{l:"GARDIENS",list:gk,c:isNeon?"#00ffaa":accent},{l:"DÉFENSEURS",list:def,c:isNeon?"#4488ff":accent2},{l:"MILIEUX",list:mid,c:isNeon?"#ff4499":accent},{l:"ATTAQUANTS",list:fwd,c:isNeon?"#ffcc00":accent2}];
-  if(coaches.length)cats2.push({l:"STAFF / COACHS",list:coaches,c:"rgba(255,255,255,.45)"});
-  const bg2={gr1:"#020208",gr2:"#02020a",gr6:"#04040c"}[tpl]||"#020208";
-  return(<div style={Object.assign({},root,{background:bg2})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.12}} alt=""/>}<div style={{position:"absolute",inset:0,background:"linear-gradient(160deg,"+rgba(accent,.11)+",transparent 50%,"+rgba(accent2,.08)+")"}}/>  <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"linear-gradient(90deg,"+accent+","+accent2+")",zIndex:4}}/><div style={{position:"relative",zIndex:3,padding:(W*.03)+"px "+(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}><Logo url={logoUrl} sz={W*.105}/><div style={{textAlign:"right"}}>{competition&&<div style={{fontSize:W*.019,color:rgba("#fff",.32),letterSpacing:".12em",textTransform:"uppercase"}}>{competition}</div>}<div style={{fontSize:W*.054,fontWeight:900,color:"#fff",fontFamily:"Impact,sans-serif",letterSpacing:".05em",textShadow:isNeon?"0 0 20px "+rgba(accent,.5):"none"}}>{title}</div></div></div><div style={{position:"relative",zIndex:3,flex:1,overflowY:"auto",padding:(W*.005)+"px "+(W*.04)+"px "+(W*.018)+"px"}}>{cats2.map(function(cat,ci){if(!cat.list.length)return null;return(<div key={ci} style={{marginBottom:W*.018}}><div style={{display:"flex",alignItems:"center",gap:W*.014,marginBottom:W*.008}}><div style={{width:W*.04,height:1,background:cat.c}}/><span style={{fontSize:W*.022,color:cat.c,fontWeight:700,letterSpacing:".12em"}}>{cat.l} ({cat.list.length})</span><div style={{flex:1,height:1,background:rgba(cat.c,.2)}}/></div>{cat.list.map(function(p,i){return<PlayerRow key={i} p={p} col={cat.c}/>;})}</div>);})}</div><Watermark/></div>);
+  const bg2={gr1:"#020208",gr6:"#04040c"}[tpl]||"#020208";
+  return(<div style={Object.assign({},root,{background:bg2})}>
+    {bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.12}} alt=""/>}
+    <div style={{position:"absolute",inset:0,background:"linear-gradient(160deg,"+rgba(accent,.11)+",transparent 50%,"+rgba(accent2,.08)+")"}}/>
+    <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"linear-gradient(90deg,"+accent+","+accent2+")",zIndex:4}}/>
+    <div style={{position:"relative",zIndex:3,padding:(W*.03)+"px "+(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:W*.02}}>
+      <Logo url={logoUrl} sz={W*.105}/>
+      <div style={{flex:1,textAlign:"center",overflow:"hidden"}}>
+        {competition&&<div style={{fontSize:W*.019,color:rgba("#fff",.32),letterSpacing:".12em",textTransform:"uppercase"}}>{competition}</div>}
+        <div style={{fontSize:tSize(W*.054),fontWeight:900,color:tColor("#fff"),fontFamily:tFont(),letterSpacing:".05em",textShadow:isNeon?"0 0 20px "+rgba(accent,.5):"none",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{title}</div>
+      </div>
+      <Logo url={logo2Url} sz={W*.085}/>
+    </div>
+    <div style={{position:"relative",zIndex:3,flex:1,overflowY:"auto",padding:(W*.005)+"px "+(W*.04)+"px "+(W*.018)+"px"}}>
+      {cats2.map(function(cat,ci){if(!cat.list.length)return null;return(<div key={ci} style={{marginBottom:W*.018}}><div style={{display:"flex",alignItems:"center",gap:W*.014,marginBottom:W*.008}}><div style={{width:W*.04,height:1,background:cat.c}}/><span style={{fontSize:W*.022,color:cat.c,fontWeight:700,letterSpacing:".12em"}}>{cat.l} ({cat.list.length})</span><div style={{flex:1,height:1,background:rgba(cat.c,.2)}}/></div>{cat.list.map(function(p,i){return<PlayerRow key={i} p={p} col={cat.c}/>;})}</div>);})}
+      {coaches.length>0&&<>
+        <StaffSep dark={true}/>
+        {coaches.map(function(p,i){return<PlayerRow key={"st"+i} p={p} col="rgba(255,255,255,.55)"/>;})}
+      </>}
+    </div>
+    <Watermark/>
+  </div>);
 }
 // ─── POST CANVAS ──────────────────────────────────────────────
 function PostCanvas({pd,tpl,logoUrl,accent,accent2,bgUrl,W,H}){
@@ -376,13 +537,20 @@ function HistoryThumb({h,c1,c2}){
   try{
     if(h.type==="lineup")return<div style={wr}><div style={inn}><LineupCanvas ld={h.lineupData} tpl={h.lineupTpl||"ln1"} logoUrl={h.logoUrl} logo2Url={h.logo2Url} accent={h.accent||c1} accent2={h.accent2||c2} bgUrl={h.bgUrl}/></div></div>;
     if(h.type==="group")return<div style={wr}><div style={inn}><GroupCanvas gd={h.groupData} tpl={h.groupTpl||"gr1"} logoUrl={h.logoUrl} logo2Url={h.logo2Url} accent={h.accent||c1} accent2={h.accent2||c2} bgUrl={h.bgUrl}/></div></div>;
-    if(h.type==="post")return<div style={wr}><div style={inn}><PostCanvas pd={h.postData} tpl={h.postTpl||"pt1"} logoUrl={h.logoUrl} accent={h.accent||c1} accent2={h.accent2||c2} bgUrl={h.bgUrl}/></div></div>;
+    if(h.type==="post"){
+      // Post nouveau format : layers présents → rendu standard. Sinon legacy PostCanvas via postData.
+      if(h.layers&&h.layers.length>0){
+        const sortedP=[...h.layers].sort((a,b)=>a.z-b.z);
+        return(<div style={Object.assign({},wr,{background:"#000"})}><div style={inn}>{sortedP.map(lay=><LayerView key={lay.id} lay={lay} bgUrl={h.bgUrl} playerUrl={h.playerUrl} logoUrl={h.logoUrl} logo2Url={h.logo2Url} accent={h.accent||c1} accent2={h.accent2||c2} isSel={false} onMD={()=>{}}/>)}</div></div>);
+      }
+      return<div style={wr}><div style={inn}><PostCanvas pd={h.postData} tpl={h.postTpl||"pt1"} logoUrl={h.logoUrl} accent={h.accent||c1} accent2={h.accent2||c2} bgUrl={h.bgUrl}/></div></div>;
+    }
     const sorted=[...(h.layers||[])].sort((a,b)=>a.z-b.z);
     return(<div style={Object.assign({},wr,{background:"#111"})}><div style={inn}>{sorted.map(lay=><LayerView key={lay.id} lay={lay} bgUrl={h.bgUrl} playerUrl={h.playerUrl} logoUrl={h.logoUrl} logo2Url={h.logo2Url} accent={h.accent||c1} accent2={h.accent2||c2} isSel={false} onMD={()=>{}}/>)}</div></div>);
   }catch(e){return<div style={Object.assign({},wr,{background:"#111",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20})}>{h.ct&&h.ct.icon?h.ct.icon:"📄"}</div>;}
 }
 // ─── DRAG CANVAS ──────────────────────────────────────────────
-function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,t,isMobile,mobileSheet,setMobileSheet,canvasScale}){
+function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,t,isMobile,mobileSheet,setMobileSheet,canvasScale,clubName}){
   const cvRef=useRef(null);const dragRef=useRef(null);const resizeRef=useRef(null);const historyRef=useRef([]);const[sel,setSel]=useState(null);const[historyDepth,setHistoryDepth]=useState(0);const selL=sel?layers.find(l=>l.id===sel):null;
   function pushHist(){
     historyRef.current.push(JSON.parse(JSON.stringify(layers)));
@@ -462,6 +630,14 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
     setLayers(prev=>[...prev,newLayer]);
     setSel(newId);
   }
+  function addText(){
+    pushHist();
+    const newId="tx_"+Date.now();
+    const maxZ=layers.reduce((m,l)=>Math.max(m,l.z),0);
+    const newLayer={id:newId,z:maxZ+1,type:"text",x:10,y:45,w:80,h:10,locked:false,label:"Texte",text:"Nouveau texte",font:"Impact",fontSize:24,color:"#ffffff",bold:false,italic:false,upper:false,letterSpacing:0,lineHeight:1.2,bgColor:"#000000",bgOpacity:0,textShadow:6,align:"center",curve:0};
+    setLayers(prev=>[...prev,newLayer]);
+    setSel(newId);
+  }
   const[removingBg,setRemovingBg]=useState(false);
   function removeBgOnSelected(){
     if(!selL||!selL.url)return;
@@ -509,7 +685,7 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
       <div style={isMobile?{width:270*cs,height:480*cs,position:"relative",flexShrink:0}:{display:"contents"}}>
         <div style={isMobile?{position:"absolute",top:0,left:0,width:270,height:480,transform:"scale("+cs+")",transformOrigin:"top left"}:{display:"contents"}}>
           <div ref={cvRef} className="visium-canvas" onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU} onClick={layerHit} style={{width:270,height:480,position:"relative",overflow:"hidden",borderRadius:16,border:"1px solid "+t.border,background:"#111",cursor:"default",userSelect:"none",flexShrink:0}}>
-            {sorted.map(lay=>(<LayerView key={lay.id} lay={lay} bgUrl={bgUrl} playerUrl={playerUrl} logoUrl={logoUrl} logo2Url={logo2Url} accent={accent} accent2={accent2} isSel={sel===lay.id} onMD={onMD} onResize={onResize} hideHandles={isMobile}/>))}
+            {sorted.map(lay=>(<LayerView key={lay.id} lay={lay} bgUrl={bgUrl} playerUrl={playerUrl} logoUrl={logoUrl} logo2Url={logo2Url} accent={accent} accent2={accent2} isSel={sel===lay.id} onMD={onMD} onResize={onResize} hideHandles={isMobile} clubName={clubName}/>))}
             <Watermark/>
           </div>
         </div>
@@ -528,9 +704,10 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
       {isMobile&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingBottom:8,borderBottom:"1px solid "+t.border}}><div style={{fontSize:13,fontWeight:700,color:t.text}}>Calques</div><button onClick={()=>setMobileSheet&&setMobileSheet(null)} style={{background:"none",border:"none",color:t.text3,fontSize:18,cursor:"pointer",padding:4}}>✕</button></div>}
       <div style={{display:"flex",alignItems:"center",justifyContent:isMobile?"flex-end":"space-between",marginBottom:8}}>
         {!isMobile&&<div style={{fontSize:10,color:t.text3,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase"}}>Calques</div>}
-        <div style={{display:"flex",gap:5}}>
-          <button onClick={addColorBlock} style={{background:rgba(accent,.15),color:accent,border:"1px solid "+rgba(accent,.35),borderRadius:6,padding:"3px 8px",fontSize:10,fontWeight:600,cursor:"pointer"}}>+ Couleur</button>
-          <button onClick={addSponsor} style={{background:rgba(accent,.15),color:accent,border:"1px solid "+rgba(accent,.35),borderRadius:6,padding:"3px 8px",fontSize:10,fontWeight:600,cursor:"pointer"}}>+ Sponsor</button>
+        <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+          <button onClick={addText} style={{background:rgba(accent,.15),color:accent,border:"1px solid "+rgba(accent,.35),borderRadius:6,padding:"3px 7px",fontSize:10,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>+ Texte</button>
+          <button onClick={addColorBlock} style={{background:rgba(accent,.15),color:accent,border:"1px solid "+rgba(accent,.35),borderRadius:6,padding:"3px 7px",fontSize:10,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>+ Couleur</button>
+          <button onClick={addSponsor} style={{background:rgba(accent,.15),color:accent,border:"1px solid "+rgba(accent,.35),borderRadius:6,padding:"3px 7px",fontSize:10,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>+ Sponsor</button>
         </div>
       </div>
       <div style={{marginBottom:12}}>{[...sorted].reverse().map(lay=>(<div key={lay.id} onClick={()=>setSel(lay.id)} style={{display:"flex",alignItems:"center",gap:5,padding:"5px 7px",borderRadius:6,marginBottom:2,background:sel===lay.id?rgba(accent,.14):t.bg3,border:"1px solid "+(sel===lay.id?rgba(accent,.45):t.border),cursor:"pointer"}}><span style={{fontSize:10,color:t.text,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lay.label||lay.type}</span>{!lay.locked&&<><button onClick={e=>{e.stopPropagation();moveZ(lay.id,1);}} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:11,padding:0}}>↑</button><button onClick={e=>{e.stopPropagation();moveZ(lay.id,-1);}} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:11,padding:0}}>↓</button></>}</div>))}</div>
@@ -578,7 +755,31 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
             </button>
           )}
         </>}
-        {(selL.type==="scoreblock"||selL.type==="scorebig")&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:8}}><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Nous</div><input value={selL.scoreHome||"0"} onChange={e=>upd("scoreHome",e.target.value)} style={inp}/></div><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Eux</div><input value={selL.scoreAway||"0"} onChange={e=>upd("scoreAway",e.target.value)} style={inp}/></div></div>}
+        {(selL.type==="scoreblock"||selL.type==="scorebig")&&<>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:6}}>
+            <div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Score domicile</div><input value={selL.scoreHome||"0"} onChange={e=>upd("scoreHome",e.target.value)} style={inp}/></div>
+            <div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Score adversaire</div><input value={selL.scoreAway||"0"} onChange={e=>upd("scoreAway",e.target.value)} style={inp}/></div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:6}}>
+            <div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Nom domicile</div><input value={selL.homeLabel!=null?selL.homeLabel:(clubName||"")} onChange={e=>upd("homeLabel",e.target.value)} placeholder={clubName||"Mon club"} style={inp}/></div>
+            <div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Nom adversaire</div><input value={selL.awayLabel!=null?selL.awayLabel:"Adversaire"} onChange={e=>upd("awayLabel",e.target.value)} placeholder="Adversaire" style={inp}/></div>
+          </div>
+          <label style={{display:"flex",alignItems:"center",gap:6,fontSize:10,color:t.text3,marginBottom:8,cursor:"pointer"}}>
+            <input type="checkbox" checked={selL.showNames!==false} onChange={e=>upd("showNames",e.target.checked)}/>
+            Afficher les noms d'équipe
+          </label>
+        </>}
+        {selL.type==="resultlabel"&&<>
+          <div style={{marginBottom:6}}>
+            <div style={{fontSize:9,color:t.text3,marginBottom:2}}>Texte (laisser vide = calcul auto VICTOIRE/NUL/DÉFAITE)</div>
+            <input value={selL.text||""} onChange={e=>upd("text",e.target.value)} placeholder="(auto)" style={inp}/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:6}}>
+            <div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Couleur</div><input type="color" value={selL.color||"#22c55e"} onChange={e=>upd("color",e.target.value)} style={{width:"100%",height:30,borderRadius:6,border:"1px solid "+t.border2,background:t.bg4,cursor:"pointer",padding:2}}/></div>
+            <div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Taille</div><input type="number" value={selL.fontSize||11} onChange={e=>upd("fontSize",+e.target.value||11)} style={inp}/></div>
+          </div>
+          {selL.color&&<button onClick={()=>upd("color",null)} style={{background:"none",border:"none",color:t.accent,cursor:"pointer",fontSize:9,padding:0,textDecoration:"underline",marginBottom:8}}>Reset couleur auto</button>}
+        </>}
         <div style={{background:t.bg3,borderRadius:8,padding:9,marginBottom:8}}><div style={{fontSize:9,color:t.text3,fontWeight:700,marginBottom:6}}>POSITION & TAILLE</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginBottom:4}}><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>X %</div><input type="number" value={Math.round(selL.x||0)} onChange={e=>upd("x",+e.target.value)} style={inp}/></div><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Y %</div><input type="number" value={Math.round(selL.y||0)} onChange={e=>upd("y",+e.target.value)} style={inp}/></div></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Larg %</div><input type="number" value={Math.round(selL.w||20)} onChange={e=>upd("w",+e.target.value)} style={inp}/></div><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Haut %</div><input type="number" value={Math.round(selL.h||10)} onChange={e=>upd("h",+e.target.value)} style={inp}/></div></div></div>
         <div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Nom du calque</div><input value={selL.label||""} onChange={e=>upd("label",e.target.value)} style={inp}/></div>
         <button onClick={delSel} style={{width:"100%",background:"rgba(239,68,68,.1)",color:"#fca5a5",border:"1px solid rgba(239,68,68,.28)",borderRadius:7,padding:"7px",fontSize:11,cursor:"pointer"}}>🗑 Supprimer</button>
@@ -630,14 +831,24 @@ function PhotoPanel({players,selId,onSel,selUrl,onSelUrl,onAdd,onAddUrl,onFav,t}
   function handleRemoveBg(ph){
     setRemoving(ph.id);
     const img=new Image();
-    img.crossOrigin="anonymous";
+    // Pas de crossOrigin sur les data URLs : ça déclenche un faux "tainted canvas" sur iOS Safari < 16
+    const isDataUrl=typeof ph.url==="string"&&ph.url.startsWith("data:");
+    if(!isDataUrl)img.crossOrigin="anonymous";
     img.onload=()=>{
       try{
+        // iOS Safari limite la taille du canvas (~16 Mpx). On downscale si l'image dépasse 2048 sur le plus grand côté.
+        const MAX_DIM=2048;
+        const iw=img.naturalWidth||img.width, ih=img.naturalHeight||img.height;
+        const scale=Math.min(1,MAX_DIM/Math.max(iw,ih));
+        const cw=Math.max(1,Math.round(iw*scale)), ch=Math.max(1,Math.round(ih*scale));
         const c=document.createElement("canvas");
-        c.width=img.naturalWidth||img.width; c.height=img.naturalHeight||img.height;
+        c.width=cw; c.height=ch;
         const ctx=c.getContext("2d");
-        ctx.drawImage(img,0,0);
-        const d=ctx.getImageData(0,0,c.width,c.height);
+        if(!ctx){console.error("removeBg: canvas 2d context unavailable");setRemoving(null);return;}
+        ctx.drawImage(img,0,0,cw,ch);
+        let d;
+        try{d=ctx.getImageData(0,0,cw,ch);}
+        catch(secErr){console.error("removeBg: getImageData blocked (tainted canvas):",secErr&&secErr.message);setRemoving(null);return;}
         const data=d.data;
         for(let i=0;i<data.length;i+=4){
           const r=data[i],g=data[i+1],b=data[i+2];
@@ -649,11 +860,11 @@ function PhotoPanel({players,selId,onSel,selUrl,onSelUrl,onAdd,onAddUrl,onFav,t}
         const newUrl=c.toDataURL("image/png");
         Promise.resolve(onAddUrl&&onAddUrl(selId,newUrl,(ph.name||"photo")+"_nobg")).finally(()=>setRemoving(null));
       }catch(e){
-        console.error("removeBg failed:",e);
+        console.error("removeBg failed:",e&&e.message);
         setRemoving(null);
       }
     };
-    img.onerror=()=>setRemoving(null);
+    img.onerror=(e)=>{console.error("removeBg: img load failed",e);setRemoving(null);};
     img.src=ph.url;
   }
   return(<div>
@@ -669,8 +880,8 @@ function PhotoPanel({players,selId,onSel,selUrl,onSelUrl,onAdd,onAddUrl,onFav,t}
           </div>
           {(ph.is_fav||ph.fav)&&<div style={{position:"absolute",top:3,left:3,background:t.accent,borderRadius:3,fontSize:8,color:contrastText(t.accent),padding:"1px 4px",fontWeight:700}}>FAV</div>}
           <div onClick={e=>{e.stopPropagation();onFav(selId,ph.id);}} style={{position:"absolute",top:3,right:3,fontSize:13,background:"rgba(0,0,0,.5)",borderRadius:3,padding:"1px 2px",cursor:"pointer"}}>{(ph.is_fav||ph.fav)?"★":"☆"}</div>
-          <button onClick={e=>{e.stopPropagation();handleRemoveBg(ph);}} disabled={removing===ph.id}
-            style={{position:"absolute",bottom:3,left:"50%",transform:"translateX(-50%)",background:rgba(t.accent,.85),border:"none",borderRadius:4,fontSize:9,color:contrastText(t.accent),cursor:removing===ph.id?"wait":"pointer",padding:"2px 5px",whiteSpace:"nowrap",fontWeight:600}}>
+          <button onClick={e=>{e.stopPropagation();handleRemoveBg(ph);}} onTouchEnd={e=>{e.stopPropagation();}} disabled={removing===ph.id} className="viz-touch-btn"
+            style={{position:"absolute",bottom:3,left:"50%",transform:"translateX(-50%)",background:rgba(t.accent,.85),border:"none",borderRadius:4,fontSize:10,color:contrastText(t.accent),cursor:removing===ph.id?"wait":"pointer",padding:"4px 9px",whiteSpace:"nowrap",fontWeight:600,fontFamily:"inherit"}}>
             {removing===ph.id?"...":"✂ fond"}
           </button>
         </div>))}
@@ -705,7 +916,29 @@ function GroupEditor({gd,setGd,players,t}){
   function importOne(k){const pid=impSel[k];if(!pid)return;const p=players.find(x=>x.id===pid);if(!p||(gd[k]||[]).some(x=>x.id===p.id))return;setGd(d=>Object.assign({},d,{[k]:[...(d[k]||[]),{id:p.id,name:p.name,number:p.number,photo:getPhoto(p),captain:false}]}));setImpSel(s=>Object.assign({},s,{[k]:""}));}
   const inp={background:t.bg2,border:"1px solid "+t.border,borderRadius:4,padding:"2px 5px",color:t.text,fontSize:11,outline:"none"};
   return(<div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Titre</div><TIn v={title} on={v=>setGd(d=>Object.assign({},d,{title:v}))} ph="GROUPE A" t={t}/></div><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Compétition</div><TIn v={competition} on={v=>setGd(d=>Object.assign({},d,{competition:v}))} ph="Ligue 1..." t={t}/></div></div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Titre</div><TIn v={title} on={v=>setGd(d=>Object.assign({},d,{title:v}))} ph="GROUPE A" t={t}/></div><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Compétition</div><TIn v={competition} on={v=>setGd(d=>Object.assign({},d,{competition:v}))} ph="Ligue 1..." t={t}/></div></div>
+    <div style={{background:t.bg3,borderRadius:8,padding:9,marginBottom:10}}>
+      <div style={{fontSize:9,color:t.text3,fontWeight:700,letterSpacing:".1em",marginBottom:6,textTransform:"uppercase"}}>Style du titre</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
+        <div>
+          <div style={{fontSize:9,color:t.text3,marginBottom:2}}>Police</div>
+          <select value={gd.titleFont||"Impact"} onChange={e=>setGd(d=>Object.assign({},d,{titleFont:e.target.value}))} style={{background:t.bg4,border:"1px solid "+t.border2,borderRadius:6,padding:"5px 7px",color:t.text,fontSize:11,outline:"none",width:"100%",boxSizing:"border-box"}}>
+            {FONTS.map(f=><option key={f} value={f}>{f}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={{fontSize:9,color:t.text3,marginBottom:2}}>Taille (px, auto si vide)</div>
+          <input type="number" value={gd.titleSize||""} placeholder="auto" min={8} max={120} onChange={e=>setGd(d=>Object.assign({},d,{titleSize:e.target.value?+e.target.value:null}))} style={{background:t.bg4,border:"1px solid "+t.border2,borderRadius:6,padding:"5px 7px",color:t.text,fontSize:11,outline:"none",width:"100%",boxSizing:"border-box"}}/>
+        </div>
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:6}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:9,color:t.text3,marginBottom:2}}>Couleur</div>
+          <input type="color" value={gd.titleColor||"#ffffff"} onChange={e=>setGd(d=>Object.assign({},d,{titleColor:e.target.value}))} style={{width:"100%",height:30,borderRadius:6,border:"1px solid "+t.border2,background:t.bg4,cursor:"pointer",padding:2}}/>
+        </div>
+        {(gd.titleColor||gd.titleSize||gd.titleFont)&&<button onClick={()=>setGd(d=>{const n=Object.assign({},d);delete n.titleFont;delete n.titleSize;delete n.titleColor;return n;})} style={{background:"none",border:"none",color:t.accent,cursor:"pointer",fontSize:9,padding:"4px 0",textDecoration:"underline",whiteSpace:"nowrap",alignSelf:"flex-end"}}>Reset défauts</button>}
+      </div>
+    </div>
     {cats.map(cat=>{const list=gd[cat.k]||[];const avail=players.filter(p=>(cat.pos?p.position===cat.pos:true)&&!list.some(x=>x.id===p.id));return(<div key={cat.k} style={{marginBottom:7,background:t.bg3,borderRadius:8,padding:"9px 10px"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:11,color:t.text,fontWeight:600}}>{cat.l} <span style={{color:t.text3,fontWeight:400}}>({list.length})</span></span><button onClick={()=>add(cat.k)} style={{fontSize:10,color:t.accent,background:rgba(t.accent,.12),border:"1px solid "+rgba(t.accent,.3),borderRadius:5,padding:"3px 7px",cursor:"pointer"}}>+ Manuel</button></div>{avail.length>0&&(<div style={{display:"flex",gap:5,marginBottom:7}}><select value={impSel[cat.k]||""} onChange={e=>setImpSel(s=>Object.assign({},s,{[cat.k]:e.target.value}))} style={{flex:1,background:t.bg4,border:"1px solid "+t.border,borderRadius:5,padding:"5px 7px",color:t.text,fontSize:11,outline:"none"}}><option value="">— Ajouter depuis l'effectif —</option>{avail.map(p=><option key={p.id} value={p.id}>{"#"+p.number+" "+p.name}</option>)}</select><button onClick={()=>importOne(cat.k)} style={{background:impSel[cat.k]?t.accent:"#2a2a2a",color:"#fff",border:"none",borderRadius:5,padding:"5px 11px",fontSize:12,cursor:"pointer",fontWeight:600}}>↓</button></div>)}{list.length===0&&<div style={{fontSize:10,color:t.text3,textAlign:"center",padding:"3px 0",fontStyle:"italic"}}>Aucun joueur</div>}{list.map(p=>(<div key={p.id} style={{display:"flex",alignItems:"center",gap:5,marginBottom:4,background:t.bg4,borderRadius:6,padding:"4px 6px"}}><div style={{width:24,height:24,borderRadius:4,overflow:"hidden",background:t.bg2,flexShrink:0,cursor:"pointer",border:"1px solid "+(p.photo?t.accent:t.border)}} onClick={()=>{const i=document.createElement("input");i.type="file";i.accept="image/*";i.onchange=e=>{const f=e.target.files[0];if(!validateImageFile(f))return;const r=new FileReader();r.onload=ev=>upd(cat.k,p.id,"photo",ev.target.result);r.readAsDataURL(f);};i.click();}}>{p.photo?<img src={p.photo} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:12,color:t.text3,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>+</span>}</div><input value={p.number||""} onChange={e=>upd(cat.k,p.id,"number",e.target.value)} placeholder="#" style={Object.assign({},inp,{width:25})}/><input value={p.name||""} onChange={e=>upd(cat.k,p.id,"name",e.target.value)} placeholder="Nom" style={Object.assign({},inp,{flex:1})}/><span onClick={()=>upd(cat.k,p.id,"captain",!p.captain)} style={{cursor:"pointer",fontSize:14,opacity:p.captain?1:.2,color:t.accent}}>©</span><button onClick={()=>rem(cat.k,p.id)} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:12,padding:0}}>✕</button></div>))}</div>);})}
   </div>);
 }
@@ -746,6 +979,13 @@ export default function App({session}){
   const canvasScale=useCanvasScale();
   const[mobileSheet,setMobileSheet]=useState(null);
   useEffect(()=>{
+    if(!document.getElementById("viziona-landing-fonts")){
+      const l=document.createElement("link");
+      l.id="viziona-landing-fonts";
+      l.rel="stylesheet";
+      l.href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap";
+      document.head.appendChild(l);
+    }
     if(document.getElementById("viz-mobile-css"))return;
     const s=document.createElement("style");
     s.id="viz-mobile-css";
@@ -850,12 +1090,29 @@ export default function App({session}){
     if(id){const p=players.find(x=>x.id===id);setSelPhoto(p?getPhoto(p)||null:null);}
     else setSelPhoto(null);
   }
+  function postDataToLayers(pd,c1,c2){
+    // Conversion rétrocompatible : postData legacy → layers libres
+    const layers=[
+      {id:"bg",z:0,type:"bg",x:0,y:0,w:100,h:100,locked:true,label:"Fond",fillColor:"#000000"},
+      {id:"lg",z:1,type:"logo",x:4,y:4,w:14,h:14,locked:false,label:"Logo club"},
+    ];
+    if(pd&&pd.title)layers.push({id:"h1",z:2,type:"text",x:6,y:30,w:88,h:16,locked:false,label:"Titre",text:pd.title,font:"Impact",fontSize:38,color:"#ffffff",bold:true,italic:false,upper:true,letterSpacing:1,lineHeight:1.2,bgColor:"#000000",bgOpacity:0,textShadow:8,align:"center",curve:0});
+    if(pd&&pd.subtitle)layers.push({id:"h2",z:3,type:"text",x:6,y:48,w:88,h:9,locked:false,label:"Sous-titre",text:pd.subtitle,font:"Impact",fontSize:18,color:c1,bold:false,italic:false,upper:false,letterSpacing:0,lineHeight:1.2,bgColor:"#000000",bgOpacity:0,textShadow:8,align:"center",curve:0});
+    if(pd&&pd.body)layers.push({id:"bd",z:4,type:"text",x:6,y:60,w:88,h:18,locked:false,label:"Corps",text:pd.body,font:"Impact",fontSize:14,color:"rgba(255,255,255,0.7)",bold:false,italic:false,upper:false,letterSpacing:0,lineHeight:1.5,bgColor:"#000000",bgOpacity:0,textShadow:8,align:"left",curve:0});
+    if(pd&&(pd.date||pd.hashtag))layers.push({id:"dt",z:5,type:"text",x:6,y:88,w:88,h:6,locked:false,label:"Date / Hashtag",text:(pd.date||"")+(pd.date&&pd.hashtag?" · ":"")+(pd.hashtag||""),font:"Impact",fontSize:11,color:"rgba(255,255,255,0.55)",bold:false,italic:false,upper:false,letterSpacing:0,lineHeight:1.2,bgColor:"#000000",bgOpacity:0,textShadow:6,align:"center",curve:0});
+    return layers;
+  }
   function openCreate(type,fromH){
     setSelType(type);setNav("create");
     if(fromH){
       setEditId(fromH.id);setBgUrl(fromH.bgUrl||null);setLogoUrl(fromH.logoUrl||null);setLogo2Url(fromH.logo2Url||null);
       setSelPhoto(fromH.playerUrl||null);setSelPid(null);
-      if(fromH.layers)setLayers(fromH.layers);
+      // Rétrocompat post : si layers absents/vides ET postData présent → conversion automatique
+      if(type==="post"&&(!fromH.layers||fromH.layers.length===0)&&fromH.postData){
+        setLayers(postDataToLayers(fromH.postData,club?.color1||"#e63329",club?.color2||"#1a1a2e"));
+      }else if(fromH.layers){
+        setLayers(fromH.layers);
+      }
       if(fromH.lineupData)setLineupData(fromH.lineupData);
       if(fromH.groupData)setGroupData(fromH.groupData);
       if(fromH.postData)setPostData(fromH.postData);
@@ -864,10 +1121,10 @@ export default function App({session}){
       if(fromH.postTpl)setPostTpl(fromH.postTpl);
     } else {
       setEditId(null);setBgUrl(null);setLogoUrl(club?.logo_url||null);setLogo2Url(null);setSelPid(null);setSelPhoto(null);
-      if(type!=="lineup"&&type!=="group"&&type!=="post")setLayers(makeLayers(type,club?.color1||"#e63329",club?.color2||"#1a1a2e"));
+      // Post est désormais un éditeur libre : utilise makeLayers comme goal/result/match/recruit
+      if(type!=="lineup"&&type!=="group")setLayers(makeLayers(type,club?.color1||"#e63329",club?.color2||"#1a1a2e"));
       if(type==="lineup")setLineupData({formation:"4-4-2",starters:[],subs:[],opponent:"",competition:""});
       if(type==="group")setGroupData({title:"GROUPE A",competition:"",gk:[],def:[],mid:[],fwd:[],coaches:[]});
-      if(type==="post")setPostData({title:"TITRE",subtitle:"Sous-titre",body:"Texte du message.",date:"",hashtag:""});
     }
   }
   async function save(){
@@ -914,7 +1171,7 @@ export default function App({session}){
       if(isIOS&&isSafari){
         const file=new File([blob],filename,{type:"image/png"});
         if(navigator.canShare&&navigator.canShare({files:[file]})){
-          try{await navigator.share({files:[file],title:"Visuel Viziona Sport"});return;}
+          try{await navigator.share({files:[file],title:"Visuel Viziona"});return;}
           catch(shareErr){if(shareErr&&shareErr.name==="AbortError")return;console.warn("[downloadPng] navigator.share a échoué, fallback:",shareErr);}
         }
         // Fallback : ouvrir l'image dans un nouvel onglet (long-press → Ajouter aux Photos)
@@ -949,8 +1206,8 @@ export default function App({session}){
   const card={background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:20};
   function SaveBtn(){return(<>
     {limitError&&<div style={{background:"#450a0a",border:"1px solid #7f1d1d",borderRadius:8,padding:"10px 14px",color:"#fca5a5",fontSize:12,marginBottom:10}}>{limitError}</div>}
-    <button onClick={save} style={{background:saveFlash?"#22c55e":t.accent,color:saveFlash?"#fff":contrastText(t.accent),border:"none",borderRadius:9,padding:"10px 16px",fontSize:13,fontWeight:700,cursor:"pointer",width:"100%",letterSpacing:".04em",transition:"background .3s"}}>{saveFlash?"✓ Sauvegardé !":"✨ Sauvegarder le visuel"}</button>
-    <button onClick={downloadPng} style={{marginTop:8,background:"transparent",color:t.text,border:"1px solid "+t.border2,borderRadius:9,padding:"10px 16px",fontSize:13,fontWeight:600,cursor:"pointer",width:"100%",letterSpacing:".04em"}}>⬇ Télécharger en PNG</button>
+    <button onClick={save} style={{background:saveFlash?"#22c55e":"#0a0a0a",color:"#fff",border:"none",borderRadius:2,padding:"13px 16px",fontSize:11,fontWeight:700,cursor:"pointer",width:"100%",letterSpacing:".12em",textTransform:"uppercase",transition:"background .3s,transform .15s",fontFamily:"inherit"}}>{saveFlash?"Sauvegardé ✓":"Sauvegarder"}</button>
+    <button onClick={downloadPng} style={{marginTop:8,background:"transparent",color:t.text,border:"1px solid "+t.text,borderRadius:2,padding:"12px 16px",fontSize:11,fontWeight:600,cursor:"pointer",width:"100%",letterSpacing:".12em",textTransform:"uppercase",fontFamily:"inherit"}}>Télécharger PNG</button>
   </>);}
   function BackBtn(){return<button onClick={()=>setSelType(null)} style={{display:"inline-flex",alignItems:"center",gap:7,background:t.bg3,border:"1px solid "+t.border2,borderRadius:8,padding:"7px 13px",color:t.text2,cursor:"pointer",fontSize:12,marginBottom:14,fontWeight:500}}>↩ Retour</button>;}
   function renderSpecial(){
@@ -1023,8 +1280,24 @@ export default function App({session}){
         <PBox t={t}>
           <SHdr label="Image de fond" t={t}/>
           {media.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4,marginBottom:8}}>{media.map((m,i)=>(<div key={i} onClick={()=>setBgUrl(m.url)} style={{aspectRatio:"16/9",borderRadius:5,overflow:"hidden",border:"2px solid "+(bgUrl===m.url?t.accent:t.border),cursor:"pointer"}}><img src={m.url} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div>))}</div>}
-          <UpBtn val={null} on={v=>setBgUrl(v)} w={52} h={36} r={6} label="Uploader" t={t}/>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <UpBtn val={null} on={v=>setBgUrl(v)} w={52} h={36} r={6} label="Uploader" t={t}/>
+            {bgUrl&&<button onClick={()=>setBgUrl(null)} style={{fontSize:11,color:t.text3,background:"none",border:"none",cursor:"pointer"}}>✕ Retirer</button>}
+          </div>
         </PBox>
+        {selType==="post"&&(()=>{
+          const bgLay=layers.find(l=>l.type==="bg");
+          const curColor=(bgLay&&bgLay.fillColor)||"#000000";
+          return(
+            <PBox t={t}>
+              <SHdr label="Couleur de fond" t={t}/>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <input type="color" value={curColor} onChange={e=>setLayers(prev=>prev.map(l=>l.type==="bg"?{...l,fillColor:e.target.value}:l))} style={{width:60,height:36,borderRadius:6,border:"1px solid "+t.border2,background:t.bg3,cursor:"pointer",padding:2}}/>
+                <span style={{fontSize:11,color:t.text3}}>Visible si pas d'image de fond</span>
+              </div>
+            </PBox>
+          );
+        })()}
         <PBox t={t}>
           <SHdr label={selType==="recruit"?"Logo club":"Logos"} t={t}/>
           <div style={{display:"grid",gridTemplateColumns:(selType==="result"||selType==="match")?"1fr 1fr":"1fr",gap:10}}>
@@ -1034,7 +1307,7 @@ export default function App({session}){
         </PBox>
         <SaveBtn/>
       </div>
-      <DragCanvas key={editId||("new_"+selType)} layers={layers} setLayers={setLayers} bgUrl={bgUrl} playerUrl={selPhoto} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={t.accent} accent2={t.accent2} t={t} isMobile={isMobile} mobileSheet={mobileSheet} setMobileSheet={setMobileSheet} canvasScale={canvasScale}/>
+      <DragCanvas key={editId||("new_"+selType)} layers={layers} setLayers={setLayers} bgUrl={bgUrl} playerUrl={selPhoto} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={t.accent} accent2={t.accent2} t={t} isMobile={isMobile} mobileSheet={mobileSheet} setMobileSheet={setMobileSheet} canvasScale={canvasScale} clubName={club?.name}/>
       {isMobile&&(
         <div style={{position:"fixed",bottom:0,left:0,right:0,height:60,background:t.bg2,borderTop:"1px solid "+t.border,display:"flex",gap:6,alignItems:"center",padding:"0 10px",zIndex:90}}>
           <button onClick={()=>setSelType(null)} className="viz-touch-btn" style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:8,padding:"10px 12px",color:t.text2,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>↩</button>
@@ -1046,23 +1319,23 @@ export default function App({session}){
     </div>);
   }
   return(
-    <div style={{height:"100vh",display:"flex",background:t.bg,color:t.text,fontFamily:"'Helvetica Neue',Helvetica,Arial,sans-serif",fontSize:13,overflow:"hidden",letterSpacing:"-0.005em"}}>
+    <div style={{height:"100vh",display:"flex",background:t.bg,color:t.text,fontFamily:"'DM Sans','Helvetica Neue',Helvetica,Arial,sans-serif",fontSize:13,overflow:"hidden",letterSpacing:"-0.005em"}}>
       {!isMobile&&!(nav==="create"&&selType)&&(<div style={{width:192,background:t.bg2,borderRight:"1px solid "+t.border,display:"flex",flexDirection:"column",flexShrink:0}}>
         <div style={{padding:"15px 14px 13px",borderBottom:"1px solid "+t.border,display:"flex",alignItems:"center",gap:10}}>
           {club?.logo_url?<img src={club.logo_url} style={{width:34,height:34,objectFit:"contain",borderRadius:7}} alt=""/>:<div style={{width:34,height:34,borderRadius:7,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:contrastText(mixC(club?.color1||"#e63329",club?.color2||"#1a1a2e",.5)),flexShrink:0}}>{(club?.name||"E")[0].toUpperCase()}</div>}
-          <div style={{overflow:"hidden",flex:1}}><div style={{fontSize:14,fontWeight:700,color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{club?.name||"Viziona Sport"}</div><div style={{fontSize:10,color:t.text3,marginTop:1}}>Studio visuel</div></div>
+          <div style={{overflow:"hidden",flex:1}}><div style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:18,fontWeight:400,letterSpacing:".06em",color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{club?.name||"Viziona"}</div><div style={{fontFamily:"'DM Mono',ui-monospace,monospace",fontSize:9,color:t.text3,marginTop:2,letterSpacing:".1em",textTransform:"uppercase"}}>Studio visuel</div></div>
         </div>
         <nav style={{padding:"10px 8px",flex:1}}>
           {NAV.map(n=>(<button key={n.id} onClick={()=>{setNav(n.id);if(n.id!=="create")setSelType(null);}} style={{display:"flex",alignItems:"center",gap:10,width:"100%",background:nav===n.id?rgba(t.accent,.15):"transparent",border:"none",borderRadius:9,padding:"9px 11px",color:nav===n.id?t.accent:t.text2,cursor:"pointer",fontSize:13,marginBottom:1,textAlign:"left",fontWeight:nav===n.id?600:400}}><span style={{fontSize:15,lineHeight:1}}>{n.icon}</span><span>{n.label}</span>{n.id==="history"&&history.length>0&&<span style={{marginLeft:"auto",background:rgba(t.accent,.2),color:t.accent,fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{history.length}</span>}</button>))}
         </nav>
         <div style={{padding:12,borderTop:"1px solid "+t.border,display:"flex",flexDirection:"column",gap:8}}>
-          <button onClick={()=>openCreate("goal")} style={{background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",color:contrastText(mixC(club?.color1||"#e63329",club?.color2||"#1a1a2e",.5)),border:"none",borderRadius:9,padding:10,fontSize:12,fontWeight:700,cursor:"pointer",width:"100%",letterSpacing:".05em",textTransform:"uppercase"}}>✨ Créer un visuel</button>
+          <button onClick={()=>openCreate("goal")} style={{background:"#0a0a0a",color:"#fff",border:"2px solid "+(club?.color1||"#e63329"),borderRadius:2,padding:"10px 10px",fontSize:11,fontWeight:700,cursor:"pointer",width:"100%",letterSpacing:".12em",textTransform:"uppercase",fontFamily:"inherit"}}>Créer un visuel</button>
           <button onClick={signOut} style={{background:"transparent",color:t.text3,border:"1px solid "+t.border,borderRadius:8,padding:"7px",fontSize:11,cursor:"pointer",width:"100%"}}>Déconnexion</button>
         </div>
       </div>)}
       <div style={{flex:1,display:"flex",overflow:"hidden",paddingBottom:isMobile&&!(nav==="create"&&selType)?60:0,boxSizing:"border-box"}}>
         {nav==="home"&&(<div style={{flex:1,overflowY:"auto",background:t.bg}}>
-          <div style={{padding:"28px 28px 0"}}><h1 style={{fontSize:24,fontWeight:700,color:t.text,marginBottom:4}}>{"Bonjour"+(club?.name?", "+club.name:"")+" 👋"}</h1><p style={{color:t.text3,marginBottom:24,fontSize:14}}>Que souhaitez-vous créer aujourd'hui ?</p></div>
+          <div style={{padding:"28px 28px 0"}}><h1 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:44,fontWeight:400,color:t.text,marginBottom:4,letterSpacing:".015em",lineHeight:1}}>{"Bonjour"+(club?.name?", "+club.name:"")}</h1><p style={{color:t.text3,marginBottom:24,fontSize:14}}>Que souhaitez-vous créer aujourd'hui ?</p></div>
           {(()=>{
             if(onboardingSkipped)return null;
             const clubDone=club?.is_configured===true;
@@ -1109,7 +1382,7 @@ export default function App({session}){
           <div style={{padding:"0 28px 28px",display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10}}>{[[history.length,"Visuels"],[players.length,"Joueurs"],[media.length,"Médias"],[LINEUP_TPLS.length+GROUP_TPLS.length+POST_TPLS.length,"Templates"]].map(([v,l])=>(<div key={l} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:22,fontWeight:700,color:t.accent,lineHeight:1}}>{v}</div><div style={{fontSize:11,color:t.text3,marginTop:4}}>{l}</div></div>))}</div>
         </div>)}
         {nav==="club"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
-          <h2 style={{fontSize:20,fontWeight:700,marginBottom:4,color:t.text}}>Mon Club</h2>
+          <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Mon Club</h2>
           <p style={{color:t.text3,marginBottom:24,fontSize:13}}>Appliqué automatiquement à tous vos visuels.</p>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,maxWidth:650}}>
             <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Identité</div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Nom du club</label><TIn v={club?.name||""} on={v=>updateClub({name:v,is_configured:true})} ph="FC Mon Club" t={t}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,margin:"14px 0 10px"}}><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Couleur principale</label><input type="color" value={club?.color1||"#e63329"} onChange={e=>updateClub({color1:e.target.value,is_configured:true})} style={{width:"100%",height:40,borderRadius:8,border:"1px solid "+t.border2,background:t.bg3,cursor:"pointer",padding:3}}/></div><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Couleur secondaire</label><input type="color" value={club?.color2||"#1a1a2e"} onChange={e=>updateClub({color2:e.target.value,is_configured:true})} style={{width:"100%",height:40,borderRadius:8,border:"1px solid "+t.border2,background:t.bg3,cursor:"pointer",padding:3}}/></div></div><div style={{height:24,borderRadius:8,background:"linear-gradient(90deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",marginBottom:4}}/><div style={{fontSize:10,color:t.text3,textAlign:"center"}}>Sauvegardé en temps réel ✓</div></div>
@@ -1117,7 +1390,7 @@ export default function App({session}){
           </div>
         </div>)}
         {nav==="players"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
-          <h2 style={{fontSize:20,fontWeight:700,marginBottom:4,color:t.text}}>Effectif & Photos</h2>
+          <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Effectif & Photos</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>Vos joueurs avec leurs photos.</p>
           <div style={{display:"grid",gridTemplateColumns:"275px 1fr",gap:18}}>
             <div>
@@ -1131,21 +1404,21 @@ export default function App({session}){
           </div>
         </div>)}
         {nav==="media"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
-          <h2 style={{fontSize:20,fontWeight:700,marginBottom:4,color:t.text}}>Médiathèque</h2>
+          <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Médiathèque</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>Fonds, stades et ambiances.</p>
           <div style={{display:"grid",gridTemplateColumns:"220px 1fr",gap:18}}>
             <div style={card}><div onClick={()=>mRef.current.click()} style={{border:"2px dashed "+t.border2,borderRadius:10,padding:"28px 16px",textAlign:"center",cursor:"pointer",background:t.bg3}} onMouseEnter={e=>e.currentTarget.style.borderColor=t.accent} onMouseLeave={e=>e.currentTarget.style.borderColor=t.border2}><div style={{fontSize:28,marginBottom:8}}>🖼️</div><div style={{fontSize:13,color:t.text2,fontWeight:600}}>Uploader des images</div><div style={{fontSize:11,color:t.text3,marginTop:4}}>JPG, PNG · Multiple</div></div><input ref={mRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={pickMedia}/></div>
             <div>{media.length===0?<div style={Object.assign({},card,{padding:"40px 20px",textAlign:"center",color:t.text3})}><div style={{fontSize:32,marginBottom:10}}>🖼️</div><div>Médiathèque vide</div></div>:(<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>{media.map(m=>(<div key={m.id} style={{borderRadius:11,overflow:"hidden",border:"1px solid "+t.border}}><div style={{aspectRatio:"16/9",overflow:"hidden"}}><img src={m.url} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div><div style={{padding:"6px 10px",fontSize:11,color:t.text2,background:t.bg2,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"80%"}}>{m.name||"Image"}</span><button onClick={()=>deleteMedia(m.id)} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:14}}>✕</button></div></div>))}</div>)}</div>
           </div>
         </div>)}
-        {nav==="create"&&(!selType?(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}><h2 style={{fontSize:20,fontWeight:700,marginBottom:4,color:t.text}}>Choisir un type</h2><p style={{color:t.text3,marginBottom:22,fontSize:13}}>Sélectionnez ce que vous souhaitez créer.</p><div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:14,maxWidth:680}}>{CTYPES.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:"22px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(t.accent,.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}>  <div style={{fontSize:28,marginBottom:10}}>{c.icon}</div><div style={{fontWeight:700,color:t.text,fontSize:14,marginBottom:4}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.5}}>{c.desc}</div></div>))}</div></div>):(selType==="lineup"||selType==="group"||selType==="post")?renderSpecial():renderStandard())}
+        {nav==="create"&&(!selType?(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}><h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Choisir un type</h2><p style={{color:t.text3,marginBottom:22,fontSize:13}}>Sélectionnez ce que vous souhaitez créer.</p><div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:14,maxWidth:680}}>{CTYPES.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:"22px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(t.accent,.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}>  <div style={{fontSize:28,marginBottom:10}}>{c.icon}</div><div style={{fontWeight:700,color:t.text,fontSize:14,marginBottom:4}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.5}}>{c.desc}</div></div>))}</div></div>):(selType==="lineup"||selType==="group")?renderSpecial():renderStandard())}
         {nav==="history"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
-          <h2 style={{fontSize:20,fontWeight:700,marginBottom:4,color:t.text}}>Historique</h2>
+          <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Historique</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>{history.length+" visuel"+(history.length!==1?"s":"")+" · Cloud ☁️"}</p>
           {history.length===0?<div style={Object.assign({},card,{padding:"60px 20px",textAlign:"center",color:t.text3})}><div style={{fontSize:36,marginBottom:12}}>📁</div><div style={{fontSize:14}}>Aucun visuel sauvegardé</div></div>:(<div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14}}>{history.map(h=>(<div key={h.id} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,overflow:"hidden"}}><div style={{background:"#030306",display:"flex",alignItems:"center",justifyContent:"center",padding:10}}><HistoryThumb h={h} c1={club?.color1||"#e63329"} c2={club?.color2||"#1a1a2e"}/></div><div style={{padding:"10px 12px",borderTop:"1px solid "+t.border}}><div style={{fontSize:12,fontWeight:600,color:t.text,marginBottom:6}}>{(h.ct&&h.ct.icon?h.ct.icon:"📄")+" "+(h.ct&&h.ct.label?h.ct.label:"Visuel")}</div><div style={{display:"flex",gap:6}}><button onClick={()=>{openCreate(h.type,h);setNav("create");}} style={{flex:1,background:rgba(t.accent,.15),color:t.accent,border:"1px solid "+rgba(t.accent,.3),borderRadius:7,padding:"6px 8px",fontSize:11,cursor:"pointer",fontWeight:600}}>↩ Modifier</button><button onClick={()=>deleteVisual(h.id)} style={{background:"rgba(239,68,68,.1)",color:"#fca5a5",border:"1px solid rgba(239,68,68,.25)",borderRadius:7,padding:"6px 8px",fontSize:11,cursor:"pointer"}}>✕</button></div></div></div>))}</div>)}
         </div>)}
         {nav==="settings"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
-          <h2 style={{fontSize:20,fontWeight:700,marginBottom:4,color:t.text}}>Paramètres</h2>
+          <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Paramètres</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>Interface et données.</p>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,maxWidth:650}}>
             <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Thème</div>{[["dark","🌑 Sombre","Interface noire premium"],["light","☀️ Clair","Interface blanche minimaliste"],["club","🎨 Couleurs du club","Adapté à vos couleurs"]].map(([mode,label,desc])=>(<div key={mode} onClick={()=>updateClub({theme_mode:mode})} style={{display:"flex",alignItems:"center",gap:12,padding:"13px 14px",borderRadius:10,border:"2px solid "+((club?.theme_mode||"dark")===mode?t.accent:t.border),background:(club?.theme_mode||"dark")===mode?rgba(t.accent,.12):t.bg3,cursor:"pointer",marginBottom:8}}><div style={{width:20,height:20,borderRadius:"50%",border:"2px solid "+t.accent,background:(club?.theme_mode||"dark")===mode?t.accent:"transparent",flexShrink:0}}/><div><div style={{fontSize:13,fontWeight:600,color:t.text}}>{label}</div><div style={{fontSize:11,color:t.text3,marginTop:2}}>{desc}</div></div></div>))}</div>
@@ -1157,17 +1430,19 @@ export default function App({session}){
         </div>)}
       </div>
       {isMobile&&!(nav==="create"&&selType)&&(()=>{
-        const mobileNav=NAV.filter(n=>n.id!=="media"&&n.id!=="history");
+        // Mobile nav : on garde 6 onglets (Médias retiré, faute de place). Historique réintégré.
+        const mobileNav=NAV.filter(n=>n.id!=="media");
         return(
-        <div style={{position:"fixed",bottom:0,left:0,right:0,height:64,background:t.bg2,borderTop:"1px solid "+t.border,display:"flex",justifyContent:"space-around",alignItems:"stretch",zIndex:100,paddingBottom:"env(safe-area-inset-bottom,0)"}}>
+        <div style={{position:"fixed",bottom:0,left:0,right:0,height:60,background:t.bg2,borderTop:"1px solid "+t.border,display:"flex",alignItems:"stretch",zIndex:100,paddingBottom:"env(safe-area-inset-bottom,0)"}}>
           {mobileNav.map(n=>{
             const isCreate=n.id==="create";
             const active=nav===n.id;
             return(
               <button key={n.id} onClick={()=>{setNav(n.id);if(n.id!=="create")setSelType(null);}}
-                style={{flex:isCreate?1.4:1,background:isCreate?(active?t.accent:rgba(t.accent,.18)):"none",border:"none",padding:"6px 2px",color:isCreate?(active?contrastText(t.accent):t.accent):(active?t.accent:t.text2),cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,fontWeight:active?700:500,position:"relative",margin:isCreate?"4px 6px":0,borderRadius:isCreate?14:0,transition:"all .15s"}}>
-                <span style={{fontSize:isCreate?22:18,lineHeight:1}}>{n.icon}</span>
-                <span style={{fontSize:isCreate?10:9,letterSpacing:isCreate?".04em":0,textTransform:isCreate?"uppercase":"none"}}>{n.label}</span>
+                style={{flex:isCreate?1.25:1,minWidth:0,background:isCreate?(active?t.accent:rgba(t.accent,.18)):"none",border:"none",padding:"4px 2px",color:isCreate?(active?contrastText(t.accent):t.accent):(active?t.accent:t.text2),cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1,fontWeight:active?700:500,position:"relative",margin:isCreate?"4px":0,borderRadius:isCreate?12:0,transition:"all .15s",overflow:"hidden"}}>
+                <span style={{fontSize:isCreate?18:16,lineHeight:1}}>{n.icon}</span>
+                <span style={{fontSize:isCreate?9:8,letterSpacing:isCreate?".04em":0,textTransform:isCreate?"uppercase":"none",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{n.label}</span>
+                {n.id==="history"&&history.length>0&&<span style={{position:"absolute",top:3,right:"15%",background:t.accent,color:contrastText(t.accent),fontSize:7,fontWeight:700,padding:"1px 4px",borderRadius:7,minWidth:12,textAlign:"center",lineHeight:1.2}}>{history.length}</span>}
               </button>
             );
           })}

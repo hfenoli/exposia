@@ -95,7 +95,7 @@ export default function Admin({ session, onClose }) {
     <div style={{ minHeight: "100vh", background: "#080810", color: "#f0f0f8", padding: "24px 28px 60px", fontFamily: FONT, fontSize: 13 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: "-0.01em" }}>Admin · Viziona Sport</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: "-0.01em" }}>Admin · Viziona</h1>
           <p style={{ color: "rgba(240,240,248,.4)", margin: "4px 0 0", fontSize: 12 }}>Connecté : {session.user.email}</p>
         </div>
         <button onClick={onClose} style={{ background: "#16162a", border: "1px solid rgba(255,255,255,.1)", color: "#f0f0f8", padding: "8px 14px", borderRadius: 8, cursor: "pointer", fontFamily: FONT, fontSize: 12 }}>

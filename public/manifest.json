@@ -1,6 +1,6 @@
 {
-  "name": "Viziona Sport",
-  "short_name": "Viziona Sport",
+  "name": "Viziona",
+  "short_name": "Viziona",
   "description": "Créateur de visuels football",
   "start_url": "/",
   "display": "standalone",
