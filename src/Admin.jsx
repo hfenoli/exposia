@@ -73,7 +73,7 @@ export default function Admin({ session, onClose }) {
 
   if (!isAuthorized) {
     return (
-      <div style={{ minHeight: "100vh", background: "#080810", color: "#f0f0f8", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT, padding: 24 }}>
+      <div style={{ minHeight: "100dvh", background: "#080810", color: "#f0f0f8", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT, padding: 24 }}>
         <div style={{ textAlign: "center", maxWidth: 360 }}>
           <div style={{ fontSize: 32, marginBottom: 14 }}>🔒</div>
           <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Accès refusé</div>
@@ -92,7 +92,7 @@ export default function Admin({ session, onClose }) {
   const approvedClubs = clubs.filter(c => c.approved).length;
 
   return (
-    <div style={{ minHeight: "100vh", background: "#080810", color: "#f0f0f8", padding: "24px 28px 60px", fontFamily: FONT, fontSize: 13 }}>
+    <div style={{ minHeight: "100dvh", background: "#080810", color: "#f0f0f8", padding: "24px 28px 60px", fontFamily: FONT, fontSize: 13 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: "-0.01em" }}>Admin · Viziona</h1>

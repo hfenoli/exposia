@@ -50,7 +50,7 @@ function Root() {
   }
 
   if (session === undefined) return (
-    <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#fff" }}>
+    <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#fff" }}>
     </div>
   )
 

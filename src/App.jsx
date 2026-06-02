@@ -20,20 +20,21 @@ function useIsMobile(){
   },[]);
   return v;
 }
-function useCanvasScale(reservedHeight){
-  const r=reservedHeight==null?220:reservedHeight;
+function useCanvasScale(){
   const[scale,setScale]=useState(1);
   useEffect(()=>{
     const compute=()=>{
       const w=window.innerWidth, h=window.innerHeight;
       if(w>=MOBILE_BREAKPOINT){setScale(1);return;}
+      // reservedHeight adaptatif : viewports compacts gardent plus de place pour le canvas
+      const r=h<700?140:200;
       const sw=(w-24)/270, sh=(h-r)/480;
       setScale(Math.max(0.4,Math.min(sw,sh)));
     };
     compute();
     window.addEventListener("resize",compute);
     return()=>window.removeEventListener("resize",compute);
-  },[r]);
+  },[]);
   return scale;
 }
 // ─── CONSTANTS ────────────────────────────────────────────────
@@ -220,10 +221,13 @@ function CurvedText({lay,containerW}){
   const pid = "arc_"+lay.id;
   const arcD = "M "+x1+" "+y1+" A "+r+" "+r+" 0 "+large+" "+sweep+" "+x2+" "+y2;
   const svgH = Math.abs(cy)+r+fontSize*2;
+  // Bounding box approximative de l'arc pour la hit zone tactile : largeur W, hauteur svgH
   return(
     <svg width={W} height={svgH} style={{position:"absolute",left:0,top:"50%",transform:"translateY(-50%)",overflow:"visible",cursor:"inherit"}}>
       <defs><path id={pid} d={arcD}/></defs>
-      {/* Hit zone : bande invisible le long de l'arc qui rend le texte courbé cliquable/draggable */}
+      {/* Hit zone tactile : rect couvrant toute la bbox du SVG, garantit tap iOS Safari (pointerEvents=stroke n'est pas fiable en touch) */}
+      <rect x="0" y="0" width={W} height={svgH} fill="rgba(0,0,0,0)" pointerEvents="all"/>
+      {/* Hit zone précise le long de l'arc pour le desktop (mieux que la rect entière) */}
       <path d={arcD} fill="none" stroke="rgba(0,0,0,0)" strokeWidth={fontSize*1.4} strokeLinecap="round" pointerEvents="stroke"/>
       <text fontFamily={font} fontSize={fontSize} fontWeight={lay.bold?"900":"400"} fontStyle={lay.italic?"italic":"normal"} fill={color} letterSpacing={lsp} pointerEvents="visiblePainted">
         <textPath href={"#"+pid} startOffset="50%" textAnchor="middle">{txt}</textPath>
@@ -283,11 +287,12 @@ function renderLayerContent(lay, bgUrl, playerUrl, logoUrl, logo2Url, accent, ac
 function LayerView({lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,isSel,onMD,onResize,hideHandles,clubName}){
   const s={position:"absolute",left:lay.x+"%",top:lay.y+"%",width:lay.w+"%",height:lay.h+"%",cursor:lay.locked?"default":"grab",boxSizing:"border-box",outline:isSel&&!lay.locked?"2px solid "+accent:"none",outlineOffset:1,zIndex:lay.z};
   const showHandles=!hideHandles&&isSel&&!lay.locked&&(lay.type==="photo"||lay.type==="colorblock"||lay.type==="sponsor");
-  return(<div style={s} onMouseDown={lay.locked?undefined:e=>onMD(e,lay.id)}>
+  return(<div style={s} onMouseDown={lay.locked?undefined:e=>onMD(e,lay.id)} onTouchStart={lay.locked?undefined:e=>onMD(e,lay.id)}>
     {renderLayerContent(lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,clubName)}
     {showHandles&&["tl","tr","bl","br"].map(c=>(
       <div key={c}
         onMouseDown={e=>{e.preventDefault();e.stopPropagation();onResize&&onResize(e,lay.id,c);}}
+        onTouchStart={e=>{e.stopPropagation();onResize&&onResize(e,lay.id,c);}}
         style={{
           position:"absolute",
           width:11,height:11,
@@ -303,9 +308,23 @@ function LayerView({lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,isSel,on
   </div>);
 }
 // ─── LINEUP CANVAS ────────────────────────────────────────────
+// Slider tactile : +/− 44×44 sur mobile pour ajustement fin
+function TouchSlider({value,onChange,min,max,step,t,isMobile,format,decimals}){
+  const v=value==null?min:value;
+  const stp=step||1;
+  const dec=decimals==null?0:decimals;
+  const display=format?format(v):(typeof v==="number"?v.toFixed(dec):v);
+  const dec_=()=>onChange(Math.max(min,+(v-stp).toFixed(4)));
+  const inc_=()=>onChange(Math.min(max,+(v+stp).toFixed(4)));
+  return(<div style={{display:"flex",alignItems:"center",gap:isMobile?6:4,marginTop:2}}>
+    {isMobile&&<button onClick={dec_} className="viz-touch-btn" style={{background:t.bg4,border:"1px solid "+t.border2,color:t.text2,borderRadius:5,padding:0,fontSize:13,cursor:"pointer",fontWeight:700,lineHeight:1,width:44,height:36,flexShrink:0,fontFamily:"inherit"}}>−</button>}
+    <input type="range" min={min} max={max} step={stp} value={v} onChange={e=>onChange(+e.target.value)} style={{flex:1,minWidth:0}}/>
+    {isMobile&&<button onClick={inc_} className="viz-touch-btn" style={{background:t.bg4,border:"1px solid "+t.border2,color:t.text2,borderRadius:5,padding:0,fontSize:13,cursor:"pointer",fontWeight:700,lineHeight:1,width:44,height:36,flexShrink:0,fontFamily:"inherit"}}>+</button>}
+  </div>);
+}
 function Watermark(){
   // Filigrane non-amovible : pas un calque, pointerEvents:none, hardcodé dans chaque canvas
-  return <div aria-hidden="true" style={{position:"absolute",bottom:5,right:6,fontSize:9,color:"rgba(255,255,255,0.92)",background:"rgba(0,0,0,0.42)",padding:"2px 7px",borderRadius:3,fontFamily:"system-ui,-apple-system,sans-serif",letterSpacing:"0.02em",fontWeight:500,whiteSpace:"nowrap",pointerEvents:"none",userSelect:"none",zIndex:999}}>Powered by Viziona</div>;
+  return <div aria-hidden="true" style={{position:"absolute",bottom:5,right:6,fontSize:9,color:"rgba(255,255,255,0.92)",background:"rgba(0,0,0,0.42)",padding:"2px 7px",borderRadius:3,fontFamily:"'DM Mono',ui-monospace,system-ui,monospace",letterSpacing:"0.04em",fontWeight:500,whiteSpace:"nowrap",pointerEvents:"none",userSelect:"none",zIndex:999}}>Powered by Viziona</div>;
 }
 function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScale}){
   W=W||270; H=H||480; slotScale=slotScale||1;
@@ -551,7 +570,13 @@ function HistoryThumb({h,c1,c2}){
 }
 // ─── DRAG CANVAS ──────────────────────────────────────────────
 function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,t,isMobile,mobileSheet,setMobileSheet,canvasScale,clubName}){
-  const cvRef=useRef(null);const dragRef=useRef(null);const resizeRef=useRef(null);const historyRef=useRef([]);const[sel,setSel]=useState(null);const[historyDepth,setHistoryDepth]=useState(0);const selL=sel?layers.find(l=>l.id===sel):null;
+  const cvRef=useRef(null);const dragRef=useRef(null);const resizeRef=useRef(null);const historyRef=useRef([]);const[sel,setSel]=useState(null);const[historyDepth,setHistoryDepth]=useState(0);const[mobileToast,setMobileToast]=useState(false);const selL=sel?layers.find(l=>l.id===sel):null;
+  useEffect(()=>{
+    if(!isMobile||!sel||mobileSheet==="layers")return;
+    setMobileToast(true);
+    const t=setTimeout(()=>setMobileToast(false),2000);
+    return()=>clearTimeout(t);
+  },[sel,isMobile,mobileSheet]);
   function pushHist(){
     historyRef.current.push(JSON.parse(JSON.stringify(layers)));
     if(historyRef.current.length>20)historyRef.current.shift();
@@ -580,7 +605,13 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
     window.addEventListener("keydown",handler);
     return()=>window.removeEventListener("keydown",handler);
   },[setLayers]);
-  const onMD=useCallback((e,id)=>{const l=layers.find(x=>x.id===id);if(!l||l.locked)return;e.preventDefault();e.stopPropagation();setSel(id);historyRef.current.push(JSON.parse(JSON.stringify(layers)));if(historyRef.current.length>20)historyRef.current.shift();setHistoryDepth(historyRef.current.length);const rect=cvRef.current.getBoundingClientRect();dragRef.current={id,ox:l.x,oy:l.y,mx0:(e.clientX-rect.left)/rect.width*100,my0:(e.clientY-rect.top)/rect.height*100};},[layers]);
+  // Helper : extrait clientX/Y indifféremment d'un MouseEvent ou TouchEvent
+  function pt(e){
+    if(e.touches&&e.touches.length>0)return{x:e.touches[0].clientX,y:e.touches[0].clientY};
+    if(e.changedTouches&&e.changedTouches.length>0)return{x:e.changedTouches[0].clientX,y:e.changedTouches[0].clientY};
+    return{x:e.clientX,y:e.clientY};
+  }
+  const onMD=useCallback((e,id)=>{const l=layers.find(x=>x.id===id);if(!l||l.locked)return;e.preventDefault();e.stopPropagation();setSel(id);historyRef.current.push(JSON.parse(JSON.stringify(layers)));if(historyRef.current.length>20)historyRef.current.shift();setHistoryDepth(historyRef.current.length);const rect=cvRef.current.getBoundingClientRect();const p=pt(e);dragRef.current={id,ox:l.x,oy:l.y,mx0:(p.x-rect.left)/rect.width*100,my0:(p.y-rect.top)/rect.height*100};},[layers]);
   const onResize=useCallback((e,id,corner)=>{
     const l=layers.find(x=>x.id===id);if(!l||l.locked)return;
     setSel(id);
@@ -588,13 +619,15 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
     if(historyRef.current.length>20)historyRef.current.shift();
     setHistoryDepth(historyRef.current.length);
     const rect=cvRef.current.getBoundingClientRect();
-    resizeRef.current={id,corner,ox:l.x,oy:l.y,ow:l.w,oh:l.h,startX:e.clientX,startY:e.clientY,canvasW:rect.width,canvasH:rect.height};
+    const p=pt(e);
+    resizeRef.current={id,corner,ox:l.x,oy:l.y,ow:l.w,oh:l.h,startX:p.x,startY:p.y,canvasW:rect.width,canvasH:rect.height};
   },[layers]);
   const onMM=useCallback(e=>{
     if(resizeRef.current&&cvRef.current){
       const r=resizeRef.current;
-      const dxP=(e.clientX-r.startX)/r.canvasW*100;
-      const dyP=(e.clientY-r.startY)/r.canvasH*100;
+      const p=pt(e);
+      const dxP=(p.x-r.startX)/r.canvasW*100;
+      const dyP=(p.y-r.startY)/r.canvasH*100;
       const sx=(r.corner==="tr"||r.corner==="br")?1:-1;
       const sy=(r.corner==="bl"||r.corner==="br")?1:-1;
       const ratioX=(dxP*sx)/r.ow;
@@ -606,12 +639,15 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
       const newX=(r.corner==="tl"||r.corner==="bl")?r.ox+(r.ow-newW):r.ox;
       const newY=(r.corner==="tl"||r.corner==="tr")?r.oy+(r.oh-newH):r.oy;
       setLayers(prev=>prev.map(l=>l.id===r.id?{...l,x:newX,y:newY,w:newW,h:newH}:l));
+      if(e.cancelable)e.preventDefault();
       return;
     }
     if(!dragRef.current||!cvRef.current)return;
     const rect=cvRef.current.getBoundingClientRect();
-    const mx=(e.clientX-rect.left)/rect.width*100,my=(e.clientY-rect.top)/rect.height*100;
+    const p=pt(e);
+    const mx=(p.x-rect.left)/rect.width*100,my=(p.y-rect.top)/rect.height*100;
     setLayers(prev=>prev.map(l=>l.id===dragRef.current.id?{...l,x:Math.max(0,Math.min(90,dragRef.current.ox+(mx-dragRef.current.mx0))),y:Math.max(0,Math.min(95,dragRef.current.oy+(my-dragRef.current.my0)))}:l));
+    if(e.cancelable)e.preventDefault();
   },[setLayers]);
   const onMU=useCallback(()=>{dragRef.current=null;resizeRef.current=null;},[]);
   function addColorBlock(){
@@ -680,28 +716,34 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
   return(<div style={{flex:1,display:"flex",overflow:"hidden",flexDirection:isMobile?"column":"row",position:"relative"}}>
     <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"#030306",padding:isMobile?"12px 8px 70px":20,gap:10,overflow:"auto"}}>
       {historyDepth>0&&(
-        <button onClick={undo} title="Annuler (Ctrl+Z)" style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",color:"rgba(255,255,255,0.65)",padding:"6px 14px",borderRadius:7,fontSize:11,cursor:"pointer",fontFamily:"inherit",letterSpacing:".02em",fontWeight:500}}>↩ Undo ({historyDepth})</button>
+        <button onClick={undo} title="Annuler (Ctrl+Z)" className="viz-touch-btn" style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",color:"rgba(255,255,255,0.65)",padding:isMobile?"10px 18px":"6px 14px",borderRadius:7,fontSize:isMobile?12:11,cursor:"pointer",fontFamily:"inherit",letterSpacing:".02em",fontWeight:500,minHeight:isMobile?44:undefined}}>↩ Undo ({historyDepth})</button>
+      )}
+      {isMobile&&mobileToast&&selL&&(
+        <div style={{position:"fixed",top:18,left:"50%",transform:"translateX(-50%)",background:"rgba(0,0,0,0.85)",color:"#fff",padding:"10px 18px",borderRadius:6,fontSize:12,fontFamily:"inherit",letterSpacing:".02em",boxShadow:"0 8px 20px rgba(0,0,0,.4)",zIndex:500,pointerEvents:"none",whiteSpace:"nowrap",maxWidth:"90vw",overflow:"hidden",textOverflow:"ellipsis"}}>
+          Calque sélectionné — appuyez sur ≡ Calques pour éditer
+        </div>
       )}
       <div style={isMobile?{width:270*cs,height:480*cs,position:"relative",flexShrink:0}:{display:"contents"}}>
         <div style={isMobile?{position:"absolute",top:0,left:0,width:270,height:480,transform:"scale("+cs+")",transformOrigin:"top left"}:{display:"contents"}}>
-          <div ref={cvRef} className="visium-canvas" onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU} onClick={layerHit} style={{width:270,height:480,position:"relative",overflow:"hidden",borderRadius:16,border:"1px solid "+t.border,background:"#111",cursor:"default",userSelect:"none",flexShrink:0}}>
+          <div ref={cvRef} className="visium-canvas" onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU} onTouchMove={onMM} onTouchEnd={onMU} onTouchCancel={onMU} onClick={layerHit} style={{width:270,height:480,position:"relative",overflow:"hidden",borderRadius:16,border:"1px solid "+t.border,background:"#111",cursor:"default",userSelect:"none",WebkitUserSelect:"none",touchAction:"none",flexShrink:0}}>
             {sorted.map(lay=>(<LayerView key={lay.id} lay={lay} bgUrl={bgUrl} playerUrl={playerUrl} logoUrl={logoUrl} logo2Url={logo2Url} accent={accent} accent2={accent2} isSel={sel===lay.id} onMD={onMD} onResize={onResize} hideHandles={isMobile} clubName={clubName}/>))}
             <Watermark/>
           </div>
         </div>
       </div>
       {!isMobile&&<div style={{fontSize:11,color:"rgba(255,255,255,.2)"}}>Cliquer · Glisser pour déplacer</div>}
-      {isMobile&&selL&&!selL.locked&&(selL.type==="photo"||selL.type==="colorblock"||selL.type==="sponsor")&&(
+      {isMobile&&selL&&!selL.locked&&(selL.type==="photo"||selL.type==="colorblock"||selL.type==="sponsor"||["text","watertext","heading","subtext"].includes(selL.type))&&(
         <div style={{display:"flex",alignItems:"center",gap:8,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,padding:"6px 10px"}}>
           <span style={{fontSize:10,color:"rgba(255,255,255,.6)",letterSpacing:".06em",textTransform:"uppercase"}}>{selL.label||"Calque"}</span>
           <button onClick={()=>{pushHist();setLayers(p=>p.map(l=>l.id===sel?{...l,w:Math.max(5,l.w*0.95),h:Math.max(5,l.h*0.95)}:l));}} className="viz-touch-btn" style={{background:t.bg4,border:"1px solid "+t.border2,color:t.text,borderRadius:8,padding:0,fontSize:18,cursor:"pointer",fontWeight:700,lineHeight:1,width:44,height:44,fontFamily:"inherit"}}>−</button>
+          <span style={{fontFamily:"'DM Mono',ui-monospace,monospace",fontSize:11,color:"#fff",minWidth:44,textAlign:"center",letterSpacing:".05em"}}>{Math.round(selL.w)}×{Math.round(selL.h)}%</span>
           <button onClick={()=>{pushHist();setLayers(p=>p.map(l=>l.id===sel?{...l,w:Math.min(120,l.w*1.05),h:Math.min(120,l.h*1.05)}:l));}} className="viz-touch-btn" style={{background:t.bg4,border:"1px solid "+t.border2,color:t.text,borderRadius:8,padding:0,fontSize:18,cursor:"pointer",fontWeight:700,lineHeight:1,width:44,height:44,fontFamily:"inherit"}}>+</button>
         </div>
       )}
     </div>
     {isMobile&&mobileSheet==="layers"&&<div onClick={()=>setMobileSheet&&setMobileSheet(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:150}}/>}
-    <div style={layersPanelStyle}>
-      {isMobile&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingBottom:8,borderBottom:"1px solid "+t.border}}><div style={{fontSize:13,fontWeight:700,color:t.text}}>Calques</div><button onClick={()=>setMobileSheet&&setMobileSheet(null)} style={{background:"none",border:"none",color:t.text3,fontSize:18,cursor:"pointer",padding:4}}>✕</button></div>}
+    <div data-bottom-sheet="layers" style={layersPanelStyle}>
+      {isMobile&&<div {...makeSwipeClose(()=>setMobileSheet&&setMobileSheet(null))} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingBottom:8,borderBottom:"1px solid "+t.border,touchAction:"none",cursor:"grab",userSelect:"none"}}><div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:34,height:4,background:"rgba(255,255,255,.2)",borderRadius:3}}/><div style={{fontSize:13,fontWeight:700,color:t.text}}>Calques</div></div><button onClick={()=>setMobileSheet&&setMobileSheet(null)} style={{background:"none",border:"none",color:t.text3,fontSize:18,cursor:"pointer",padding:4}}>✕</button></div>}
       <div style={{display:"flex",alignItems:"center",justifyContent:isMobile?"flex-end":"space-between",marginBottom:8}}>
         {!isMobile&&<div style={{fontSize:10,color:t.text3,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase"}}>Calques</div>}
         <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
@@ -718,10 +760,10 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
         {isText&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:8}}><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Taille</div><input type="number" value={selL.fontSize||20} onChange={e=>upd("fontSize",+e.target.value||12)} style={inp}/></div><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Couleur</div><input type="color" value={(selL.color||"#ffffff").startsWith("rgba")?"#ffffff":selL.color||"#ffffff"} onChange={e=>upd("color",e.target.value)} style={{width:"100%",height:32,borderRadius:6,border:"1px solid "+t.border2,background:t.bg4,cursor:"pointer",padding:2}}/></div></div>}
         {isText&&<div style={{display:"flex",gap:4,marginBottom:8}}>{[["bold","G","Gras"],["italic","I","Italic"],["upper","AA","Majusc."]].map(([f,sym,lbl])=>(<button key={f} onClick={()=>upd(f,!selL[f])} style={{flex:1,background:selL[f]?accent:"transparent",border:"1px solid "+(selL[f]?accent:t.border2),borderRadius:6,padding:"5px 2px",color:selL[f]?"#fff":t.text2,cursor:"pointer",fontSize:9,fontWeight:600,textAlign:"center"}}><div style={{fontSize:11,fontWeight:700}}>{sym}</div><div style={{fontSize:8,opacity:.7}}>{lbl}</div></button>))}</div>}
         {isText&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:3}}>Alignement</div><div style={{display:"flex",gap:4}}>{["left","center","right"].map(al=>(<button key={al} onClick={()=>upd("align",al)} style={{flex:1,background:(selL.align||"center")===al?accent:"transparent",border:"1px solid "+((selL.align||"center")===al?accent:t.border2),borderRadius:6,padding:"5px 2px",color:(selL.align||"center")===al?"#fff":t.text2,cursor:"pointer",fontSize:12}}>{al==="left"?"←":al==="center"?"≡":"→"}</button>))}</div></div>}
-        {isText&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Espacement lettres ({selL.letterSpacing||0}px)</div><input type="range" min={-2} max={20} step={0.5} value={selL.letterSpacing||0} onChange={e=>upd("letterSpacing",+e.target.value)} style={{width:"100%"}}/></div>}
-        {isText&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Interligne ({selL.lineHeight||1.2})</div><input type="range" min={0.8} max={3} step={0.1} value={selL.lineHeight||1.2} onChange={e=>upd("lineHeight",+e.target.value)} style={{width:"100%"}}/></div>}
-        {isText&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Ombre ({selL.textShadow||0}px)</div><input type="range" min={0} max={40} value={selL.textShadow||0} onChange={e=>upd("textShadow",+e.target.value)} style={{width:"100%"}}/></div>}
-        {isText&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:8}}><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Fond texte</div><input type="color" value={selL.bgColor||"#000000"} onChange={e=>upd("bgColor",e.target.value)} style={{width:"100%",height:30,borderRadius:6,border:"1px solid "+t.border2,background:t.bg4,cursor:"pointer",padding:2}}/></div><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Opacité fond</div><input type="range" min={0} max={1} step={0.05} value={selL.bgOpacity||0} onChange={e=>upd("bgOpacity",+e.target.value)} style={{width:"100%"}}/></div></div>}
+        {isText&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Espacement lettres ({(selL.letterSpacing||0).toFixed(1)}px)</div><TouchSlider value={selL.letterSpacing||0} onChange={v=>upd("letterSpacing",v)} min={-2} max={20} step={0.5} t={t} isMobile={isMobile}/></div>}
+        {isText&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Interligne ({(selL.lineHeight||1.2).toFixed(1)})</div><TouchSlider value={selL.lineHeight||1.2} onChange={v=>upd("lineHeight",v)} min={0.8} max={3} step={0.1} t={t} isMobile={isMobile}/></div>}
+        {isText&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Ombre ({selL.textShadow||0}px)</div><TouchSlider value={selL.textShadow||0} onChange={v=>upd("textShadow",v)} min={0} max={40} step={1} t={t} isMobile={isMobile}/></div>}
+        {isText&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:8}}><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Fond texte</div><input type="color" value={selL.bgColor||"#000000"} onChange={e=>upd("bgColor",e.target.value)} style={{width:"100%",height:30,borderRadius:6,border:"1px solid "+t.border2,background:t.bg4,cursor:"pointer",padding:2}}/></div><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Opacité fond ({Math.round((selL.bgOpacity||0)*100)}%)</div><TouchSlider value={selL.bgOpacity||0} onChange={v=>upd("bgOpacity",v)} min={0} max={1} step={0.05} t={t} isMobile={isMobile}/></div></div>}
         {isText&&<div style={{marginBottom:8}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
             <span style={{fontSize:9,color:t.text3}}>Texte en arc</span>
@@ -734,12 +776,12 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
           </div>
           {(selL.curve||0)!==0&&<button onClick={()=>upd("curve",0)} style={{background:"none",border:"none",color:t.accent,cursor:"pointer",fontSize:9,padding:0,textDecoration:"underline",marginTop:3}}>Reset</button>}
         </div>}
-        {selL.type==="watertext"&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Opacité filigrane ({selL.opacity||15}%)</div><input type="range" min={1} max={60} value={selL.opacity||15} onChange={e=>upd("opacity",+e.target.value)} style={{width:"100%"}}/></div>}
-        {selL.type==="overlay"&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Intensité ({selL.opacity||60}%)</div><input type="range" min={0} max={100} value={selL.opacity||60} onChange={e=>upd("opacity",+e.target.value)} style={{width:"100%"}}/></div>}
+        {selL.type==="watertext"&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Opacité filigrane ({selL.opacity||15}%)</div><TouchSlider value={selL.opacity||15} onChange={v=>upd("opacity",v)} min={1} max={60} step={1} t={t} isMobile={isMobile}/></div>}
+        {selL.type==="overlay"&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Intensité ({selL.opacity||60}%)</div><TouchSlider value={selL.opacity||60} onChange={v=>upd("opacity",v)} min={0} max={100} step={1} t={t} isMobile={isMobile}/></div>}
         {selL.type==="stripe"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:8}}><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Couleur 1</div><input type="color" value={selL.color||accent} onChange={e=>upd("color",e.target.value)} style={{width:"100%",height:30,borderRadius:6,border:"1px solid "+t.border2,background:t.bg4,cursor:"pointer",padding:2}}/></div><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Couleur 2</div><input type="color" value={selL.color2||accent2} onChange={e=>upd("color2",e.target.value)} style={{width:"100%",height:30,borderRadius:6,border:"1px solid "+t.border2,background:t.bg4,cursor:"pointer",padding:2}}/></div></div>}
         {selL.type==="colorblock"&&<>
           <div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Couleur</div><input type="color" value={selL.color||"#ff5555"} onChange={e=>upd("color",e.target.value)} style={{width:"100%",height:32,borderRadius:6,border:"1px solid "+t.border2,background:t.bg4,cursor:"pointer",padding:2}}/></div>
-          <div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Opacité ({selL.opacity==null?80:selL.opacity}%)</div><input type="range" min={0} max={100} value={selL.opacity==null?80:selL.opacity} onChange={e=>upd("opacity",+e.target.value)} style={{width:"100%"}}/></div>
+          <div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Opacité ({selL.opacity==null?80:selL.opacity}%)</div><TouchSlider value={selL.opacity==null?80:selL.opacity} onChange={v=>upd("opacity",v)} min={0} max={100} step={1} t={t} isMobile={isMobile}/></div>
         </>}
         {selL.type==="sponsor"&&<>
           <div style={{marginBottom:8}}>
@@ -808,7 +850,7 @@ function TplGrid({tpls,sel,onSel,t,maxTemplates}){
               style={{
                 background:sel===tpl.id?rgba(t.accent,.18):t.bg3,
                 border:"2px solid "+(sel===tpl.id?t.accent:t.border),
-                borderRadius:8,padding:"7px 9px",
+                borderRadius:8,padding:"12px 9px",
                 cursor:locked?"not-allowed":"pointer",
                 opacity:locked?0.4:1,
                 position:"relative"
@@ -975,6 +1017,26 @@ export default function App({session}){
   const[limitError,setLimitError]=useState("");
   const[onboardingSkipped,setOnboardingSkipped]=useState(()=>localStorage.getItem("onboarding_skipped")==="1");
   const[slotScale,setSlotScale]=useState(1);
+  const[exportOverlay,setExportOverlay]=useState(null);  // {dataUrl, filename, blob} pour overlay iOS
+  // Swipe-to-dismiss handlers pour bottom sheets mobile
+  function makeSwipeClose(onClose){
+    let startY=0, dy=0, panelEl=null;
+    return{
+      onTouchStart:(e)=>{
+        startY=e.touches[0].clientY; dy=0;
+        panelEl=e.currentTarget.closest('[data-bottom-sheet]');
+      },
+      onTouchMove:(e)=>{
+        dy=e.touches[0].clientY-startY;
+        if(dy>0&&panelEl){panelEl.style.transform=`translateY(${dy}px)`; panelEl.style.transition="none";}
+      },
+      onTouchEnd:()=>{
+        if(panelEl){panelEl.style.transition="transform .25s ease";panelEl.style.transform="";}
+        if(dy>100&&onClose)onClose();
+        dy=0;panelEl=null;
+      },
+    };
+  }
   const isMobile=useIsMobile();
   const canvasScale=useCanvasScale();
   const[mobileSheet,setMobileSheet]=useState(null);
@@ -989,7 +1051,8 @@ export default function App({session}){
     if(document.getElementById("viz-mobile-css"))return;
     const s=document.createElement("style");
     s.id="viz-mobile-css";
-    s.textContent='@media (max-width: 767px){'
+    s.textContent='.viz-fullvh{height:100vh;height:100dvh;}.viz-minvh{min-height:100vh;min-height:100dvh;}'
+      +'@media (max-width: 767px){'
       +'input:not([type="color"]):not([type="range"]):not([type="file"]):not([type="checkbox"]):not([type="radio"]),'
       +'select,textarea{min-height:44px;font-size:14px;}'
       +'.viz-touch-btn{min-height:44px;}'
@@ -1159,7 +1222,9 @@ export default function App({session}){
     const el=document.querySelector(".visium-canvas");
     if(!el){setLimitError("Aperçu introuvable.");setTimeout(()=>setLimitError(""),2000);return;}
     try{
-      const canvas=await html2canvas(el,{backgroundColor:null,scale:4,useCORS:true,allowTaint:true,logging:false});
+      const memGB=navigator.deviceMemory||4;
+      const scale=memGB<4?2.5:4;
+      const canvas=await html2canvas(el,{backgroundColor:null,scale:scale,useCORS:true,allowTaint:true,logging:false});
       const filename="viziona-"+(selType||"visuel")+"-"+Date.now()+".png";
       const ua=navigator.userAgent;
       const isIOS=/iPad|iPhone|iPod/.test(ua)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
@@ -1167,14 +1232,14 @@ export default function App({session}){
       // Convertit canvas → blob de manière promisifiée
       const blob=await new Promise(res=>canvas.toBlob(res,"image/png"));
       if(!blob){console.error("[downloadPng] toBlob a renvoyé null");setLimitError("Erreur génération du PNG.");setTimeout(()=>setLimitError(""),3000);return;}
-      // Sur iOS Safari : tenter d'abord navigator.share (l'utilisateur peut alors enregistrer dans Photos)
+      // iOS Safari : afficher overlay React pour préserver le user gesture context (clic "Enregistrer")
       if(isIOS&&isSafari){
-        const file=new File([blob],filename,{type:"image/png"});
-        if(navigator.canShare&&navigator.canShare({files:[file]})){
-          try{await navigator.share({files:[file],title:"Visuel Viziona"});return;}
-          catch(shareErr){if(shareErr&&shareErr.name==="AbortError")return;console.warn("[downloadPng] navigator.share a échoué, fallback:",shareErr);}
-        }
-        // Fallback : ouvrir l'image dans un nouvel onglet (long-press → Ajouter aux Photos)
+        const dataUrl=canvas.toDataURL("image/png");
+        setExportOverlay({dataUrl,filename,blob});
+        return;
+      }
+      // (Code mort conservé) - ancien fallback inline
+      if(false){
         const dataUrl=canvas.toDataURL("image/png");
         const w=window.open();
         if(w&&w.document){
@@ -1202,7 +1267,34 @@ export default function App({session}){
       setTimeout(()=>setLimitError(""),3000);
     }
   }
-  if(loading)return(<div style={{height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#080810",color:"rgba(240,240,248,.4)",fontFamily:"system-ui",flexDirection:"column",gap:12}}><div style={{fontSize:28}}>⚡</div><div>Chargement de vos données...</div></div>);
+  async function handleOverlayShare(){
+    if(!exportOverlay)return;
+    const{blob,filename,dataUrl}=exportOverlay;
+    try{
+      const file=new File([blob],filename,{type:"image/png"});
+      if(navigator.canShare&&navigator.canShare({files:[file]})){
+        await navigator.share({files:[file],title:"Visuel Viziona"});
+        setExportOverlay(null);
+        return;
+      }
+    }catch(e){
+      if(e&&e.name==="AbortError"){return;}
+      console.warn("[overlay share] fallback:",e);
+    }
+    const w=window.open();
+    if(w&&w.document){
+      w.document.write('<html><head><title>'+filename+'</title><meta name="viewport" content="width=device-width, initial-scale=1"/></head><body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:100dvh;flex-direction:column;font-family:system-ui;"><img src="'+dataUrl+'" style="max-width:100%;height:auto;display:block"/><p style="color:#fff;text-align:center;font-size:14px;padding:16px;">Appuyez longuement sur l\'image puis « Ajouter aux Photos ».</p></body></html>');
+      w.document.close();
+      setExportOverlay(null);return;
+    }
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;a.download=filename;a.target="_blank";a.rel="noopener";
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),2000);
+    setExportOverlay(null);
+  }
+  if(loading)return(<div className="viz-fullvh" style={{display:"flex",alignItems:"center",justifyContent:"center",background:"#080810",color:"rgba(240,240,248,.4)",fontFamily:"system-ui",flexDirection:"column",gap:12}}><div style={{fontSize:28}}>⚡</div><div>Chargement de vos données...</div></div>);
   const card={background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:20};
   function SaveBtn(){return(<>
     {limitError&&<div style={{background:"#450a0a",border:"1px solid #7f1d1d",borderRadius:8,padding:"10px 14px",color:"#fca5a5",fontSize:12,marginBottom:10}}>{limitError}</div>}
@@ -1218,8 +1310,8 @@ export default function App({session}){
     const panelStyle=isMobile?{position:"fixed",bottom:0,left:0,right:0,maxHeight:"75vh",background:t.bg2,borderTop:"1px solid "+t.border,overflowY:"auto",padding:14,flexShrink:0,zIndex:200,transform:mobileSheet==="options"?"translateY(0)":"translateY(100%)",transition:"transform .25s ease",boxShadow:mobileSheet==="options"?"0 -8px 24px rgba(0,0,0,.4)":"none",borderTopLeftRadius:16,borderTopRightRadius:16}:{width:268,background:t.bg2,borderRight:"1px solid "+t.border,overflowY:"auto",padding:14,flexShrink:0};
     return(<div style={{flex:1,display:"flex",overflow:"hidden",position:"relative",flexDirection:isMobile?"column":"row"}}>
       {isMobile&&mobileSheet==="options"&&<div onClick={()=>setMobileSheet(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:150}}/>}
-      <div style={panelStyle}>
-        {isMobile&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingBottom:8,borderBottom:"1px solid "+t.border}}><div style={{fontSize:13,fontWeight:700,color:t.text}}>Options</div><button onClick={()=>setMobileSheet(null)} style={{background:"none",border:"none",color:t.text3,fontSize:18,cursor:"pointer",padding:4}}>✕</button></div>}
+      <div data-bottom-sheet="options" style={panelStyle}>
+        {isMobile&&<div {...makeSwipeClose(()=>setMobileSheet(null))} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingBottom:8,borderBottom:"1px solid "+t.border,touchAction:"none",cursor:"grab",userSelect:"none"}}><div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:34,height:4,background:"rgba(255,255,255,.2)",borderRadius:3}}/><div style={{fontSize:13,fontWeight:700,color:t.text}}>Options</div></div><button onClick={()=>setMobileSheet(null)} style={{background:"none",border:"none",color:t.text3,fontSize:18,cursor:"pointer",padding:4}}>✕</button></div>}
         {!isMobile&&<BackBtn/>}
         <PBox t={t}><SHdr label="Template" t={t}/><TplGrid tpls={tpls} sel={tpl} onSel={setTpl} t={t} maxTemplates={club?.max_templates}/></PBox>
         <PBox t={t}>
@@ -1236,7 +1328,7 @@ export default function App({session}){
         {isL&&(
           <PBox t={t}>
             <SHdr label={"Taille des avatars · "+Math.round(slotScale*100)+"%"} t={t}/>
-            <input type="range" min={0.5} max={2.0} step={0.05} value={slotScale} onChange={e=>setSlotScale(+e.target.value)} style={{width:"100%"}}/>
+            <TouchSlider value={slotScale} onChange={v=>setSlotScale(v)} min={0.5} max={2.0} step={0.05} t={t} isMobile={isMobile}/>
             <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:t.text3,marginTop:2}}><span>50%</span><span>200%</span></div>
           </PBox>
         )}
@@ -1273,8 +1365,8 @@ export default function App({session}){
     const stdPanelStyle=isMobile?{position:"fixed",bottom:0,left:0,right:0,maxHeight:"75vh",background:t.bg2,borderTop:"1px solid "+t.border,overflowY:"auto",padding:14,flexShrink:0,zIndex:200,transform:mobileSheet==="options"?"translateY(0)":"translateY(100%)",transition:"transform .25s ease",boxShadow:mobileSheet==="options"?"0 -8px 24px rgba(0,0,0,.4)":"none",borderTopLeftRadius:16,borderTopRightRadius:16}:{width:250,background:t.bg2,borderRight:"1px solid "+t.border,overflowY:"auto",padding:14,flexShrink:0};
     return(<div style={{flex:1,display:"flex",overflow:"hidden",position:"relative",flexDirection:isMobile?"column":"row"}}>
       {isMobile&&mobileSheet==="options"&&<div onClick={()=>setMobileSheet(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:150}}/>}
-      <div style={stdPanelStyle}>
-        {isMobile&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingBottom:8,borderBottom:"1px solid "+t.border}}><div style={{fontSize:13,fontWeight:700,color:t.text}}>Options</div><button onClick={()=>setMobileSheet(null)} style={{background:"none",border:"none",color:t.text3,fontSize:18,cursor:"pointer",padding:4}}>✕</button></div>}
+      <div data-bottom-sheet="options" style={stdPanelStyle}>
+        {isMobile&&<div {...makeSwipeClose(()=>setMobileSheet(null))} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingBottom:8,borderBottom:"1px solid "+t.border,touchAction:"none",cursor:"grab",userSelect:"none"}}><div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:34,height:4,background:"rgba(255,255,255,.2)",borderRadius:3}}/><div style={{fontSize:13,fontWeight:700,color:t.text}}>Options</div></div><button onClick={()=>setMobileSheet(null)} style={{background:"none",border:"none",color:t.text3,fontSize:18,cursor:"pointer",padding:4}}>✕</button></div>}
         {!isMobile&&<BackBtn/>}
         <PBox t={t}><SHdr label="Joueur & photo" t={t}/><PhotoPanel players={players} selId={selPid} onSel={selPlayer} selUrl={selPhoto} onSelUrl={setSelPhoto} onAdd={addPhoto} onAddUrl={addPhotoUrl} onFav={toggleFav} t={t}/></PBox>
         <PBox t={t}>
@@ -1319,7 +1411,7 @@ export default function App({session}){
     </div>);
   }
   return(
-    <div style={{height:"100vh",display:"flex",background:t.bg,color:t.text,fontFamily:"'DM Sans','Helvetica Neue',Helvetica,Arial,sans-serif",fontSize:13,overflow:"hidden",letterSpacing:"-0.005em"}}>
+    <div className="viz-fullvh" style={{display:"flex",background:t.bg,color:t.text,fontFamily:"'DM Sans','Helvetica Neue',Helvetica,Arial,sans-serif",fontSize:13,overflow:"hidden",letterSpacing:"-0.005em"}}>
       {!isMobile&&!(nav==="create"&&selType)&&(<div style={{width:192,background:t.bg2,borderRight:"1px solid "+t.border,display:"flex",flexDirection:"column",flexShrink:0}}>
         <div style={{padding:"15px 14px 13px",borderBottom:"1px solid "+t.border,display:"flex",alignItems:"center",gap:10}}>
           {club?.logo_url?<img src={club.logo_url} style={{width:34,height:34,objectFit:"contain",borderRadius:7}} alt=""/>:<div style={{width:34,height:34,borderRadius:7,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:contrastText(mixC(club?.color1||"#e63329",club?.color2||"#1a1a2e",.5)),flexShrink:0}}>{(club?.name||"E")[0].toUpperCase()}</div>}
@@ -1431,7 +1523,8 @@ export default function App({session}){
       </div>
       {isMobile&&!(nav==="create"&&selType)&&(()=>{
         // Mobile nav : on garde 6 onglets (Médias retiré, faute de place). Historique réintégré.
-        const mobileNav=NAV.filter(n=>n.id!=="media");
+        const MOBILE_LABELS={home:"Accueil",club:"Club",players:"Joueurs",create:"Créer",history:"Visuels",settings:"Réglages"};
+        const mobileNav=NAV.filter(n=>n.id!=="media").map(n=>({...n,label:MOBILE_LABELS[n.id]||n.label}));
         return(
         <div style={{position:"fixed",bottom:0,left:0,right:0,height:60,background:t.bg2,borderTop:"1px solid "+t.border,display:"flex",alignItems:"stretch",zIndex:100,paddingBottom:"env(safe-area-inset-bottom,0)"}}>
           {mobileNav.map(n=>{
@@ -1448,5 +1541,14 @@ export default function App({session}){
           })}
         </div>);
       })()}
+      {exportOverlay&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'DM Sans','Helvetica Neue',sans-serif"}}>
+          <div style={{fontSize:11,letterSpacing:".18em",textTransform:"uppercase",color:"rgba(255,255,255,.5)",marginBottom:14}}>Visuel prêt</div>
+          <img src={exportOverlay.dataUrl} alt="Aperçu" style={{maxWidth:"min(420px,86vw)",maxHeight:"55vh",borderRadius:8,boxShadow:"0 20px 50px rgba(0,0,0,.6)",marginBottom:24}}/>
+          <p style={{fontSize:13,color:"rgba(255,255,255,.7)",textAlign:"center",maxWidth:340,marginBottom:18,lineHeight:1.5}}>Appuyez sur « Enregistrer » puis « Enregistrer dans Photos » pour le sauvegarder sur votre appareil.</p>
+          <button onClick={handleOverlayShare} style={{background:"#fff",color:"#000",border:"none",borderRadius:2,padding:"15px 38px",fontSize:12,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",cursor:"pointer",fontFamily:"inherit",minHeight:48,marginBottom:12}}>Enregistrer dans les photos</button>
+          <button onClick={()=>setExportOverlay(null)} style={{background:"none",color:"rgba(255,255,255,.5)",border:"none",fontSize:11,cursor:"pointer",padding:10,fontFamily:"inherit",letterSpacing:".06em",textTransform:"uppercase"}}>Annuler</button>
+        </div>
+      )}
     </div>);
 }

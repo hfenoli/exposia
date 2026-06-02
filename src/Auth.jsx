@@ -11,6 +11,12 @@ if (typeof document !== "undefined" && !document.getElementById("viziona-landing
   l.href = "https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700&family=DM+Mono:wght@400;500&display=swap";
   document.head.appendChild(l);
 }
+if (typeof document !== "undefined" && !document.getElementById("viz-auth-css")) {
+  const s = document.createElement("style");
+  s.id = "viz-auth-css";
+  s.textContent = "@keyframes viz-auth-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}";
+  document.head.appendChild(s);
+}
 const TURNSTILE_SITE_KEY = "0x4AAAAAADQBrsbjQ5h5zySt";
 const TURNSTILE_SCRIPT_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
 
@@ -41,6 +47,7 @@ export default function Auth({ onBack, initialMode }) {
   const [email, setEmail] = useState("");
   const [clubName, setClubName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [captchaPending, setCaptchaPending] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -135,13 +142,16 @@ export default function Auth({ onBack, initialMode }) {
 
     // Récupère un token Turnstile avant de contacter Supabase
     let captchaToken;
+    setCaptchaPending(true);
     try {
       captchaToken = await getCaptchaToken();
     } catch (e) {
       setError("Vérification anti-bot indisponible. Rechargez la page et réessayez.");
       setLoading(false);
+      setCaptchaPending(false);
       return;
     }
+    setCaptchaPending(false);
 
     const options = {
       emailRedirectTo: window.location.origin,
@@ -173,7 +183,7 @@ export default function Auth({ onBack, initialMode }) {
 
   return (
     <div style={{
-      minHeight: "100vh",
+      minHeight: "100dvh",
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
@@ -304,6 +314,12 @@ export default function Auth({ onBack, initialMode }) {
 
         {/* Cloudflare Turnstile (invisible) — apparaît uniquement si un challenge est nécessaire */}
         <div ref={widgetHostRef} style={{ display: "flex", justifyContent: "center", marginBottom: 12 }} />
+        {captchaPending && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 14, fontSize: 12, color: "#555", fontFamily: FONT }}>
+            <span style={{ display: "inline-block", width: 14, height: 14, border: "2px solid rgba(0,0,0,0.15)", borderTopColor: "#0a0a0a", borderRadius: "50%", animation: "viz-auth-spin 0.8s linear infinite" }}/>
+            Vérification...
+          </div>
+        )}
 
         {error && (
           <div style={{

@@ -93,12 +93,13 @@ function injectFontsAndStyles() {
       .viz-grain {
         position: fixed; inset: 0; pointer-events: none; z-index: 999;
         opacity: 0.35; mix-blend-mode: multiply;
+        will-change: transform; transform: translateZ(0);
         background-image: url("data:image/svg+xml;utf8,<svg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/></svg>");
       }
       @media (max-width: 900px) {
         .viz-hero { grid-template-columns: 1fr !important; }
         .viz-hero-left { padding: 100px 24px 60px !important; border-right: none !important; }
-        .viz-hero-right { padding: 0 24px 60px !important; }
+        .viz-hero-right { padding: 0 24px 60px !important; grid-template-columns: 1fr !important; }
         .viz-feat-grid { grid-template-columns: 1fr !important; }
         .viz-how { grid-template-columns: 1fr !important; }
         .viz-how-l { border-right: none !important; padding: 80px 24px !important; }
@@ -167,7 +168,7 @@ export default function Landing({ onEnter }) {
   const handleEnter = (mode) => (e) => { if (e) e.preventDefault(); if (onEnter) onEnter(mode); };
 
   return (
-    <div style={{ background: C.bg, color: C.tx, fontFamily: FONT_BODY, overflowX: "hidden", minHeight: "100vh", position: "relative" }}>
+    <div style={{ background: C.bg, color: C.tx, fontFamily: FONT_BODY, overflowX: "hidden", minHeight: "100dvh", position: "relative" }}>
       <div className="viz-grain" aria-hidden="true"/>
 
       {/* ─── NAV ─── */}
@@ -187,7 +188,7 @@ export default function Landing({ onEnter }) {
       </nav>
 
       {/* ─── HERO ─── */}
-      <section className="viz-hero" style={{ minHeight: "100vh", display: "grid", gridTemplateColumns: "55% 45%", paddingTop: 60, position: "relative" }}>
+      <section className="viz-hero" style={{ minHeight: "100dvh", display: "grid", gridTemplateColumns: "55% 45%", paddingTop: 60, position: "relative" }}>
         <div className="viz-hero-left" style={{ display: "flex", flexDirection: "column", justifyContent: "flex-end", padding: "80px 52px", borderRight: "1px solid " + C.bdLite, position: "relative" }}>
           <span aria-hidden="true" style={{ position: "absolute", bottom: 60, right: -40, fontFamily: FONT_H, fontSize: 320, lineHeight: 1, color: "rgba(10,10,10,0.045)", letterSpacing: "-0.02em", pointerEvents: "none", zIndex: 0, whiteSpace: "nowrap" }}>30s</span>
           <span className="viz-up" style={{ fontFamily: FONT_M, fontSize: 10, color: C.tx3, letterSpacing: "0.22em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 12, marginBottom: 28, position: "relative", zIndex: 1, animationDelay: ".1s" }}>
