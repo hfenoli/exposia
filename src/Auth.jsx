@@ -109,10 +109,27 @@ export default function Auth({ onBack, initialMode }) {
         reject(new Error("captcha-not-ready"));
         return;
       }
-      pendingRef.current = { resolve, reject };
+      // Timeout 8s : si Turnstile ne répond pas (widget pas rendu, domaine pas whitelisté, JS bloqué…),
+      // on rejette proprement au lieu de bloquer l'utilisateur indéfiniment.
+      const timeoutId = setTimeout(() => {
+        if (pendingRef.current && pendingRef.current.resolve === resolve) {
+          pendingRef.current = null;
+          // Reset le widget pour qu'un nouveau clic ne reste pas en état pending
+          try {
+            if (window.turnstile && widgetIdRef.current != null) {
+              window.turnstile.reset(widgetIdRef.current);
+            }
+          } catch (e) {}
+          reject(new Error("captcha-timeout"));
+        }
+      }, 8000);
+      const wrappedResolve = (token) => { clearTimeout(timeoutId); resolve(token); };
+      const wrappedReject = (err) => { clearTimeout(timeoutId); reject(err); };
+      pendingRef.current = { resolve: wrappedResolve, reject: wrappedReject };
       try {
         window.turnstile.execute(widgetIdRef.current);
       } catch (e) {
+        clearTimeout(timeoutId);
         pendingRef.current = null;
         reject(e);
       }
@@ -146,7 +163,10 @@ export default function Auth({ onBack, initialMode }) {
     try {
       captchaToken = await getCaptchaToken();
     } catch (e) {
-      setError("Vérification anti-bot indisponible. Rechargez la page et réessayez.");
+      const msg = e && e.message === "captcha-timeout"
+        ? "Vérification échouée, rechargez la page."
+        : "Vérification anti-bot indisponible. Rechargez la page et réessayez.";
+      setError(msg);
       setLoading(false);
       setCaptchaPending(false);
       return;
