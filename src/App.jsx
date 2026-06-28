@@ -1,6 +1,26 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import html2canvas from "html2canvas";
 import { supabase } from "./supabase";
+// ─── BOTTOM SHEET SWIPE-TO-DISMISS ────────────────────────────
+// Helper module-level pour pouvoir être utilisé dans DragCanvas comme dans App.
+function makeSwipeClose(onClose){
+  let startY=0, dy=0, panelEl=null;
+  return{
+    onTouchStart:(e)=>{
+      startY=e.touches[0].clientY; dy=0;
+      panelEl=e.currentTarget.closest('[data-bottom-sheet]');
+    },
+    onTouchMove:(e)=>{
+      dy=e.touches[0].clientY-startY;
+      if(dy>0&&panelEl){panelEl.style.transform="translateY("+dy+"px)"; panelEl.style.transition="none";}
+    },
+    onTouchEnd:()=>{
+      if(panelEl){panelEl.style.transition="transform .25s ease";panelEl.style.transform="";}
+      if(dy>100&&onClose)onClose();
+      dy=0;panelEl=null;
+    },
+  };
+}
 // ─── FILE VALIDATION ──────────────────────────────────────────
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 function validateImageFile(f){
@@ -1018,25 +1038,6 @@ export default function App({session}){
   const[onboardingSkipped,setOnboardingSkipped]=useState(()=>localStorage.getItem("onboarding_skipped")==="1");
   const[slotScale,setSlotScale]=useState(1);
   const[exportOverlay,setExportOverlay]=useState(null);  // {dataUrl, filename, blob} pour overlay iOS
-  // Swipe-to-dismiss handlers pour bottom sheets mobile
-  function makeSwipeClose(onClose){
-    let startY=0, dy=0, panelEl=null;
-    return{
-      onTouchStart:(e)=>{
-        startY=e.touches[0].clientY; dy=0;
-        panelEl=e.currentTarget.closest('[data-bottom-sheet]');
-      },
-      onTouchMove:(e)=>{
-        dy=e.touches[0].clientY-startY;
-        if(dy>0&&panelEl){panelEl.style.transform=`translateY(${dy}px)`; panelEl.style.transition="none";}
-      },
-      onTouchEnd:()=>{
-        if(panelEl){panelEl.style.transition="transform .25s ease";panelEl.style.transform="";}
-        if(dy>100&&onClose)onClose();
-        dy=0;panelEl=null;
-      },
-    };
-  }
   const isMobile=useIsMobile();
   const canvasScale=useCanvasScale();
   const[mobileSheet,setMobileSheet]=useState(null);
@@ -1236,23 +1237,6 @@ export default function App({session}){
       if(isIOS&&isSafari){
         const dataUrl=canvas.toDataURL("image/png");
         setExportOverlay({dataUrl,filename,blob});
-        return;
-      }
-      // (Code mort conservé) - ancien fallback inline
-      if(false){
-        const dataUrl=canvas.toDataURL("image/png");
-        const w=window.open();
-        if(w&&w.document){
-          w.document.write('<html><head><title>'+filename+'</title><meta name="viewport" content="width=device-width, initial-scale=1"/></head><body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;font-family:system-ui;"><img src="'+dataUrl+'" style="max-width:100%;height:auto;display:block"/><p style="color:#fff;text-align:center;font-size:14px;padding:16px;">Appuyez longuement sur l\'image puis « Ajouter aux Photos ».</p></body></html>');
-          w.document.close();
-          return;
-        }
-        // window.open bloqué : forcer un <a download> (dernier recours, peut juste afficher l'image sur iOS)
-        const url=URL.createObjectURL(blob);
-        const a=document.createElement("a");
-        a.href=url;a.download=filename;a.target="_blank";a.rel="noopener";
-        document.body.appendChild(a);a.click();document.body.removeChild(a);
-        setTimeout(()=>URL.revokeObjectURL(url),2000);
         return;
       }
       // Tous les autres navigateurs : <a download> standard
