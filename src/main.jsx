@@ -1,10 +1,60 @@
-import { StrictMode, useState, useEffect } from "react"
+import { StrictMode, useState, useEffect, Component } from "react"
 import { createRoot } from "react-dom/client"
 import { supabase } from "./supabase"
 import App from "./App"
 import Auth from "./Auth"
 import Landing from "./Landing"
 import Admin from "./Admin"
+
+// ─── ERROR BOUNDARY GLOBAL ─────────────────────────────────────
+// Capture toutes les erreurs React enfants et affiche un fallback propre au lieu d'un écran blanc.
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, info) {
+    // Log pour debug + envoi futur vers un outil monitoring (Sentry, etc.)
+    console.error("[ErrorBoundary] Crash React capturé:", error, info);
+  }
+  handleReload = () => {
+    this.setState({ hasError: false, error: null });
+    window.location.reload();
+  };
+  handleReset = () => {
+    this.setState({ hasError: false, error: null });
+    // Force un retour à l'accueil si l'erreur vient d'une route corrompue
+    if (typeof window !== "undefined") window.history.replaceState({}, "", "/");
+  };
+  render() {
+    if (!this.state.hasError) return this.props.children;
+    return (
+      <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, background: "#FAFAFA", color: "#0A0A0A", fontFamily: "'DM Sans', system-ui, sans-serif", textAlign: "center" }}>
+        <div style={{ fontFamily: "'Bebas Neue', Impact, sans-serif", fontSize: 64, letterSpacing: ".02em", marginBottom: 12 }}>OUPS.</div>
+        <p style={{ fontSize: 15, color: "#555", maxWidth: 420, lineHeight: 1.6, marginBottom: 28 }}>
+          Une erreur inattendue est survenue. Vos données sont sauvegardées en sécurité. Rechargez la page pour reprendre.
+        </p>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
+          <button onClick={this.handleReload} style={{ background: "#0A0A0A", color: "#FAFAFA", border: "none", padding: "14px 32px", borderRadius: 2, fontSize: 12, fontWeight: 700, letterSpacing: ".12em", textTransform: "uppercase", cursor: "pointer", fontFamily: "inherit" }}>
+            Recharger
+          </button>
+          <button onClick={this.handleReset} style={{ background: "transparent", color: "#0A0A0A", border: "1px solid #0A0A0A", padding: "14px 32px", borderRadius: 2, fontSize: 12, fontWeight: 600, letterSpacing: ".12em", textTransform: "uppercase", cursor: "pointer", fontFamily: "inherit" }}>
+            Retour accueil
+          </button>
+        </div>
+        {this.state.error && (
+          <details style={{ marginTop: 32, maxWidth: 520, fontSize: 11, color: "#888" }}>
+            <summary style={{ cursor: "pointer" }}>Détails techniques</summary>
+            <pre style={{ textAlign: "left", overflow: "auto", background: "#F0F0F0", padding: 12, borderRadius: 4, marginTop: 8, fontSize: 10 }}>{String(this.state.error && this.state.error.message ? this.state.error.message : this.state.error)}</pre>
+          </details>
+        )}
+      </div>
+    );
+  }
+}
 
 function detectAdminFromUrl() {
   if (typeof window === "undefined") return false;
@@ -118,5 +168,5 @@ function Root() {
 }
 
 createRoot(document.getElementById("root")).render(
-  <StrictMode><Root /></StrictMode>
+  <StrictMode><ErrorBoundary><Root /></ErrorBoundary></StrictMode>
 )

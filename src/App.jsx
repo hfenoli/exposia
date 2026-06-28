@@ -86,6 +86,27 @@ const NAV = [
   {id:"history", icon:"📁", label:"Historique"},
   {id:"settings",icon:"⚙️", label:"Paramètres"},
 ];
+// ─── URL ROUTING ──────────────────────────────────────────────
+// Map bidirectionnelle entre l'id de section et le path URL.
+const NAV_PATHS = {
+  home: "/",
+  club: "/club",
+  players: "/joueurs",
+  media: "/medias",
+  create: "/creation",
+  history: "/historique",
+  settings: "/reglages",
+};
+const PATH_TO_NAV = Object.fromEntries(Object.entries(NAV_PATHS).map(([k,v])=>[v,k]));
+function navFromUrl(){
+  if(typeof window==="undefined")return "home";
+  // /admin et hash spéciaux gérés ailleurs — on ignore ici
+  const p=window.location.pathname.replace(/\/$/,"")||"/";
+  return PATH_TO_NAV[p]||"home";
+}
+function pathFromNav(navId){
+  return NAV_PATHS[navId]||"/";
+}
 const LINEUP_TPLS = [
   {id:"ln1",label:"Noir Absolu",  cat:"Sombre"},
   {id:"ln2",label:"Feu & Braise", cat:"Sombre"},
@@ -1019,7 +1040,24 @@ export default function App({session}){
   const[media,setMedia]=useState([]);
   const[history,setHistory]=useState([]);
   const[loading,setLoading]=useState(true);
-  const[nav,setNav]=useState("home");
+  const[nav,_setNav]=useState(navFromUrl);
+  // Wrapper qui synchronise nav state + URL navigateur (pushState).
+  // Back/forward natif : géré via popstate (useEffect ci-dessous).
+  function setNav(navId){
+    _setNav(navId);
+    if(typeof window!=="undefined"){
+      const targetPath=pathFromNav(navId);
+      const currentPath=window.location.pathname.replace(/\/$/,"")||"/";
+      if(currentPath!==targetPath){
+        window.history.pushState({nav:navId},"",targetPath);
+      }
+    }
+  }
+  useEffect(()=>{
+    function onPop(){_setNav(navFromUrl());}
+    window.addEventListener("popstate",onPop);
+    return()=>window.removeEventListener("popstate",onPop);
+  },[]);
   const[selType,setSelType]=useState(null);
   const[editId,setEditId]=useState(null);
   const[pName,setPName]=useState("");const[pNum,setPNum]=useState("");const[pPos,setPPos]=useState("Attaquant");
