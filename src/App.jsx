@@ -110,7 +110,7 @@ function pathFromNav(navId){
 const LINEUP_TPLS = [
   {id:"ln1",label:"Noir Absolu",  cat:"Sombre"},
   {id:"ln2",label:"Feu & Braise", cat:"Sombre"},
-  {id:"ln3",label:"Minuit Doré",  cat:"Sombre"},
+  {id:"ln3",label:"Élite Serif",  cat:"Sombre"},
   {id:"ln4",label:"Élite Diag",   cat:"Moderne"},
   {id:"ln5",label:"Chrome",       cat:"Clair"},
   {id:"ln6",label:"Minimal",      cat:"Clair"},
@@ -382,15 +382,17 @@ function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScal
   function Logo(props){const sz=props.sz||W*.1;if(!props.url)return<div style={{width:sz,height:sz,borderRadius:4,background:rgba(accent,.25),display:"flex",alignItems:"center",justifyContent:"center",color:accent,fontSize:sz*.3}}>◈</div>;return<img src={props.url} style={{width:sz,height:sz,objectFit:"contain"}} alt=""/>;}
   function Slot(props){const p=props.p;const sz=props.sz||W*.09;const square=props.square;const ph=getPhoto(p);return(<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,flex:"1 1 0",minWidth:0,padding:"0 2px",boxSizing:"border-box"}}><div style={{width:sz,height:sz,borderRadius:square?6:"50%",overflow:"hidden",border:"2px solid "+accent,background:dark?"rgba(0,0,0,.5)":"#e0e0e8",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:sz*.34,fontWeight:900,color:accent,fontFamily:"Impact,sans-serif"}}>{p&&p.number?p.number:"?"}</span>}</div><span style={{fontSize:W*.024,color:dark?"#fff":"#111",fontWeight:700,textAlign:"center",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textShadow:dark?"0 1px 5px #000":"none"}}>{p&&p.name?p.name.split(" ").pop():"—"}</span></div>);}
   const bg={ln1:"#030305",ln2:"#0a0000",ln3:"#0a0805",ln4:"#060408",ln5:"#f2f2f4",ln6:"#fafafa"}[tpl]||"#030305";
-  const GOLD="#FFD700";
+  // FIX Lucas Test 26 : le template "Minuit Doré" (ln3) forçait un jaune #FFD700 aléatoire.
+  // On l'adapte à la couleur du club : "Minuit Doré" devient un template élégant basé sur accent1.
+  const GOLD=accent;
   const isGold=tpl==="ln3";
   const fieldStroke=isGold?GOLD:(dark?accent:"#666");
   return(<div style={Object.assign({},root,{background:bg})}>
     {bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:dark?.44:.36}} alt=""/>}
     {dark&&<div style={{position:"absolute",inset:0,background:"linear-gradient(to bottom,rgba(0,0,0,.7),rgba(0,0,0,.42),rgba(0,0,0,.7))"}}/>}
     {tpl==="ln2"&&<div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at 50% 100%,"+rgba(accent,.5)+" 0%,transparent 65%)"}}/>}
-    {/* ln3 "Minuit Doré" : dégradé chaud or + halo doré en haut à droite */}
-    {isGold&&<div style={{position:"absolute",inset:0,background:"radial-gradient(circle at 78% 18%,rgba(255,215,0,.22) 0%,transparent 55%),linear-gradient(160deg,rgba(255,180,0,.08) 0%,transparent 45%,rgba(120,70,0,.18) 100%)"}}/>}
+    {/* ln3 "Minuit Doré" (renommé "Élite" en logique) : halo teinté couleur du club, plus de jaune hardcodé */}
+    {isGold&&<div style={{position:"absolute",inset:0,background:"radial-gradient(circle at 78% 18%,"+rgba(accent,.22)+" 0%,transparent 55%),linear-gradient(160deg,"+rgba(accent,.08)+" 0%,transparent 45%,"+rgba(accent2,.25)+" 100%)"}}/>}
     {tpl==="ln4"&&<svg style={{position:"absolute",inset:0,width:"100%",height:"100%",opacity:.06}} viewBox="0 0 270 480"><polygon points="0,0 200,0 0,240" fill={rgba(accent,.2)}/><polygon points="270,480 70,480 270,240" fill={rgba(accent2,.2)}/></svg>}
     {/* Field lines : sur TOUS les templates lineup, couleur adaptée */}
     <svg style={{position:"absolute",inset:0,width:"100%",height:"100%",opacity:dark?.12:.09,pointerEvents:"none"}} viewBox="0 0 270 480">
@@ -404,18 +406,21 @@ function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScal
     </svg>
     {tpl==="ln6"&&<div style={{position:"absolute",left:0,top:0,bottom:0,width:4,background:"linear-gradient(to bottom,"+accent+","+accent2+")",zIndex:3}}/>}
     {tpl==="ln5"&&<div style={{position:"absolute",top:0,left:0,right:0,height:"27%",background:"linear-gradient(135deg,"+accent+","+accent2+")",zIndex:1}}/>}
-    {dark&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:isGold?"linear-gradient(90deg,transparent,"+GOLD+",#fff7c2,"+GOLD+",transparent)":"linear-gradient(90deg,transparent,"+accent+","+accent2+","+accent+",transparent)",zIndex:4}}/>}
+    {dark&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:isGold?"linear-gradient(90deg,transparent,"+accent+","+rgba(accent,.6)+","+accent+",transparent)":"linear-gradient(90deg,transparent,"+accent+","+accent2+","+accent+",transparent)",zIndex:4}}/>}
     {/* ln3 : second filet doré tout en bas pour cadrer */}
     {isGold&&<div style={{position:"absolute",bottom:0,left:0,right:0,height:1,background:"linear-gradient(90deg,transparent,"+GOLD+",transparent)",zIndex:4,opacity:.7}}/>}
     <div style={{position:"relative",zIndex:3,padding:(W*.03)+"px "+(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
       <Logo url={logoUrl} sz={W*.09}/>
-      <div style={{textAlign:"center",overflow:"hidden",maxWidth:W*.6}}>{competition&&<div style={{fontSize:W*.022,color:isGold?GOLD:(dark?rgba(accent,.7):"#666"),letterSpacing:".13em",textTransform:"uppercase",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{competition}</div>}<div style={{fontSize:W*.032,fontWeight:isGold?400:700,color:isGold?GOLD:(dark?"#fff":"#111"),fontFamily:isGold?"Georgia,'Times New Roman',serif":"Impact,sans-serif",fontStyle:isGold?"italic":"normal",letterSpacing:isGold?".02em":".05em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>XI · {fm}</div>{ld&&ld.opponent&&<div style={{fontSize:W*.024,color:isGold?"rgba(255,215,0,.65)":(dark?"rgba(255,255,255,.6)":"#555"),fontFamily:isGold?"Georgia,serif":"Impact,sans-serif",fontStyle:"italic",letterSpacing:".04em",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>vs {ld.opponent}</div>}</div>
+      <div style={{textAlign:"center",overflow:"hidden",maxWidth:W*.6}}>{competition&&<div style={{fontSize:W*.022,color:isGold?accent:(dark?rgba(accent,.7):"#666"),letterSpacing:".13em",textTransform:"uppercase",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{competition}</div>}<div style={{fontSize:W*.032,fontWeight:isGold?400:700,color:isGold?accent:(dark?"#fff":"#111"),fontFamily:isGold?"Georgia,'Times New Roman',serif":"Impact,sans-serif",fontStyle:isGold?"italic":"normal",letterSpacing:isGold?".02em":".05em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>XI · {fm}</div>{ld&&ld.opponent&&<div style={{fontSize:W*.024,color:isGold?rgba(accent,.65):(dark?"rgba(255,255,255,.6)":"#555"),fontFamily:isGold?"Georgia,serif":"Impact,sans-serif",fontStyle:"italic",letterSpacing:".04em",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>vs {ld.opponent}</div>}</div>
       <Logo url={logo2Url} sz={W*.08}/>
     </div>
     <div style={{position:"relative",zIndex:3,flex:1,display:"flex",flexDirection:"column",justifyContent:"space-around",padding:"0 "+(W*.018)+"px"}}>
       {[].concat(rows).reverse().map(function(row,ri){const rowSz=Math.min(W*0.088,W*0.75/row.n)*slotScale;const denseRow=row.n>=5;return(<div key={ri} style={{display:"flex",justifyContent:denseRow?"space-evenly":"space-around",alignItems:"center",overflow:"hidden",gap:W*(row.n>4?0.005:0.01)}}>{Array.from({length:row.n}).map(function(_,pi){return<Slot key={pi} p={row.players[pi]} sz={rowSz} square={tpl==="ln4"}/>})}</div>);})}
     </div>
-    {subs.length>0&&<div style={{position:"relative",zIndex:3,borderTop:"1px solid "+rgba(accent,.3),background:rgba(dark?"#000":"#f0f0f0",.55),padding:(W*.012)+"px "+(W*.035)+"px"}}><div style={{fontSize:W*.02,color:rgba(dark?"#fff":"#000",.38),letterSpacing:".1em",marginBottom:2}}>REMPLAÇANTS</div><div style={{display:"flex",gap:W*.016,flexWrap:"wrap",alignItems:"center"}}>{subs.map(function(s,i){const ph=getPhoto(s);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.009}}>{ph?<img src={ph} style={{width:W*.046,height:W*.046,borderRadius:"50%",objectFit:"cover",objectPosition:"top",border:"1px solid "+rgba(accent,.4)}} alt=""/>:<div style={{width:W*.046,height:W*.046,borderRadius:"50%",background:rgba(accent,.2),display:"flex",alignItems:"center",justifyContent:"center",fontSize:W*.018,color:accent}}>{s.number||"?"}</div>}<span style={{fontSize:W*.023,color:rgba(dark?"#fff":"#000",.5)}}>{s.name?s.name.split(" ").pop():""}</span></div>);})}</div></div>}
+    {/* FIX Lucas Test 21 : le "Powered by Viziona" (Watermark) chevauchait les remplaçants
+        quand il y en avait beaucoup. On réserve un paddingRight en bas suffisant pour la watermark
+        (~30% de W soit ~80px sur canvas 270) — la row de remplaçants ne s'étend plus jusqu'au bord droit. */}
+    {subs.length>0&&<div style={{position:"relative",zIndex:3,borderTop:"1px solid "+rgba(accent,.3),background:rgba(dark?"#000":"#f0f0f0",.55),padding:(W*.012)+"px "+(W*.035)+"px",paddingRight:(W*.30)+"px",paddingBottom:(W*.032)+"px"}}><div style={{fontSize:W*.02,color:rgba(dark?"#fff":"#000",.38),letterSpacing:".1em",marginBottom:2}}>REMPLAÇANTS</div><div style={{display:"flex",gap:W*.016,flexWrap:"wrap",alignItems:"center"}}>{subs.map(function(s,i){const ph=getPhoto(s);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.009}}>{ph?<img src={ph} style={{width:W*.046,height:W*.046,borderRadius:"50%",objectFit:"cover",objectPosition:"top",border:"1px solid "+rgba(accent,.4)}} alt=""/>:<div style={{width:W*.046,height:W*.046,borderRadius:"50%",background:rgba(accent,.2),display:"flex",alignItems:"center",justifyContent:"center",fontSize:W*.018,color:accent}}>{s.number||"?"}</div>}<span style={{fontSize:W*.023,color:rgba(dark?"#fff":"#000",.5)}}>{s.name?s.name.split(" ").pop():""}</span></div>);})}</div></div>}
     <Watermark/>
   </div>);
 }
@@ -990,7 +995,11 @@ function LineupEditor({ld,setLd,players,t}){
   </div>);
 }
 function GroupEditor({gd,setGd,players,t}){
-  const title=gd.title||"GROUPE A";const competition=gd.competition||"";
+  // FIX Lucas : ne PAS faire `gd.title||"GROUPE A"` sur l'input.
+  // Sinon dès que l'utilisateur efface le champ, la valeur retourne à "GROUPE A" et
+  // il ne peut plus rien saisir. On garde le fallback uniquement pour le RENDU du visuel
+  // (voir GroupCanvas). Ici on utilise le placeholder pour montrer la valeur par défaut.
+  const title=gd.title??"";const competition=gd.competition??"";
   const cats=[{k:"gk",l:"🧤 Gardiens",pos:"Gardien"},{k:"def",l:"🛡 Défenseurs",pos:"Défenseur"},{k:"mid",l:"⚙️ Milieux",pos:"Milieu"},{k:"fwd",l:"⚡ Attaquants",pos:"Attaquant"},{k:"coaches",l:"👔 Staff",pos:null}];
   const[impSel,setImpSel]=useState({});
   function add(k){setGd(d=>Object.assign({},d,{[k]:[...(d[k]||[]),{id:Date.now(),name:"",number:"",photo:null,captain:false}]}));}
@@ -1065,7 +1074,9 @@ export default function App({session}){
   const[bgUrl,setBgUrl]=useState(null);const[logoUrl,setLogoUrl]=useState(null);const[logo2Url,setLogo2Url]=useState(null);
   const[selPid,setSelPid]=useState(null);const[selPhoto,setSelPhoto]=useState(null);
   const[lineupData,setLineupData]=useState({formation:"4-4-2",starters:[],subs:[],opponent:"",competition:""});
-  const[groupData,setGroupData]=useState({title:"GROUPE A",competition:"",gk:[],def:[],mid:[],fwd:[],coaches:[]});
+  // FIX Lucas : on n'init pas title="GROUPE A" pour laisser le user taper.
+  // Le placeholder "GROUPE A" (dans GroupEditor) + le fallback à l'affichage (GroupCanvas) suffisent.
+  const[groupData,setGroupData]=useState({title:"",competition:"",gk:[],def:[],mid:[],fwd:[],coaches:[]});
   const[postData,setPostData]=useState({title:"TITRE",subtitle:"Sous-titre",body:"Texte du message.",date:"",hashtag:""});
   const[lineupTpl,setLineupTpl]=useState("ln1");
   const[groupTpl,setGroupTpl]=useState("gr1");
@@ -1226,7 +1237,7 @@ export default function App({session}){
       // Post est désormais un éditeur libre : utilise makeLayers comme goal/result/match/recruit
       if(type!=="lineup"&&type!=="group")setLayers(makeLayers(type,club?.color1||"#e63329",club?.color2||"#1a1a2e"));
       if(type==="lineup")setLineupData({formation:"4-4-2",starters:[],subs:[],opponent:"",competition:""});
-      if(type==="group")setGroupData({title:"GROUPE A",competition:"",gk:[],def:[],mid:[],fwd:[],coaches:[]});
+      if(type==="group")setGroupData({title:"",competition:"",gk:[],def:[],mid:[],fwd:[],coaches:[]});
     }
   }
   async function save(){
@@ -1260,6 +1271,12 @@ export default function App({session}){
   async function downloadPng(){
     const el=document.querySelector(".visium-canvas");
     if(!el){setLimitError("Aperçu introuvable.");setTimeout(()=>setLimitError(""),2000);return;}
+    // FIX Lucas Test 27 : télécharger doit aussi sauvegarder dans l'historique.
+    // Si le visuel n'a jamais été enregistré (editId null), on save AVANT le PNG
+    // pour qu'il apparaisse dans "Visuels" côté user. Une erreur de save ne bloque pas l'export.
+    if(!editId){
+      try{ await save(); }catch(e){ console.warn("[downloadPng] auto-save a échoué:",e); }
+    }
     try{
       const memGB=navigator.deviceMemory||4;
       const scale=memGB<4?2.5:4;
