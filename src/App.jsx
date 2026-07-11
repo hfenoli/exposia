@@ -553,7 +553,9 @@ function GroupCanvas({gd,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H}){
     </div>);
   }
   const isNeon=tpl==="gr6";
-  const cats2=[{l:"GARDIENS",list:gk,c:isNeon?"#00ffaa":accent},{l:"DÉFENSEURS",list:def,c:isNeon?"#4488ff":accent2},{l:"MILIEUX",list:mid,c:isNeon?"#ff4499":accent},{l:"ATTAQUANTS",list:fwd,c:isNeon?"#ffcc00":accent2}];
+  // FIX Lucas Test 26 : "Néon Listing" utilisait 4 couleurs aléatoires (turquoise/bleu/rose/jaune).
+  // On garde le glow néon (textShadow ligne suivante) mais on alterne accent/accent2 du club.
+  const cats2=[{l:"GARDIENS",list:gk,c:accent},{l:"DÉFENSEURS",list:def,c:accent2},{l:"MILIEUX",list:mid,c:accent},{l:"ATTAQUANTS",list:fwd,c:accent2}];
   const bg2={gr1:"#020208",gr6:"#04040c"}[tpl]||"#020208";
   return(<div style={Object.assign({},root,{background:bg2})}>
     {bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.12}} alt=""/>}
