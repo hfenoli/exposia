@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Viziona</string>
+    <string name="title_activity_main">Viziona</string>
+    <string name="package_name">sport.viziona.app</string>
+    <string name="custom_url_scheme">sport.viziona.app</string>
+</resources>

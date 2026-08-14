@@ -1,0 +1,8 @@
+{
+  "appId": "sport.viziona.app",
+  "appName": "Viziona",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}
