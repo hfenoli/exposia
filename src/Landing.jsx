@@ -45,12 +45,10 @@ const PRICING = [
     prixAn: 144,          // soit 12.-/mois, −20 %
     inclus: [
       "8 visuels par semaine",
-      "6 templates",
-      "Story 9:16, Post 4:5, Carré 1:1",
-      "Effectif et photos illimités",
-      "Export PNG haute définition",
+      "6 templates sur 18",
+      "Support par e-mail",
     ],
-    absent: ["Tous les templates", "Accompagnement au démarrage"],
+    absent: ["Les 18 templates", "Accompagnement au démarrage"],
   },
   {
     id: "STANDARD",
@@ -62,9 +60,6 @@ const PRICING = [
     inclus: [
       "30 visuels par semaine",
       "Les 18 templates",
-      "Story 9:16, Post 4:5, Carré 1:1",
-      "Détourage automatique des photos",
-      "Bandeaux et pastilles pour votre logo",
       "Support par e-mail sous 48 h",
     ],
     absent: ["Accompagnement au démarrage"],
@@ -78,13 +73,23 @@ const PRICING = [
     inclus: [
       "Visuels illimités",
       "Les 18 templates",
-      "Tous les formats",
       "Accompagnement au démarrage (1 h en visio)",
       "Support prioritaire sous 24 h",
       "Vos retours priorisés dans la feuille de route",
     ],
     absent: [],
   },
+];
+// Tout ce qui n'est pas une limite d'usage est inclus partout. Le mentionner
+// une fois vaut mieux que de le lister par offre : n'annoncer comme réservé
+// que ce qui l'est réellement dans le produit.
+const PRICING_COMMON = [
+  "Les 7 sports et leur vocabulaire",
+  "Story 9:16, Post 4:5, Carré 1:1",
+  "Effectif et photos illimités",
+  "Détourage automatique des fonds",
+  "Bandeaux et pastilles pour votre logo",
+  "Export PNG haute définition",
 ];
 
 // ─── EXEMPLES DE VISUELS, PAR SPORT ───────────────────────────
@@ -182,7 +187,7 @@ const FAQ_ITEMS = [
   { q: "On pratique plusieurs sports dans le club.", a: "Un compte correspond aujourd'hui à un sport. Pour une structure omnisports, le plus simple est un accès par section — écrivez-nous, on vous arrange ça sur l'offre Institution." },
   { q: "Faut-il des compétences en design ?",       a: "Non. Vous configurez votre club une fois (logo, couleurs, joueurs), l'app fait le reste. Aucune connaissance graphique requise." },
   { q: "Ça marche sur téléphone ?",                 a: "Oui, l'app est pensée mobile. Installez-la sur votre écran d'accueil pour un accès en un tap, comme une vraie application." },
-  { q: "Combien ça coûte ?",                        a: "Trois offres selon la taille du club, de 15 à 59 CHF par mois, avec 20 % de remise au paiement annuel. Le détail est dans la section Tarifs. Pas de frais d'installation, résiliable à tout moment." },
+  { q: "Combien ça coûte ?",                        a: "Trois offres selon la taille du club, de 15 à 59 CHF par mois, avec 20 % de remise au paiement annuel. Elles diffèrent par le volume de visuels, le nombre de templates et le niveau d'accompagnement — toutes les fonctionnalités de l'éditeur sont incluses partout. Le détail est dans la section Tarifs. Pas de frais d'installation, résiliable à tout moment." },
   { q: "Comment accéder ?",                         a: "L'accès est sur invitation. Envoyez-nous un message à contact@viziona-sport.com, on revient sous 24h." },
   { q: "Comment configurer mon club ?",             a: "Allez dans « Mon Club », uploadez votre logo, choisissez vos deux couleurs. Tout se met à jour automatiquement dans vos visuels." },
   { q: "Comment créer mon premier visuel ?",        a: "Cliquez sur « Créer », choisissez un type (ex : But), sélectionnez un joueur si besoin, puis cliquez sur Télécharger." },
@@ -997,8 +1002,19 @@ export default function Landing({ onEnter }) {
             })}
           </div>
 
+          <div style={{ marginTop: 26, padding: "20px 24px", background: C.bg, border: "1px solid " + C.bd }}>
+            <div style={{ fontFamily: FONT_M, fontSize: 10, color: C.tx3, letterSpacing: "0.16em", textTransform: "uppercase", marginBottom: 12 }}>Inclus dans toutes les offres</div>
+            <div style={{ display: "flex", gap: "10px 28px", flexWrap: "wrap" }}>
+              {PRICING_COMMON.map(f => (
+                <span key={f} style={{ display: "flex", gap: 8, fontSize: 12.5, color: C.tx2, fontWeight: 300 }}>
+                  <span style={{ color: C.tx4 }}>—</span>{f}
+                </span>
+              ))}
+            </div>
+          </div>
+
           <div style={{ marginTop: 32, display: "flex", gap: 40, flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between" }}>
-            <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8, fontSize: 12, color: C.tx3, fontWeight: 300, lineHeight: 1.6 }}>
+            <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8, fontSize: 12, color: C.tx3, fontWeight: 300, lineHeight: 1.6, maxWidth: 620 }}>
               <li>— Premier mois offert pour les clubs de la bêta, sans carte bancaire.</li>
               <li>— Résiliable à tout moment. Vous gardez les visuels déjà créés.</li>
               <li>— Prix hors TVA. Association ou club sans but lucratif : écrivez-nous, on s'arrange.</li>

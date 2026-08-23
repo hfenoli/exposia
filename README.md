@@ -27,6 +27,19 @@ Le code s'adapte si la migration n'est pas encore appliquée (repli sur
 l'ancien chemin pour l'écran admin), mais l'application reste vulnérable tant
 qu'elle ne l'est pas.
 
+### `0005_plan_limits.sql` — l'offre pilote les limites
+
+`clubs.plan` était décorative : rien ne la reliait aux deux limites réellement
+appliquées. Passer un club en PREMIUM ne changeait rien, et un club sans
+`max_visuals_per_week` explicite retombait sur le repli de 5 visuels par
+semaine — moins que l'offre BASIC annoncée à 8. Un club pouvait donc payer
+l'offre la plus chère et rester plafonné à 5.
+
+La migration ajoute un barème (`plan_limits`), l'applique au changement
+d'offre et à la création d'un club, et complète les clubs existants dont les
+limites sont absentes. **Le barème doit rester aligné sur la constante
+`PRICING` de `src/Landing.jsx`.**
+
 ### `0004_club_sport.sql` — sport du club
 
 Ajoute `clubs.sport`. Le sport détermine le vocabulaire (joueur / nageur /

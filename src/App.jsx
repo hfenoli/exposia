@@ -58,6 +58,18 @@ async function intakeImageWithThumb(file,preset){
 // Affichage en grille : la vignette si elle existe, sinon l'original (lignes
 // créées avant la migration 0003).
 function thumbOf(row){ return (row&&(row.thumb_url||row.thumbUrl))||(row&&row.url)||null; }
+// ─── STOCKAGE LOCAL ───────────────────────────────────────────
+// Certains contextes (navigation privée, cookies bloqués, mode verrouillage)
+// font lever l'accès à localStorage. Une exception dans un initialiseur de
+// state ferait planter toute l'application : on encapsule.
+function lsGet(key){
+  try{ return localStorage.getItem(key); }
+  catch(e){ console.warn("[localStorage] lecture impossible:",e&&e.message); return null; }
+}
+function lsSet(key,value){
+  try{ localStorage.setItem(key,value); return true; }
+  catch(e){ console.warn("[localStorage] écriture impossible:",e&&e.message); return false; }
+}
 // ─── MOBILE HOOKS ─────────────────────────────────────────────
 const MOBILE_BREAKPOINT = 768;
 function useIsMobile(){
@@ -1214,12 +1226,17 @@ function PBox({children,t,mb}){return<div style={{background:t.bg3,borderRadius:
 function SHdr({label,t}){return<div style={{fontSize:10,color:t.text3,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",marginBottom:8,paddingBottom:6,borderBottom:"1px solid "+t.border}}>{label}</div>;}
 function TplGrid({tpls,sel,onSel,t,maxTemplates}){
   const cats=[...new Set(tpls.map(x=>x.cat))];
+  // Le quota porte sur le nombre total de gabarits accessibles, pas sur un
+  // décompte remis à zéro à chaque catégorie : les gabarits sont donc
+  // débloqués dans l'ordre d'affichage, toutes catégories confondues.
+  const rank=Object.fromEntries(tpls.map((x,i)=>[x.id,i]));
+  const limit=maxTemplates||999;
   return(<div>{cats.map(cat=>(
     <div key={cat} style={{marginBottom:8}}>
       <div style={{fontSize:9,color:t.text3,fontWeight:700,letterSpacing:".12em",marginBottom:5,textTransform:"uppercase"}}>{cat}</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
-        {tpls.filter(x=>x.cat===cat).map((tpl,idx)=>{
-          const locked=idx>=(maxTemplates||999);
+        {tpls.filter(x=>x.cat===cat).map(tpl=>{
+          const locked=rank[tpl.id]>=limit;
           return(
             <div key={tpl.id} onClick={()=>!locked&&onSel(tpl.id)}
               style={{
@@ -1434,6 +1451,9 @@ function mapVisual(v,sport){
     logo2Url:v.logo2_url,
     playerUrl:v.player_url,
     format:v.format||DEFAULT_FORMAT,
+    // Le sport n'est pas stocké par visuel : la vignette d'historique utilise
+    // celui du club, ce qui reste cohérent même après un changement de sport.
+    sport,
     ct:ctypeInfo(sport,v.type),
   };
 }
@@ -1539,7 +1559,7 @@ export default function App({session}){
   const[saveFlash,setSaveFlash]=useState(false);
   const[weeklyCount,setWeeklyCount]=useState(0);
   const[limitError,setLimitError]=useState("");
-  const[onboardingSkipped,setOnboardingSkipped]=useState(()=>localStorage.getItem("onboarding_skipped")==="1");
+  const[onboardingSkipped,setOnboardingSkipped]=useState(()=>lsGet("onboarding_skipped")==="1");
   const[slotScale,setSlotScale]=useState(1);
   const[exportOverlay,setExportOverlay]=useState(null);  // {previewUrl, filename, blob} pour overlay iOS
   const[exporting,setExporting]=useState(false);
@@ -1607,8 +1627,8 @@ export default function App({session}){
       if(!clubData?.approved){await supabase.auth.signOut();return;}
       if(stale())return;
       if(!clubData.sport){
-        try{ const local=localStorage.getItem("sport_"+clubData.id); if(local)clubData={...clubData,sport:local}; }
-        catch(e){ console.warn("[load] localStorage indisponible:",e); }
+        const local=lsGet("sport_"+clubData.id);
+        if(local)clubData={...clubData,sport:local};
       }
       setClub(clubData);
       // Compter les visuels des 7 derniers jours
@@ -1648,7 +1668,7 @@ export default function App({session}){
     const{error}=await supabase.from("clubs").update({sport:next}).eq("id",club.id);
     if(error){
       console.warn("[chooseSport] colonne `sport` indisponible (migration 0004 non appliquée ?) :",error.message);
-      try{ localStorage.setItem("sport_"+club.id,next); }catch(e){ console.warn("[chooseSport] localStorage indisponible:",e); }
+      lsSet("sport_"+club.id,next);
     }
     setClub(c=>({...c,sport:next}));
     setSavingSport(false);
@@ -2097,7 +2117,7 @@ export default function App({session}){
                     ))}
                   </div>
                   <div style={{textAlign:"center",marginTop:12}}>
-                    <button onClick={()=>{localStorage.setItem("onboarding_skipped","1");setOnboardingSkipped(true);}}
+                    <button onClick={()=>{lsSet("onboarding_skipped","1");setOnboardingSkipped(true);}}
                       style={{background:"none",border:"none",color:t.text3,fontSize:11,cursor:"pointer",textDecoration:"underline",padding:0}}>
                       Passer
                     </button>
