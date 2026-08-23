@@ -1,6 +1,6 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import { supabase } from "./supabase";
-import { compressImageFile, removeBackground, dominantBorderColor, isImageFile, formatBytes, TOLERANCE_PRESETS, MAX_SOURCE_BYTES } from "./imaging";
+import { compressImageFile, removeBackground, dominantBorderColor, isImageFile, formatBytes, makeThumbnail, TOLERANCE_PRESETS, MAX_SOURCE_BYTES } from "./imaging";
 // ─── BOTTOM SHEET SWIPE-TO-DISMISS ────────────────────────────
 // Helper module-level pour pouvoir être utilisé dans DragCanvas comme dans App.
 function makeSwipeClose(onClose){
@@ -35,10 +35,18 @@ function validateImageFile(f){
 // Lit + compresse un fichier, et renvoie la data URL prête à stocker.
 // Renvoie null (et prévient l'utilisateur) si l'image est illisible.
 async function intakeImage(file,preset){
+  const r=await intakeImageWithThumb(file,preset);
+  return r?r.url:null;
+}
+// Variante qui produit aussi la vignette, pour les images affichées en grille.
+async function intakeImageWithThumb(file,preset){
   if(!validateImageFile(file)) return null;
   try{
     const {url}=await compressImageFile(file,preset||"photo");
-    return url;
+    let thumbUrl=null;
+    try{ thumbUrl=await makeThumbnail(url); }
+    catch(e){ console.warn("[intakeImage] vignette non générée:",e); }
+    return {url,thumbUrl};
   }catch(err){
     console.error("[intakeImage] échec:",err);
     alert("Image illisible : "+(err&&err.message?err.message:"format non pris en charge")
@@ -46,6 +54,9 @@ async function intakeImage(file,preset){
     return null;
   }
 }
+// Affichage en grille : la vignette si elle existe, sinon l'original (lignes
+// créées avant la migration 0003).
+function thumbOf(row){ return (row&&(row.thumb_url||row.thumbUrl))||(row&&row.url)||null; }
 // ─── MOBILE HOOKS ─────────────────────────────────────────────
 const MOBILE_BREAKPOINT = 768;
 function useIsMobile(){
@@ -704,6 +715,26 @@ function PostCanvas({pd,tpl,logoUrl,accent,accent2,bgUrl,W,H}){
   if(tpl==="pt6")return(<div style={Object.assign({},root,{background:"#000"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.3}} alt=""/>}<div style={{position:"absolute",inset:0,background:"linear-gradient(to bottom,transparent 30%,rgba(0,0,0,.92) 65%)"}}/><div style={{position:"relative",zIndex:3,padding:(W*.035)+"px "+(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}><Logo sz={W*.09}/>{date&&<div style={{fontSize:W*.019,color:"rgba(255,255,255,.5)",letterSpacing:".08em"}}>{date}</div>}</div><div style={{position:"relative",zIndex:3,flex:1}}/><div style={{position:"relative",zIndex:3,padding:(W*.04)+"px "+(W*.04)+"px "+(W*.05)+"px"}}><div style={{fontSize:W*.019,color:accent,fontWeight:700,letterSpacing:".16em",textTransform:"uppercase",marginBottom:W*.015}}>{subtitle}</div><div style={{fontSize:W*.054,fontWeight:900,color:"#fff",fontFamily:"Impact,sans-serif",lineHeight:1.08,marginBottom:W*.018}}>{title}</div><div style={{width:W*.07,height:2,background:accent,marginBottom:W*.018,borderRadius:2}}/><div style={{fontSize:W*.026,color:"rgba(255,255,255,.6)",lineHeight:1.5}}>{body}</div>{hashtag&&<div style={{marginTop:W*.025,fontSize:W*.022,color:rgba(accent,.6)}}>{hashtag}</div>}</div><Watermark/></div>);
   return(<div style={Object.assign({},root,{background:"#030308"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.18}} alt=""/>}<div style={{position:"absolute",inset:0,background:"linear-gradient(to bottom,rgba(0,0,0,.85),rgba(0,0,0,.5),rgba(0,0,0,.85))"}}/><div style={{position:"absolute",top:0,left:0,right:0,height:4,background:"linear-gradient(90deg,"+accent+","+accent2+")",zIndex:4}}/><div style={{position:"relative",zIndex:3,flex:1,display:"flex",flexDirection:"column",justifyContent:"center",padding:(W*.06)+"px"}}><div style={{width:W*.1,height:3,background:accent,marginBottom:W*.04,borderRadius:2}}/><div style={{fontSize:W*.065,fontWeight:900,color:"#fff",fontFamily:"Impact,sans-serif",lineHeight:1.05,textTransform:"uppercase",marginBottom:W*.03}}>{title}</div><div style={{fontSize:W*.036,color:accent,fontWeight:600,marginBottom:W*.04}}>{subtitle}</div><div style={{fontSize:W*.028,color:"rgba(255,255,255,.6)",lineHeight:1.55}}>{body}</div>{(date||hashtag)&&<div style={{marginTop:W*.05,fontSize:W*.022,color:"rgba(255,255,255,.3)",letterSpacing:".08em"}}>{date}{date&&hashtag?" · ":""}{hashtag}</div>}</div><div style={{position:"relative",zIndex:3,padding:(W*.04)+"px "+(W*.06)+"px",borderTop:"1px solid rgba(255,255,255,.06)",display:"flex",alignItems:"center",gap:W*.025}}><Logo sz={W*.09}/><div style={{fontSize:W*.022,color:"rgba(255,255,255,.35)",letterSpacing:".06em"}}>OFFICIEL</div></div><Watermark/></div>);
 }
+// ─── RENDU DIFFÉRÉ ────────────────────────────────────────────
+// Ne monte ses enfants qu'une fois la zone approchée du viewport. Sans ça, la
+// grille d'historique décode le fond, le logo et la photo de chaque visuel dès
+// l'ouverture de l'écran — de quoi faire tuer l'onglet sur mobile.
+function WhenVisible({children,minHeight,rootMargin}){
+  const ref=useRef(null);
+  // Sans IntersectionObserver (navigateurs anciens), on affiche tout de suite.
+  const[shown,setShown]=useState(()=>typeof IntersectionObserver==="undefined");
+  useEffect(()=>{
+    if(shown)return;
+    const el=ref.current;
+    if(!el)return;
+    const io=new IntersectionObserver(entries=>{
+      if(entries.some(e=>e.isIntersecting)){setShown(true);io.disconnect();}
+    },{rootMargin:rootMargin||"300px"});
+    io.observe(el);
+    return()=>io.disconnect();
+  },[shown,rootMargin]);
+  return <div ref={ref} style={{minHeight:minHeight||120}}>{shown?children:null}</div>;
+}
 // ─── HISTORY THUMB ────────────────────────────────────────────
 function HistoryThumb({h,c1,c2}){
   // La vignette reprend le format du visuel (story, 4:5 ou carré).
@@ -729,6 +760,9 @@ function HistoryThumb({h,c1,c2}){
 // ─── DRAG CANVAS ──────────────────────────────────────────────
 function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,t,isMobile,mobileSheet,setMobileSheet,canvasScale,clubName,cw,ch,onLogoChange}){
   const CW=cw||270, CH=ch||480;
+  // Chaque snapshot est un clone profond des calques, sponsors compris — et
+  // ceux-ci portent leur image en data URL. Pile plus courte sur mobile.
+  const HIST_MAX=isMobile?8:20;
   const cvRef=useRef(null);const dragRef=useRef(null);const resizeRef=useRef(null);const historyRef=useRef([]);const[sel,setSel]=useState(null);const[historyDepth,setHistoryDepth]=useState(0);const[mobileToast,setMobileToast]=useState(false);const selL=sel?layers.find(l=>l.id===sel):null;
   useEffect(()=>{
     if(!isMobile||!sel||mobileSheet==="layers")return;
@@ -738,7 +772,7 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
   },[sel,isMobile,mobileSheet]);
   function pushHist(){
     historyRef.current.push(JSON.parse(JSON.stringify(layers)));
-    if(historyRef.current.length>20)historyRef.current.shift();
+    if(historyRef.current.length>HIST_MAX)historyRef.current.shift();
     setHistoryDepth(historyRef.current.length);
   }
   function undo(){
@@ -770,17 +804,17 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
     if(e.changedTouches&&e.changedTouches.length>0)return{x:e.changedTouches[0].clientX,y:e.changedTouches[0].clientY};
     return{x:e.clientX,y:e.clientY};
   }
-  const onMD=useCallback((e,id)=>{const l=layers.find(x=>x.id===id);if(!l||l.locked)return;e.preventDefault();e.stopPropagation();setSel(id);historyRef.current.push(JSON.parse(JSON.stringify(layers)));if(historyRef.current.length>20)historyRef.current.shift();setHistoryDepth(historyRef.current.length);const rect=cvRef.current.getBoundingClientRect();const p=pt(e);dragRef.current={id,ox:l.x,oy:l.y,mx0:(p.x-rect.left)/rect.width*100,my0:(p.y-rect.top)/rect.height*100};},[layers]);
+  const onMD=useCallback((e,id)=>{const l=layers.find(x=>x.id===id);if(!l||l.locked)return;e.preventDefault();e.stopPropagation();setSel(id);historyRef.current.push(JSON.parse(JSON.stringify(layers)));if(historyRef.current.length>HIST_MAX)historyRef.current.shift();setHistoryDepth(historyRef.current.length);const rect=cvRef.current.getBoundingClientRect();const p=pt(e);dragRef.current={id,ox:l.x,oy:l.y,mx0:(p.x-rect.left)/rect.width*100,my0:(p.y-rect.top)/rect.height*100};},[layers,HIST_MAX]);
   const onResize=useCallback((e,id,corner)=>{
     const l=layers.find(x=>x.id===id);if(!l||l.locked)return;
     setSel(id);
     historyRef.current.push(JSON.parse(JSON.stringify(layers)));
-    if(historyRef.current.length>20)historyRef.current.shift();
+    if(historyRef.current.length>HIST_MAX)historyRef.current.shift();
     setHistoryDepth(historyRef.current.length);
     const rect=cvRef.current.getBoundingClientRect();
     const p=pt(e);
     resizeRef.current={id,corner,ox:l.x,oy:l.y,ow:l.w,oh:l.h,startX:p.x,startY:p.y,canvasW:rect.width,canvasH:rect.height};
-  },[layers]);
+  },[layers,HIST_MAX]);
   const onMM=useCallback(e=>{
     if(resizeRef.current&&cvRef.current){
       const r=resizeRef.current;
@@ -1076,12 +1110,12 @@ function UpBtn({val,on,w,h,r,label,t,preset}){
     if(url)on(url);
   };
   return(<div onClick={()=>!busy&&ref.current.click()} style={{width:w,height:h,borderRadius:r,border:"2px dashed "+(val?t.accent:t.border2),background:t.bg3,cursor:busy?"wait":"pointer",overflow:"hidden",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flexShrink:0,gap:2,position:"relative"}}>
-    {val?<img src={val} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>:<><span style={{color:t.text3,fontSize:20,lineHeight:1}}>+</span>{label&&<span style={{fontSize:9,color:t.text3,textAlign:"center",padding:"0 3px",lineHeight:1.2}}>{label}</span>}</>}
+    {val?<img src={val} loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>:<><span style={{color:t.text3,fontSize:20,lineHeight:1}}>+</span>{label&&<span style={{fontSize:9,color:t.text3,textAlign:"center",padding:"0 3px",lineHeight:1.2}}>{label}</span>}</>}
     {busy&&<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,.55)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"#fff",letterSpacing:".04em"}}>…</div>}
     <input ref={ref} type="file" accept="image/*" style={{display:"none"}} onChange={pick}/>
   </div>);
 }
-function Av({photo,name,size}){size=size||40;const[err,setErr]=useState(false);const ini=(name||"?").trim().split(/\s+/).map(w=>w[0]).join("").slice(0,2).toUpperCase();return(<div style={{width:size,height:size,borderRadius:"50%",overflow:"hidden",background:"linear-gradient(135deg,#e63329,#1a1a2e)",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*.32,fontWeight:700,color:"#fff"}}>{photo&&!err?<img src={photo} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt="" onError={()=>setErr(true)}/>:ini}</div>);}
+function Av({photo,name,size}){size=size||40;const[err,setErr]=useState(false);const ini=(name||"?").trim().split(/\s+/).map(w=>w[0]).join("").slice(0,2).toUpperCase();return(<div style={{width:size,height:size,borderRadius:"50%",overflow:"hidden",background:"linear-gradient(135deg,#e63329,#1a1a2e)",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*.32,fontWeight:700,color:"#fff"}}>{photo&&!err?<img src={photo} loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt="" onError={()=>setErr(true)}/>:ini}</div>);}
 function PBox({children,t,mb}){return<div style={{background:t.bg3,borderRadius:10,padding:12,marginBottom:mb||10}}>{children}</div>;}
 function SHdr({label,t}){return<div style={{fontSize:10,color:t.text3,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",marginBottom:8,paddingBottom:6,borderBottom:"1px solid "+t.border}}>{label}</div>;}
 function TplGrid({tpls,sel,onSel,t,maxTemplates}){
@@ -1159,7 +1193,7 @@ function PhotoPanel({players,selId,onSel,selUrl,onSelUrl,onAdd,onAddUrl,onFav,on
           const isDup=dupNames.has((ph.name||"").toLowerCase());
           return(<div key={ph.id} style={{position:"relative"}}>
           <div onClick={()=>onSelUrl(ph.url)} style={{borderRadius:7,overflow:"hidden",border:"2px solid "+(selUrl===ph.url?t.accent:isDup?"rgba(245,158,11,.6)":t.border),cursor:"pointer",aspectRatio:"3/4"}}>
-            <img src={ph.url} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>
+            <img src={thumbOf(ph)} loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>
           </div>
           {(ph.is_fav||ph.fav)&&<div style={{position:"absolute",top:3,left:3,background:t.accent,borderRadius:3,fontSize:8,color:contrastText(t.accent),padding:"1px 4px",fontWeight:700}}>FAV</div>}
           {isDup&&!(ph.is_fav||ph.fav)&&<div title="Même nom de fichier qu'une autre photo" style={{position:"absolute",top:3,left:3,background:"rgba(245,158,11,.9)",borderRadius:3,fontSize:8,color:"#1a1a1a",padding:"1px 4px",fontWeight:700}}>2×</div>}
@@ -1247,6 +1281,23 @@ function PostEditor({pd,setPd,t}){
     <div style={{marginBottom:8}}><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Corps du texte</div><textarea value={pd.body||""} onChange={e=>setPd(d=>Object.assign({},d,{body:e.target.value}))} placeholder="Message principal..." rows={3} style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:7,padding:"8px 10px",color:t.text,fontSize:13,outline:"none",width:"100%",boxSizing:"border-box",resize:"vertical",fontFamily:"inherit"}}/></div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Date</div><TIn v={pd.date||""} on={v=>setPd(d=>Object.assign({},d,{date:v}))} ph="12 avril 2025" t={t}/></div><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Hashtag</div><TIn v={pd.hashtag||""} on={v=>setPd(d=>Object.assign({},d,{hashtag:v}))} ph="#monclub" t={t}/></div></div>
   </div>);
+}
+// ─── INSERT TOLÉRANT ──────────────────────────────────────────
+// Certaines colonnes sont ajoutées par des migrations qui peuvent ne pas être
+// encore appliquées (thumb_url, migration 0003). Plutôt que de faire échouer
+// l'import, on réessaie sans elles.
+function isMissingColumn(error){
+  return !!error && (error.code==="42703" || /column .* does not exist/i.test(error.message||""));
+}
+async function insertTolerant(table,payload,optionalCols){
+  let res=await supabase.from(table).insert(payload).select().single();
+  if(isMissingColumn(res.error)){
+    console.warn("["+table+"] colonne optionnelle absente ("+optionalCols.join(", ")+") — migration non appliquée.");
+    const rest=Object.assign({},payload);
+    optionalCols.forEach(c=>delete rest[c]);
+    res=await supabase.from(table).insert(rest).select().single();
+  }
+  return res;
 }
 // ─── PROJECTION D'UN VISUEL ───────────────────────────────────
 // Ligne Supabase → objet manipulé par l'UI. Une seule définition : les trois
@@ -1337,7 +1388,8 @@ export default function App({session}){
   const[limitError,setLimitError]=useState("");
   const[onboardingSkipped,setOnboardingSkipped]=useState(()=>localStorage.getItem("onboarding_skipped")==="1");
   const[slotScale,setSlotScale]=useState(1);
-  const[exportOverlay,setExportOverlay]=useState(null);  // {dataUrl, filename, blob} pour overlay iOS
+  const[exportOverlay,setExportOverlay]=useState(null);  // {previewUrl, filename, blob} pour overlay iOS
+  const[exporting,setExporting]=useState(false);
   const isMobile=useIsMobile();
   const F=fmt(format);
   const supportsFormat=FORMAT_TYPES.includes(selType);
@@ -1447,14 +1499,18 @@ export default function App({session}){
   // Les photos sont redimensionnées et recompressées ici : un fichier de 25 Mo
   // passe sans que l'utilisateur ait à préparer ses images en amont.
   const addPhoto=useCallback(async(playerId,file)=>{
-    const url=await intakeImage(file,"photo");
-    if(!url)return;
-    const{data,error}=await supabase.from("player_photos").insert({player_id:playerId,url,name:file.name,is_fav:false}).select().single();
+    const img=await intakeImageWithThumb(file,"photo");
+    if(!img)return;
+    const{data,error}=await insertTolerant("player_photos",
+      {player_id:playerId,url:img.url,thumb_url:img.thumbUrl,name:file.name,is_fav:false},["thumb_url"]);
     if(error){console.error("[addPhoto] échec:",error);alert("Enregistrement de la photo impossible : "+error.message);return;}
     if(data)setPlayers(prev=>prev.map(p=>p.id===playerId?{...p,photos:sortPhotos([...(p.photos||[]),data])}:p));
   },[]);
   const addPhotoUrl=useCallback(async(playerId,url,name)=>{
-    const{data,error}=await supabase.from("player_photos").insert({player_id:playerId,url,name:name||"photo_nobg",is_fav:false}).select().single();
+    let thumbUrl=null;
+    try{ thumbUrl=await makeThumbnail(url); }catch(e){ console.warn("[addPhotoUrl] vignette non générée:",e); }
+    const{data,error}=await insertTolerant("player_photos",
+      {player_id:playerId,url,thumb_url:thumbUrl,name:name||"photo_nobg",is_fav:false},["thumb_url"]);
     if(error){console.error("[addPhotoUrl] échec:",error);alert("Enregistrement de la photo impossible : "+error.message);return;}
     if(data)setPlayers(prev=>prev.map(p=>p.id===playerId?{...p,photos:sortPhotos([...(p.photos||[]),data])}:p));
   },[]);
@@ -1478,9 +1534,10 @@ export default function App({session}){
     const files=[...e.target.files];
     e.target.value="";
     for(const file of files){
-      const url=await intakeImage(file,"media");
-      if(!url)continue;
-      const{data,error}=await supabase.from("media").insert({club_id:club.id,url,name:file.name}).select().single();
+      const img=await intakeImageWithThumb(file,"media");
+      if(!img)continue;
+      const{data,error}=await insertTolerant("media",
+        {club_id:club.id,url:img.url,thumb_url:img.thumbUrl,name:file.name},["thumb_url"]);
       if(error){console.error("[pickMedia] échec:",error);alert("Enregistrement du média impossible : "+error.message);continue;}
       if(data)setMedia(m=>[...m,data]);
     }
@@ -1580,23 +1637,53 @@ export default function App({session}){
     if(!editId){
       try{ await save(); }catch(e){ console.warn("[downloadPng] auto-save a échoué:",e); }
     }
+    setExporting(true);
     try{
       // Chargé à la demande : html2canvas pèse ~200 Ko et ne sert qu'à l'export.
       const html2canvas=(await import("html2canvas")).default;
-      const memGB=navigator.deviceMemory||4;
-      const scale=memGB<4?2.5:4;
-      const canvas=await html2canvas(el,{backgroundColor:null,scale:scale,useCORS:true,allowTaint:true,logging:false});
       const filename="viziona-"+(selType||"visuel")+"-"+Date.now()+".png";
       const ua=navigator.userAgent;
       const isIOS=/iPad|iPhone|iPod/.test(ua)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
       const isSafari=/Safari/.test(ua)&&!/CriOS|FxiOS|Chrome|Edg/.test(ua);
-      // Convertit canvas → blob de manière promisifiée
-      const blob=await new Promise(res=>canvas.toBlob(res,"image/png"));
-      if(!blob){console.error("[downloadPng] toBlob a renvoyé null");setLimitError("Erreur génération du PNG.");setTimeout(()=>setLimitError(""),3000);return;}
-      // iOS Safari : afficher overlay React pour préserver le user gesture context (clic "Enregistrer")
+
+      // Échelle d'export : 4 vise 1080 px de large (le canvas fait 270).
+      // `navigator.deviceMemory` n'existe pas sur Safari, donc l'ancien
+      // `||4` retenait justement l'échelle la plus lourde sur l'appareil le
+      // plus contraint. On part plus bas sur mobile et on redescend encore si
+      // le rendu échoue, plutôt que de laisser l'onglet se faire tuer.
+      const memGB=navigator.deviceMemory;
+      const ladder = memGB&&memGB<4 ? [2.5,2,1.5]
+                   : isMobile       ? [3,2,1.5]
+                   :                  [4,3,2];
+
+      let blob=null, usedScale=null;
+      for(const scale of ladder){
+        let canvas=null;
+        try{
+          canvas=await html2canvas(el,{backgroundColor:null,scale,useCORS:true,allowTaint:true,logging:false,imageTimeout:15000});
+          blob=await new Promise(res=>canvas.toBlob(res,"image/png"));
+        }catch(err){
+          console.warn("[downloadPng] échec à l'échelle "+scale+" :",err&&err.message);
+        }finally{
+          // Libère explicitement le backing store : Safari ne le rend pas
+          // avant longtemps si on se contente de perdre la référence.
+          if(canvas){canvas.width=0;canvas.height=0;}
+        }
+        if(blob){usedScale=scale;break;}
+      }
+      if(!blob){
+        setLimitError("Export impossible sur cet appareil. Fermez les autres onglets et réessayez.");
+        setTimeout(()=>setLimitError(""),5000);
+        return;
+      }
+      if(usedScale!==ladder[0])console.info("[downloadPng] export réalisé à l'échelle réduite "+usedScale);
+
+      // iOS Safari : overlay React pour conserver le contexte de geste
+      // utilisateur (le clic sur « Enregistrer »). On passe un blob URL et non
+      // une data URL : le base64 d'un PNG 1080×1920 pèse plusieurs Mo en
+      // mémoire, et il finissait stocké dans le state React en plus du blob.
       if(isIOS&&isSafari){
-        const dataUrl=canvas.toDataURL("image/png");
-        setExportOverlay({dataUrl,filename,blob});
+        setExportOverlay({previewUrl:URL.createObjectURL(blob),filename,blob});
         return;
       }
       // Tous les autres navigateurs : <a download> standard
@@ -1609,7 +1696,16 @@ export default function App({session}){
       console.error("[downloadPng] échec:",e);
       setLimitError("Erreur lors de l'export PNG.");
       setTimeout(()=>setLimitError(""),3000);
+    }finally{
+      setExporting(false);
     }
+  }
+  // Ferme l'overlay en libérant le blob URL de l'aperçu.
+  function closeExportOverlay(){
+    setExportOverlay(cur=>{
+      if(cur&&cur.previewUrl)URL.revokeObjectURL(cur.previewUrl);
+      return null;
+    });
   }
   async function handleOverlayShare(){
     if(!exportOverlay)return;
@@ -1618,7 +1714,7 @@ export default function App({session}){
       const file=new File([blob],filename,{type:"image/png"});
       if(navigator.canShare&&navigator.canShare({files:[file]})){
         await navigator.share({files:[file],title:"Visuel Viziona"});
-        setExportOverlay(null);
+        closeExportOverlay();
         return;
       }
     }catch(e){
@@ -1632,7 +1728,7 @@ export default function App({session}){
     const w=window.open(viewUrl,"_blank","noopener");
     if(w){
       setTimeout(()=>URL.revokeObjectURL(viewUrl),60000);
-      setExportOverlay(null);return;
+      closeExportOverlay();return;
     }
     URL.revokeObjectURL(viewUrl);
     const url=URL.createObjectURL(blob);
@@ -1640,7 +1736,7 @@ export default function App({session}){
     a.href=url;a.download=filename;a.target="_blank";a.rel="noopener";
     document.body.appendChild(a);a.click();document.body.removeChild(a);
     setTimeout(()=>URL.revokeObjectURL(url),2000);
-    setExportOverlay(null);
+    closeExportOverlay();
   }
   if(loading)return(<div className="viz-fullvh" style={{display:"flex",alignItems:"center",justifyContent:"center",background:"#080810",color:"rgba(240,240,248,.4)",fontFamily:"system-ui",flexDirection:"column",gap:12}}><div style={{fontSize:28}}>⚡</div><div>Chargement de vos données...</div></div>);
   const card={background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:20};
@@ -1649,7 +1745,7 @@ export default function App({session}){
   function saveBtn(){return(<>
     {limitError&&<div style={{background:"#450a0a",border:"1px solid #7f1d1d",borderRadius:8,padding:"10px 14px",color:"#fca5a5",fontSize:12,marginBottom:10}}>{limitError}</div>}
     <button onClick={save} style={{background:saveFlash?"#22c55e":"#0a0a0a",color:"#fff",border:"none",borderRadius:2,padding:"13px 16px",fontSize:11,fontWeight:700,cursor:"pointer",width:"100%",letterSpacing:".12em",textTransform:"uppercase",transition:"background .3s,transform .15s",fontFamily:"inherit"}}>{saveFlash?"Sauvegardé ✓":"Sauvegarder"}</button>
-    <button onClick={downloadPng} style={{marginTop:8,background:"transparent",color:t.text,border:"1px solid "+t.text,borderRadius:2,padding:"12px 16px",fontSize:11,fontWeight:600,cursor:"pointer",width:"100%",letterSpacing:".12em",textTransform:"uppercase",fontFamily:"inherit"}}>Télécharger PNG</button>
+    <button onClick={downloadPng} disabled={exporting} style={{marginTop:8,background:"transparent",color:t.text,border:"1px solid "+t.text,borderRadius:2,padding:"12px 16px",fontSize:11,fontWeight:600,cursor:exporting?"wait":"pointer",width:"100%",letterSpacing:".12em",textTransform:"uppercase",fontFamily:"inherit",opacity:exporting?.6:1}}>{exporting?"Génération…":"Télécharger PNG"}</button>
   </>);}
   function backBtn(){return<button onClick={()=>setSelType(null)} style={{display:"inline-flex",alignItems:"center",gap:7,background:t.bg3,border:"1px solid "+t.border2,borderRadius:8,padding:"7px 13px",color:t.text2,cursor:"pointer",fontSize:12,marginBottom:14,fontWeight:500}}>↩ Retour</button>;}
   function renderSpecial(){
@@ -1666,7 +1762,7 @@ export default function App({session}){
         <PBox t={t}><SHdr label="Template" t={t}/><TplGrid tpls={tpls} sel={tpl} onSel={setTpl} t={t} maxTemplates={club?.max_templates}/></PBox>
         <PBox t={t}>
           <SHdr label="Image de fond" t={t}/>
-          {media.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4,marginBottom:8}}>{media.slice(0,6).map((m,i)=>(<div key={i} onClick={()=>setBgUrl(m.url)} style={{aspectRatio:"16/9",borderRadius:5,overflow:"hidden",border:"2px solid "+(bgUrl===m.url?t.accent:t.border),cursor:"pointer"}}><img src={m.url} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div>))}</div>}
+          {media.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4,marginBottom:8}}>{media.slice(0,6).map((m,i)=>(<div key={i} onClick={()=>setBgUrl(m.url)} style={{aspectRatio:"16/9",borderRadius:5,overflow:"hidden",border:"2px solid "+(bgUrl===m.url?t.accent:t.border),cursor:"pointer"}}><img src={thumbOf(m)} loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div>))}</div>}
           <div style={{display:"flex",gap:8,alignItems:"center"}}><UpBtn val={null} on={v=>setBgUrl(v)} w={48} h={34} r={6} label="Uploader" t={t} preset="media"/>{bgUrl&&<button onClick={()=>setBgUrl(null)} style={{fontSize:11,color:t.text3,background:"none",border:"none",cursor:"pointer"}}>✕ Retirer</button>}</div>
         </PBox>
         <PBox t={t}>
@@ -1738,7 +1834,7 @@ export default function App({session}){
         <PBox t={t}><SHdr label="Joueur & photo" t={t}/><PhotoPanel players={players} selId={selPid} onSel={selPlayer} selUrl={selPhoto} onSelUrl={setSelPhoto} onAdd={addPhoto} onAddUrl={addPhotoUrl} onFav={toggleFav} onDelete={deletePhoto} t={t}/></PBox>
         <PBox t={t}>
           <SHdr label="Image de fond" t={t}/>
-          {media.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4,marginBottom:8}}>{media.map((m,i)=>(<div key={i} onClick={()=>setBgUrl(m.url)} style={{aspectRatio:"16/9",borderRadius:5,overflow:"hidden",border:"2px solid "+(bgUrl===m.url?t.accent:t.border),cursor:"pointer"}}><img src={m.url} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div>))}</div>}
+          {media.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4,marginBottom:8}}>{media.map((m,i)=>(<div key={i} onClick={()=>setBgUrl(m.url)} style={{aspectRatio:"16/9",borderRadius:5,overflow:"hidden",border:"2px solid "+(bgUrl===m.url?t.accent:t.border),cursor:"pointer"}}><img src={thumbOf(m)} loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div>))}</div>}
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
             <UpBtn val={null} on={v=>setBgUrl(v)} w={52} h={36} r={6} label="Uploader" t={t} preset="media"/>
             {bgUrl&&<button onClick={()=>setBgUrl(null)} style={{fontSize:11,color:t.text3,background:"none",border:"none",cursor:"pointer"}}>✕ Retirer</button>}
@@ -1843,7 +1939,7 @@ export default function App({session}){
         {nav==="club"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Mon Club</h2>
           <p style={{color:t.text3,marginBottom:24,fontSize:13}}>Appliqué automatiquement à tous vos visuels.</p>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,maxWidth:650}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16,maxWidth:650}}>
             <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Identité</div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Nom du club</label><TIn v={club?.name||""} on={v=>updateClub({name:v,is_configured:true})} ph="FC Mon Club" t={t}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,margin:"14px 0 10px"}}><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Couleur principale</label><input type="color" value={club?.color1||"#e63329"} onChange={e=>updateClub({color1:e.target.value,is_configured:true})} style={{width:"100%",height:40,borderRadius:8,border:"1px solid "+t.border2,background:t.bg3,cursor:"pointer",padding:3}}/></div><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Couleur secondaire</label><input type="color" value={club?.color2||"#1a1a2e"} onChange={e=>updateClub({color2:e.target.value,is_configured:true})} style={{width:"100%",height:40,borderRadius:8,border:"1px solid "+t.border2,background:t.bg3,cursor:"pointer",padding:3}}/></div></div><div style={{height:24,borderRadius:8,background:"linear-gradient(90deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",marginBottom:4}}/><div style={{fontSize:10,color:t.text3,textAlign:"center"}}>Sauvegardé en temps réel ✓</div></div>
             <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Logo du club</div><UpBtn val={club?.logo_url} on={v=>updateClub({logo_url:v,is_configured:true})} w={110} h={110} r={14} label="Cliquer pour uploader" t={t}/>{club?.logo_url&&<><div style={{marginTop:12,display:"flex",alignItems:"center",gap:8}}><div style={{width:36,height:36,borderRadius:7,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center"}}><img src={club.logo_url} style={{width:28,height:28,objectFit:"contain"}} alt=""/></div><div style={{fontSize:11,color:t.text2}}>Logo configuré ✓</div></div><button onClick={()=>updateClub({logo_url:null,is_configured:true})} style={{marginTop:8,fontSize:10,color:t.text3,background:"none",border:"none",cursor:"pointer"}}>✕ Supprimer</button></>}</div>
           </div>
@@ -1851,7 +1947,7 @@ export default function App({session}){
         {nav==="players"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Effectif & Photos</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>Vos joueurs avec leurs photos.</p>
-          <div style={{display:"grid",gridTemplateColumns:"275px 1fr",gap:18}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"275px 1fr",gap:18}}>
             <div>
               <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Nouveau joueur</div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Nom complet</label><TIn v={pName} on={setPName} ph="Prénom Nom" t={t}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,margin:"10px 0"}}><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Numéro</label><TIn v={pNum} on={v=>setPNum(v===""?"":String(Math.max(0,parseInt(v)||0)))} ph="9" type="number" min={0} t={t}/></div><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Poste</label><TSel v={pPos} on={setPPos} t={t} opts={POSITIONS}/></div></div><button onClick={addPlayer} style={{background:t.accent,color:contrastText(t.accent),border:"none",borderRadius:8,padding:9,fontSize:13,fontWeight:600,cursor:"pointer",width:"100%"}}>+ Ajouter à l'effectif</button></div>
               {players.length>0&&<div style={Object.assign({},card,{marginTop:14})}><PhotoPanel players={players} selId={selPid} onSel={id=>{setSelPid(id||null);setSelPhoto(null);}} selUrl={selPhoto} onSelUrl={setSelPhoto} onAdd={addPhoto} onAddUrl={addPhotoUrl} onFav={toggleFav} onDelete={deletePhoto} t={t}/></div>}
@@ -1865,21 +1961,21 @@ export default function App({session}){
         {nav==="media"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Médiathèque</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>Fonds, stades et ambiances.</p>
-          <div style={{display:"grid",gridTemplateColumns:"220px 1fr",gap:18}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"220px 1fr",gap:18}}>
             <div style={card}><div onClick={()=>mRef.current.click()} style={{border:"2px dashed "+t.border2,borderRadius:10,padding:"28px 16px",textAlign:"center",cursor:"pointer",background:t.bg3}} onMouseEnter={e=>e.currentTarget.style.borderColor=t.accent} onMouseLeave={e=>e.currentTarget.style.borderColor=t.border2}><div style={{fontSize:28,marginBottom:8}}>🖼️</div><div style={{fontSize:13,color:t.text2,fontWeight:600}}>Uploader des images</div><div style={{fontSize:11,color:t.text3,marginTop:4}}>JPG, PNG · Multiple</div></div><input ref={mRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={pickMedia}/></div>
-            <div>{media.length===0?<div style={Object.assign({},card,{padding:"40px 20px",textAlign:"center",color:t.text3})}><div style={{fontSize:32,marginBottom:10}}>🖼️</div><div>Médiathèque vide</div></div>:(<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>{media.map(m=>(<div key={m.id} style={{borderRadius:11,overflow:"hidden",border:"1px solid "+t.border}}><div style={{aspectRatio:"16/9",overflow:"hidden"}}><img src={m.url} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div><div style={{padding:"6px 10px",fontSize:11,color:t.text2,background:t.bg2,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"80%"}}>{m.name||"Image"}</span><button onClick={()=>deleteMedia(m.id)} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:14}}>✕</button></div></div>))}</div>)}</div>
+            <div>{media.length===0?<div style={Object.assign({},card,{padding:"40px 20px",textAlign:"center",color:t.text3})}><div style={{fontSize:32,marginBottom:10}}>🖼️</div><div>Médiathèque vide</div></div>:(<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>{media.map(m=>(<div key={m.id} style={{borderRadius:11,overflow:"hidden",border:"1px solid "+t.border}}><div style={{aspectRatio:"16/9",overflow:"hidden"}}><img src={thumbOf(m)} loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div><div style={{padding:"6px 10px",fontSize:11,color:t.text2,background:t.bg2,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"80%"}}>{m.name||"Image"}</span><button onClick={()=>deleteMedia(m.id)} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:14}}>✕</button></div></div>))}</div>)}</div>
           </div>
         </div>)}
         {nav==="create"&&(!selType?(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}><h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Choisir un type</h2><p style={{color:t.text3,marginBottom:22,fontSize:13}}>Sélectionnez ce que vous souhaitez créer.</p><div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:14,maxWidth:680}}>{CTYPES.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:"22px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(t.accent,.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}>  <div style={{fontSize:28,marginBottom:10}}>{c.icon}</div><div style={{fontWeight:700,color:t.text,fontSize:14,marginBottom:4}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.5}}>{c.desc}</div></div>))}</div></div>):(selType==="lineup"||selType==="group")?renderSpecial():renderStandard())}
         {nav==="history"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Historique</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>{history.length+" visuel"+(history.length!==1?"s":"")+" · Cloud ☁️"}</p>
-          {history.length===0?<div style={Object.assign({},card,{padding:"60px 20px",textAlign:"center",color:t.text3})}><div style={{fontSize:36,marginBottom:12}}>📁</div><div style={{fontSize:14}}>Aucun visuel sauvegardé</div></div>:(<div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14}}>{history.map(h=>(<div key={h.id} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,overflow:"hidden"}}><div style={{background:"#030306",display:"flex",alignItems:"center",justifyContent:"center",padding:10}}><HistoryThumb h={h} c1={club?.color1||"#e63329"} c2={club?.color2||"#1a1a2e"}/></div><div style={{padding:"10px 12px",borderTop:"1px solid "+t.border}}><div style={{fontSize:12,fontWeight:600,color:t.text,marginBottom:6}}>{(h.ct&&h.ct.icon?h.ct.icon:"📄")+" "+(h.ct&&h.ct.label?h.ct.label:"Visuel")}</div><div style={{display:"flex",gap:6}}><button onClick={()=>{openCreate(h.type,h);setNav("create");}} style={{flex:1,background:rgba(t.accent,.15),color:t.accent,border:"1px solid "+rgba(t.accent,.3),borderRadius:7,padding:"6px 8px",fontSize:11,cursor:"pointer",fontWeight:600}}>↩ Modifier</button><button onClick={()=>deleteVisual(h.id)} style={{background:"rgba(239,68,68,.1)",color:"#fca5a5",border:"1px solid rgba(239,68,68,.25)",borderRadius:7,padding:"6px 8px",fontSize:11,cursor:"pointer"}}>✕</button></div></div></div>))}</div>)}
+          {history.length===0?<div style={Object.assign({},card,{padding:"60px 20px",textAlign:"center",color:t.text3})}><div style={{fontSize:36,marginBottom:12}}>📁</div><div style={{fontSize:14}}>Aucun visuel sauvegardé</div></div>:(<div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:14}}>{history.map(h=>(<div key={h.id} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,overflow:"hidden"}}><div style={{background:"#030306",display:"flex",alignItems:"center",justifyContent:"center",padding:10}}><WhenVisible minHeight={140}><HistoryThumb h={h} c1={club?.color1||"#e63329"} c2={club?.color2||"#1a1a2e"}/></WhenVisible></div><div style={{padding:"10px 12px",borderTop:"1px solid "+t.border}}><div style={{fontSize:12,fontWeight:600,color:t.text,marginBottom:6}}>{(h.ct&&h.ct.icon?h.ct.icon:"📄")+" "+(h.ct&&h.ct.label?h.ct.label:"Visuel")}</div><div style={{display:"flex",gap:6}}><button onClick={()=>{openCreate(h.type,h);setNav("create");}} style={{flex:1,background:rgba(t.accent,.15),color:t.accent,border:"1px solid "+rgba(t.accent,.3),borderRadius:7,padding:"6px 8px",fontSize:11,cursor:"pointer",fontWeight:600}}>↩ Modifier</button><button onClick={()=>deleteVisual(h.id)} style={{background:"rgba(239,68,68,.1)",color:"#fca5a5",border:"1px solid rgba(239,68,68,.25)",borderRadius:7,padding:"6px 8px",fontSize:11,cursor:"pointer"}}>✕</button></div></div></div>))}</div>)}
         </div>)}
         {nav==="settings"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Paramètres</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>Interface et données.</p>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,maxWidth:650}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16,maxWidth:650}}>
             <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Thème</div>{[["dark","🌑 Sombre","Interface noire premium"],["light","☀️ Clair","Interface blanche minimaliste"],["club","🎨 Couleurs du club","Adapté à vos couleurs"]].map(([mode,label,desc])=>(<div key={mode} onClick={()=>updateClub({theme_mode:mode})} style={{display:"flex",alignItems:"center",gap:12,padding:"13px 14px",borderRadius:10,border:"2px solid "+((club?.theme_mode||"dark")===mode?t.accent:t.border),background:(club?.theme_mode||"dark")===mode?rgba(t.accent,.12):t.bg3,cursor:"pointer",marginBottom:8}}><div style={{width:20,height:20,borderRadius:"50%",border:"2px solid "+t.accent,background:(club?.theme_mode||"dark")===mode?t.accent:"transparent",flexShrink:0}}/><div><div style={{fontSize:13,fontWeight:600,color:t.text}}>{label}</div><div style={{fontSize:11,color:t.text3,marginTop:2}}>{desc}</div></div></div>))}</div>
             <div style={Object.assign({},card,{display:"flex",flexDirection:"column",gap:14})}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase"}}>Votre club</div><div style={{display:"flex",alignItems:"center",gap:12}}>{club?.logo_url?<img src={club.logo_url} style={{width:52,height:52,objectFit:"contain",borderRadius:8}} alt=""/>:<div style={{width:52,height:52,borderRadius:8,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:700,color:contrastText(mixC(club?.color1||"#e63329",club?.color2||"#1a1a2e",.5))}}>{(club?.name||"?")[0].toUpperCase()}</div>}<div><div style={{fontSize:16,fontWeight:700,color:t.text}}>{club?.name||"Club non configuré"}</div><div style={{fontSize:12,color:t.text3,marginTop:3}}>{session.user.email}</div><div style={{fontSize:12,color:t.text3}}>{players.length+" joueurs · "+media.length+" médias · "+history.length+" visuels"}</div></div></div><button onClick={()=>setNav("club")} style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:9,padding:"9px 16px",color:t.text2,cursor:"pointer",fontSize:12,fontWeight:500,textAlign:"left"}}>Modifier les infos du club →</button><button onClick={signOut} style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.2)",borderRadius:9,padding:"9px 16px",color:"#fca5a5",cursor:"pointer",fontSize:12,textAlign:"left"}}>Se déconnecter</button></div>
           </div>
@@ -1911,10 +2007,10 @@ export default function App({session}){
       {exportOverlay&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'DM Sans','Helvetica Neue',sans-serif"}}>
           <div style={{fontSize:11,letterSpacing:".18em",textTransform:"uppercase",color:"rgba(255,255,255,.5)",marginBottom:14}}>Visuel prêt</div>
-          <img src={exportOverlay.dataUrl} alt="Aperçu" style={{maxWidth:"min(420px,86vw)",maxHeight:"55vh",borderRadius:8,boxShadow:"0 20px 50px rgba(0,0,0,.6)",marginBottom:24}}/>
+          <img src={exportOverlay.previewUrl} alt="Aperçu" style={{maxWidth:"min(420px,86vw)",maxHeight:"55vh",borderRadius:8,boxShadow:"0 20px 50px rgba(0,0,0,.6)",marginBottom:24}}/>
           <p style={{fontSize:13,color:"rgba(255,255,255,.7)",textAlign:"center",maxWidth:340,marginBottom:18,lineHeight:1.5}}>Appuyez sur « Enregistrer » puis « Enregistrer dans Photos » pour le sauvegarder sur votre appareil.</p>
           <button onClick={handleOverlayShare} style={{background:"#fff",color:"#000",border:"none",borderRadius:2,padding:"15px 38px",fontSize:12,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",cursor:"pointer",fontFamily:"inherit",minHeight:48,marginBottom:12}}>Enregistrer dans les photos</button>
-          <button onClick={()=>setExportOverlay(null)} style={{background:"none",color:"rgba(255,255,255,.5)",border:"none",fontSize:11,cursor:"pointer",padding:10,fontFamily:"inherit",letterSpacing:".06em",textTransform:"uppercase"}}>Annuler</button>
+          <button onClick={closeExportOverlay} style={{background:"none",color:"rgba(255,255,255,.5)",border:"none",fontSize:11,cursor:"pointer",padding:10,fontFamily:"inherit",letterSpacing:".06em",textTransform:"uppercase"}}>Annuler</button>
         </div>
       )}
     </div>);

@@ -27,6 +27,19 @@ Le code s'adapte si la migration n'est pas encore appliquée (repli sur
 l'ancien chemin pour l'écran admin), mais l'application reste vulnérable tant
 qu'elle ne l'est pas.
 
+### `0003_image_thumbnails.sql` — performance mobile
+
+Ajoute `thumb_url` sur `player_photos` et `media`. Les grilles affichaient les
+images en pleine résolution : un navigateur les décode à leur taille native
+quelle que soit la taille d'affichage, soit ~290 Mo de mémoire pour un club de
+25 photos et 20 médias — largement de quoi faire tuer l'onglet par iOS Safari
+(l'écran blanc sur téléphone). Avec les vignettes on tombe à ~13 Mo.
+
+Les images importées avant la migration n'ont pas de vignette et retombent sur
+l'original : pas de régression, mais pas de gain non plus tant qu'elles ne sont
+pas réimportées. Sans la migration, l'insertion détecte la colonne absente et
+réessaie sans elle.
+
 ---
 
 # React + Vite

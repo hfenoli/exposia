@@ -140,6 +140,31 @@ export async function compressDataUrl(srcUrl, preset, originalBytes){
   throw new Error("Compression impossible");
 }
 
+// ─── VIGNETTES ────────────────────────────────────────────────
+// Un navigateur décode une image à sa résolution native, quelle que soit la
+// taille d'affichage : une photo 2000×1500 occupe ~12 Mo en mémoire même
+// affichée dans une case de 60 px. Multiplié par les grilles de l'app, iOS
+// Safari tue l'onglet (écran blanc). D'où une vignette dédiée, stockée à côté
+// de l'original et utilisée partout où l'on n'affiche pas en grand.
+export const THUMB_MAX_DIM = 320;
+
+export async function makeThumbnail(srcUrl, maxDim){
+  const dim=maxDim||THUMB_MAX_DIM;
+  const img=await loadImage(srcUrl);
+  const iw=img.naturalWidth||img.width, ih=img.naturalHeight||img.height;
+  if(!iw||!ih) return null;
+  const scale=Math.min(1, dim/Math.max(iw,ih));
+  const c=makeCanvas(iw*scale, ih*scale);
+  const ctx=c.getContext("2d");
+  ctx.imageSmoothingEnabled=true;
+  ctx.imageSmoothingQuality="high";
+  ctx.drawImage(img,0,0,c.width,c.height);
+  const alpha=hasTransparency(ctx,c.width,c.height);
+  const webp=supportsWebp();
+  if(alpha) return webp?c.toDataURL("image/webp",0.8):c.toDataURL("image/png");
+  return webp?c.toDataURL("image/webp",0.72):c.toDataURL("image/jpeg",0.72);
+}
+
 // ─── DÉTOURAGE ────────────────────────────────────────────────
 // Le détourage précédent ne supprimait que les pixels quasi-blancs
 // (moyenne > 220). Ici on détecte les vraies couleurs de fond en
