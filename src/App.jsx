@@ -1,5 +1,4 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
-import html2canvas from "html2canvas";
 import { supabase } from "./supabase";
 import { compressImageFile, removeBackground, dominantBorderColor, isImageFile, formatBytes, TOLERANCE_PRESETS, MAX_SOURCE_BYTES } from "./imaging";
 // ─── BOTTOM SHEET SWIPE-TO-DISMISS ────────────────────────────
@@ -89,6 +88,8 @@ const FORMATS = {
   square: {id:"square", label:"Carré",  sub:"1:1",  icon:"⬜", w:270, h:270, desc:"Post carré, Facebook / X"},
 };
 const DEFAULT_FORMAT = "story";
+// Nombre de visuels rapatriés dans l'historique (voir commentaire au chargement).
+const HISTORY_PAGE_SIZE = 60;
 function fmt(id){ return FORMATS[id]||FORMATS[DEFAULT_FORMAT]; }
 // Les formats ne concernent que l'éditeur libre (but, score, affiche, recrue,
 // annonce). Composition XI et Groupe ont des gabarits dessinés en 9:16.
@@ -460,11 +461,9 @@ function LayerView({lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,isSel,on
 }
 // ─── LINEUP CANVAS ────────────────────────────────────────────
 // Slider tactile : +/− 44×44 sur mobile pour ajustement fin
-function TouchSlider({value,onChange,min,max,step,t,isMobile,format,decimals}){
+function TouchSlider({value,onChange,min,max,step,t,isMobile}){
   const v=value==null?min:value;
   const stp=step||1;
-  const dec=decimals==null?0:decimals;
-  const display=format?format(v):(typeof v==="number"?v.toFixed(dec):v);
   const dec_=()=>onChange(Math.max(min,+(v-stp).toFixed(4)));
   const inc_=()=>onChange(Math.min(max,+(v+stp).toFixed(4)));
   return(<div style={{display:"flex",alignItems:"center",gap:isMobile?6:4,marginTop:2}}>
@@ -482,7 +481,6 @@ function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScal
   const fm=ld&&ld.formation?ld.formation:"4-4-2";
   const starters=ld&&ld.starters?ld.starters:[];
   const subs=ld&&ld.subs?ld.subs.filter(Boolean):[];
-  const opponent=ld&&ld.opponent?ld.opponent:"Adversaire";
   const competition=ld&&ld.competition?ld.competition:"";
   const fRows=FORMATIONS[fm]||FORMATIONS["4-4-2"];
   let li=0;
@@ -726,7 +724,7 @@ function HistoryThumb({h,c1,c2}){
     }
     const sorted=[...(h.layers||[])].sort((a,b)=>a.z-b.z);
     return(<div style={Object.assign({},wr,{background:"#111"})}><div style={inn}>{sorted.map(lay=><LayerView key={lay.id} lay={lay} bgUrl={h.bgUrl} playerUrl={h.playerUrl} logoUrl={h.logoUrl} logo2Url={h.logo2Url} accent={h.accent||c1} accent2={h.accent2||c2} isSel={false} onMD={()=>{}}/>)}</div></div>);
-  }catch(e){return<div style={Object.assign({},wr,{background:"#111",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20})}>{h.ct&&h.ct.icon?h.ct.icon:"📄"}</div>;}
+  }catch{return<div style={Object.assign({},wr,{background:"#111",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20})}>{h.ct&&h.ct.icon?h.ct.icon:"📄"}</div>;}
 }
 // ─── DRAG CANVAS ──────────────────────────────────────────────
 function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,t,isMobile,mobileSheet,setMobileSheet,canvasScale,clubName,cw,ch,onLogoChange}){
@@ -1041,16 +1039,22 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
   </div>);
 }
 // ─── SMALL UI ATOMS ───────────────────────────────────────────
-function CutoutBox({tol,setTol,onRun,busy,t,accent,hint}){
-  return(<div style={{marginBottom:8}}>
-    <div style={{fontSize:9,color:t.text3,marginBottom:4}}>Détourage · intensité</div>
-    <div style={{display:"flex",gap:4,marginBottom:6}}>
-      {[["low","Douce"],["normal","Normale"],["high","Forte"]].map(([v,lbl])=>{
+const TOLERANCE_CHOICES=[["low","Douce"],["normal","Normale"],["high","Forte"]];
+function ToleranceRow({tol,setTol,t,accent,label}){
+  return(<>
+    <div style={{fontSize:9,color:t.text3,marginBottom:4}}>{label||"Détourage · intensité"}</div>
+    <div style={{display:"flex",gap:4}}>
+      {TOLERANCE_CHOICES.map(([v,lbl])=>{
         const on=tol===v;
         return <button key={v} onClick={()=>setTol(v)} style={{flex:1,background:on?accent:"transparent",border:"1px solid "+(on?accent:t.border2),borderRadius:6,padding:"5px 2px",color:on?contrastText(accent):t.text2,cursor:"pointer",fontSize:9,fontWeight:600}}>{lbl}</button>;
       })}
     </div>
-    <button onClick={onRun} disabled={busy} style={{width:"100%",background:rgba(accent,.12),color:accent,border:"1px solid "+rgba(accent,.3),borderRadius:7,padding:"7px",fontSize:11,fontWeight:600,cursor:busy?"wait":"pointer",fontFamily:"inherit"}}>
+  </>);
+}
+function CutoutBox({tol,setTol,onRun,busy,t,accent,hint}){
+  return(<div style={{marginBottom:8}}>
+    <ToleranceRow tol={tol} setTol={setTol} t={t} accent={accent}/>
+    <button onClick={onRun} disabled={busy} style={{width:"100%",marginTop:6,background:rgba(accent,.12),color:accent,border:"1px solid "+rgba(accent,.3),borderRadius:7,padding:"7px",fontSize:11,fontWeight:600,cursor:busy?"wait":"pointer",fontFamily:"inherit"}}>
       {busy?"Traitement…":"✂ Détourer le fond"}
     </button>
     <div style={{fontSize:9,color:t.text3,marginTop:4,lineHeight:1.4}}>{hint||"Retire le fond uni quelle que soit sa couleur (pas seulement le blanc)."}</div>
@@ -1174,13 +1178,7 @@ function PhotoPanel({players,selId,onSel,selUrl,onSelUrl,onAdd,onAddUrl,onFav,on
         </div>);})}
       </div>
       {photos.length>0&&<div style={{marginTop:8}}>
-        <div style={{fontSize:9,color:t.text3,marginBottom:4}}>Détourage · intensité (bouton ✂)</div>
-        <div style={{display:"flex",gap:4}}>
-          {[["low","Douce"],["normal","Normale"],["high","Forte"]].map(([v,lbl])=>{
-            const on=tol===v;
-            return <button key={v} onClick={()=>setTol(v)} style={{flex:1,background:on?t.accent:"transparent",border:"1px solid "+(on?t.accent:t.border2),borderRadius:6,padding:"5px 2px",color:on?contrastText(t.accent):t.text2,cursor:"pointer",fontSize:9,fontWeight:600}}>{lbl}</button>;
-          })}
-        </div>
+        <ToleranceRow tol={tol} setTol={setTol} t={t} accent={t.accent} label="Détourage · intensité (bouton ✂)"/>
         <div style={{fontSize:9,color:t.text3,marginTop:4,lineHeight:1.4}}>Le détourage crée une nouvelle photo, l'originale est conservée.</div>
       </div>}
     </div>)}
@@ -1193,7 +1191,6 @@ function LineupEditor({ld,setLd,players,t}){
   function setStarter(i,pid){const ns=[...starters];ns[i]=pid?players.find(p=>p.id===pid)||null:null;setLd(d=>Object.assign({},d,{starters:ns}));}
   function setSub(i,pid){const ns=[...subs];ns[i]=pid?players.find(p=>p.id===pid)||null:null;setLd(d=>Object.assign({},d,{subs:ns}));}
   function autoFill(){const byPos={};POSITIONS.forEach(p=>{byPos[p]=players.filter(x=>x.position===p);});const lineup=[];fRows.forEach((r,ri)=>{const pos=labels[Math.min(ri,3)];(byPos[pos]||[]).slice(0,r.n).forEach(p=>lineup.push(p));const got=Math.min((byPos[pos]||[]).length,r.n);for(let i=got;i<r.n;i++)lineup.push(null);});const ids=lineup.filter(Boolean).map(p=>p.id);setLd(d=>Object.assign({},d,{starters:lineup,subs:players.filter(p=>!ids.includes(p.id)).slice(0,7)}));}
-  const inp={background:t.bg4,border:"1px solid "+t.border,borderRadius:5,padding:"4px 6px",color:t.text,fontSize:11,outline:"none",boxSizing:"border-box",width:"100%"};
   return(<div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Formation</div><TSel v={fm} on={v=>setLd(d=>Object.assign({},d,{formation:v,starters:[]}))} t={t} opts={Object.keys(FORMATIONS)}/></div><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Adversaire</div><TIn v={ld.opponent||""} on={v=>setLd(d=>Object.assign({},d,{opponent:v}))} ph="vs..." t={t}/></div></div>
     <div style={{marginBottom:8}}><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Compétition</div><TIn v={ld.competition||""} on={v=>setLd(d=>Object.assign({},d,{competition:v}))} ph="Ligue 1..." t={t}/></div>
@@ -1250,6 +1247,28 @@ function PostEditor({pd,setPd,t}){
     <div style={{marginBottom:8}}><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Corps du texte</div><textarea value={pd.body||""} onChange={e=>setPd(d=>Object.assign({},d,{body:e.target.value}))} placeholder="Message principal..." rows={3} style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:7,padding:"8px 10px",color:t.text,fontSize:13,outline:"none",width:"100%",boxSizing:"border-box",resize:"vertical",fontFamily:"inherit"}}/></div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Date</div><TIn v={pd.date||""} on={v=>setPd(d=>Object.assign({},d,{date:v}))} ph="12 avril 2025" t={t}/></div><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Hashtag</div><TIn v={pd.hashtag||""} on={v=>setPd(d=>Object.assign({},d,{hashtag:v}))} ph="#monclub" t={t}/></div></div>
   </div>);
+}
+// ─── PROJECTION D'UN VISUEL ───────────────────────────────────
+// Ligne Supabase → objet manipulé par l'UI. Une seule définition : les trois
+// copies précédentes divergeaient au moindre ajout de champ.
+function mapVisual(v){
+  if(!v) return null;
+  return{
+    ...v,
+    layers:v.layers||[],
+    lineupData:v.lineup_data||{},
+    groupData:v.group_data||{},
+    postData:v.post_data||{},
+    lineupTpl:v.lineup_tpl,
+    groupTpl:v.group_tpl,
+    postTpl:v.post_tpl,
+    bgUrl:v.bg_url,
+    logoUrl:v.logo_url,
+    logo2Url:v.logo2_url,
+    playerUrl:v.player_url,
+    format:v.format||DEFAULT_FORMAT,
+    ct:CTYPES.find(c=>c.id===v.type),
+  };
 }
 // ─── ÉCRITURE D'UN VISUEL ─────────────────────────────────────
 // La colonne `format` est ajoutée par la migration
@@ -1368,7 +1387,7 @@ export default function App({session}){
         const meta=session.user.user_metadata||{};
         const newName=meta.club_name||"Mon Club";
         const newEmail=session.user.email||null;
-        const{data:newClub,error:cErr}=await supabase.from("clubs").insert({user_id:uid,email:newEmail,name:newName,approved:false}).select().single();
+        const{data:newClub,error:cErr}=await supabase.from("clubs").insert({user_id:uid,email:newEmail,name:newName}).select().single();
         if(cErr)console.error("[load] insert clubs failed:",cErr);
         clubData=newClub;
         // Notifier l'admin uniquement à la création initiale (pas à chaque login).
@@ -1398,9 +1417,11 @@ export default function App({session}){
       const{data:mediaData}=await supabase.from("media").select("*").eq("club_id",clubData.id);
       if(stale())return;
       setMedia(mediaData||[]);
-      const{data:visualsData}=await supabase.from("visuals").select("*").eq("club_id",clubData.id).order("created_at",{ascending:false});
+      // Les visuels embarquent leurs images en base64 : sans limite, un club
+      // actif téléchargerait des dizaines de Mo à chaque ouverture.
+      const{data:visualsData}=await supabase.from("visuals").select("*").eq("club_id",clubData.id).order("created_at",{ascending:false}).limit(HISTORY_PAGE_SIZE);
       if(stale())return;
-      setHistory((visualsData||[]).map(v=>({...v,layers:v.layers||[],lineupData:v.lineup_data||{},groupData:v.group_data||{},postData:v.post_data||{},lineupTpl:v.lineup_tpl,groupTpl:v.group_tpl,postTpl:v.post_tpl,bgUrl:v.bg_url,logoUrl:v.logo_url,logo2Url:v.logo2_url,playerUrl:v.player_url,format:v.format||DEFAULT_FORMAT,ct:CTYPES.find(c=>c.id===v.type)})));
+      setHistory((visualsData||[]).map(mapVisual));
       setLoading(false);
     }
     load();
@@ -1484,7 +1505,7 @@ export default function App({session}){
     }
     else setSelPhoto(null);
   }
-  function postDataToLayers(pd,c1,c2){
+  function postDataToLayers(pd,c1){
     // Conversion rétrocompatible : postData legacy → layers libres
     const layers=[
       {id:"bg",z:0,type:"bg",x:0,y:0,w:100,h:100,locked:true,label:"Fond",fillColor:"#000000"},
@@ -1504,7 +1525,7 @@ export default function App({session}){
       setSelPhoto(fromH.playerUrl||null);setSelPid(null);
       // Rétrocompat post : si layers absents/vides ET postData présent → conversion automatique
       if(type==="post"&&(!fromH.layers||fromH.layers.length===0)&&fromH.postData){
-        setLayers(postDataToLayers(fromH.postData,club?.color1||"#e63329",club?.color2||"#1a1a2e"));
+        setLayers(postDataToLayers(fromH.postData,club?.color1||"#e63329"));
       }else if(fromH.layers){
         setLayers(fromH.layers);
       }
@@ -1537,12 +1558,12 @@ export default function App({session}){
       const{data,error}=await writeVisual("update",payload,editId);
       if(error){console.error("[save] update failed:",error.message);setLimitError("Erreur lors de la sauvegarde : "+error.message);setTimeout(()=>setLimitError(""),4000);return;}
       saved=data;
-      if(saved)setHistory(h=>h.map(x=>x.id===editId?{...saved,layers:saved.layers||[],lineupData:saved.lineup_data||{},groupData:saved.group_data||{},postData:saved.post_data||{},lineupTpl:saved.lineup_tpl,groupTpl:saved.group_tpl,postTpl:saved.post_tpl,bgUrl:saved.bg_url,logoUrl:saved.logo_url,logo2Url:saved.logo2_url,playerUrl:saved.player_url,format:saved.format||DEFAULT_FORMAT,ct}:x));
+      if(saved)setHistory(h=>h.map(x=>x.id===editId?mapVisual(saved):x));
     } else {
       const{data,error}=await writeVisual("insert",payload);
       if(error){console.error("[save] insert failed:",error.message);setLimitError("Erreur lors de la sauvegarde : "+error.message);setTimeout(()=>setLimitError(""),4000);return;}
       saved=data;
-      if(saved)setHistory(h=>[{...saved,layers:saved.layers||[],lineupData:saved.lineup_data||{},groupData:saved.group_data||{},postData:saved.post_data||{},lineupTpl:saved.lineup_tpl,groupTpl:saved.group_tpl,postTpl:saved.post_tpl,bgUrl:saved.bg_url,logoUrl:saved.logo_url,logo2Url:saved.logo2_url,playerUrl:saved.player_url,format:saved.format||DEFAULT_FORMAT,ct},...h]);
+      if(saved)setHistory(h=>[mapVisual(saved),...h]);
     }
     if(saved&&!editId)setWeeklyCount(w=>w+1);
     if(saved)setEditId(saved.id);
@@ -1560,6 +1581,8 @@ export default function App({session}){
       try{ await save(); }catch(e){ console.warn("[downloadPng] auto-save a échoué:",e); }
     }
     try{
+      // Chargé à la demande : html2canvas pèse ~200 Ko et ne sert qu'à l'export.
+      const html2canvas=(await import("html2canvas")).default;
       const memGB=navigator.deviceMemory||4;
       const scale=memGB<4?2.5:4;
       const canvas=await html2canvas(el,{backgroundColor:null,scale:scale,useCORS:true,allowTaint:true,logging:false});
@@ -1590,7 +1613,7 @@ export default function App({session}){
   }
   async function handleOverlayShare(){
     if(!exportOverlay)return;
-    const{blob,filename,dataUrl}=exportOverlay;
+    const{blob,filename}=exportOverlay;
     try{
       const file=new File([blob],filename,{type:"image/png"});
       if(navigator.canShare&&navigator.canShare({files:[file]})){
@@ -1602,12 +1625,16 @@ export default function App({session}){
       if(e&&e.name==="AbortError"){return;}
       console.warn("[overlay share] fallback:",e);
     }
-    const w=window.open();
-    if(w&&w.document){
-      w.document.write('<html><head><title>'+filename+'</title><meta name="viewport" content="width=device-width, initial-scale=1"/></head><body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:100dvh;flex-direction:column;font-family:system-ui;"><img src="'+dataUrl+'" style="max-width:100%;height:auto;display:block"/><p style="color:#fff;text-align:center;font-size:14px;padding:16px;">Appuyez longuement sur l\'image puis « Ajouter aux Photos ».</p></body></html>');
-      w.document.close();
+    // Repli : on ouvre l'image seule dans un onglet (appui long → Ajouter aux
+    // Photos). Un blob URL plutôt que document.write, déprécié et bloqué par
+    // certaines CSP.
+    const viewUrl=URL.createObjectURL(blob);
+    const w=window.open(viewUrl,"_blank","noopener");
+    if(w){
+      setTimeout(()=>URL.revokeObjectURL(viewUrl),60000);
       setExportOverlay(null);return;
     }
+    URL.revokeObjectURL(viewUrl);
     const url=URL.createObjectURL(blob);
     const a=document.createElement("a");
     a.href=url;a.download=filename;a.target="_blank";a.rel="noopener";
@@ -1617,12 +1644,14 @@ export default function App({session}){
   }
   if(loading)return(<div className="viz-fullvh" style={{display:"flex",alignItems:"center",justifyContent:"center",background:"#080810",color:"rgba(240,240,248,.4)",fontFamily:"system-ui",flexDirection:"column",gap:12}}><div style={{fontSize:28}}>⚡</div><div>Chargement de vos données...</div></div>);
   const card={background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:20};
-  function SaveBtn(){return(<>
+  // Fragments rendus par appel, pas des composants : les redéfinir à chaque
+  // rendu créerait un nouveau type de composant et remonterait le sous-arbre.
+  function saveBtn(){return(<>
     {limitError&&<div style={{background:"#450a0a",border:"1px solid #7f1d1d",borderRadius:8,padding:"10px 14px",color:"#fca5a5",fontSize:12,marginBottom:10}}>{limitError}</div>}
     <button onClick={save} style={{background:saveFlash?"#22c55e":"#0a0a0a",color:"#fff",border:"none",borderRadius:2,padding:"13px 16px",fontSize:11,fontWeight:700,cursor:"pointer",width:"100%",letterSpacing:".12em",textTransform:"uppercase",transition:"background .3s,transform .15s",fontFamily:"inherit"}}>{saveFlash?"Sauvegardé ✓":"Sauvegarder"}</button>
     <button onClick={downloadPng} style={{marginTop:8,background:"transparent",color:t.text,border:"1px solid "+t.text,borderRadius:2,padding:"12px 16px",fontSize:11,fontWeight:600,cursor:"pointer",width:"100%",letterSpacing:".12em",textTransform:"uppercase",fontFamily:"inherit"}}>Télécharger PNG</button>
   </>);}
-  function BackBtn(){return<button onClick={()=>setSelType(null)} style={{display:"inline-flex",alignItems:"center",gap:7,background:t.bg3,border:"1px solid "+t.border2,borderRadius:8,padding:"7px 13px",color:t.text2,cursor:"pointer",fontSize:12,marginBottom:14,fontWeight:500}}>↩ Retour</button>;}
+  function backBtn(){return<button onClick={()=>setSelType(null)} style={{display:"inline-flex",alignItems:"center",gap:7,background:t.bg3,border:"1px solid "+t.border2,borderRadius:8,padding:"7px 13px",color:t.text2,cursor:"pointer",fontSize:12,marginBottom:14,fontWeight:500}}>↩ Retour</button>;}
   function renderSpecial(){
     const isL=selType==="lineup",isP=selType==="post",isG=selType==="group";
     const tpls=isL?LINEUP_TPLS:isP?POST_TPLS:GROUP_TPLS;
@@ -1633,7 +1662,7 @@ export default function App({session}){
       {isMobile&&mobileSheet==="options"&&<div onClick={()=>setMobileSheet(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:150}}/>}
       <div data-bottom-sheet="options" style={panelStyle}>
         {isMobile&&<div {...makeSwipeClose(()=>setMobileSheet(null))} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingBottom:8,borderBottom:"1px solid "+t.border,touchAction:"none",cursor:"grab",userSelect:"none"}}><div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:34,height:4,background:"rgba(255,255,255,.2)",borderRadius:3}}/><div style={{fontSize:13,fontWeight:700,color:t.text}}>Options</div></div><button onClick={()=>setMobileSheet(null)} style={{background:"none",border:"none",color:t.text3,fontSize:18,cursor:"pointer",padding:4}}>✕</button></div>}
-        {!isMobile&&<BackBtn/>}
+        {!isMobile&&backBtn()}
         <PBox t={t}><SHdr label="Template" t={t}/><TplGrid tpls={tpls} sel={tpl} onSel={setTpl} t={t} maxTemplates={club?.max_templates}/></PBox>
         <PBox t={t}>
           <SHdr label="Image de fond" t={t}/>
@@ -1659,7 +1688,7 @@ export default function App({session}){
           {isG&&<GroupEditor gd={groupData} setGd={setGroupData} players={players} t={t}/>}
           {isP&&<PostEditor pd={postData} setPd={setPostData} t={t}/>}
         </PBox>
-        <SaveBtn/>
+        {saveBtn()}
       </div>
       <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",background:"#030306",flexDirection:"column",gap:14,padding:isMobile?"12px 8px 70px":0,overflow:"auto"}}>
         <div style={isMobile?{width:270*canvasScale,height:480*canvasScale,position:"relative",overflow:"visible",flexShrink:0}:{display:"inline-block"}}>
@@ -1688,7 +1717,7 @@ export default function App({session}){
       {isMobile&&mobileSheet==="options"&&<div onClick={()=>setMobileSheet(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:150}}/>}
       <div data-bottom-sheet="options" style={stdPanelStyle}>
         {isMobile&&<div {...makeSwipeClose(()=>setMobileSheet(null))} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingBottom:8,borderBottom:"1px solid "+t.border,touchAction:"none",cursor:"grab",userSelect:"none"}}><div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:34,height:4,background:"rgba(255,255,255,.2)",borderRadius:3}}/><div style={{fontSize:13,fontWeight:700,color:t.text}}>Options</div></div><button onClick={()=>setMobileSheet(null)} style={{background:"none",border:"none",color:t.text3,fontSize:18,cursor:"pointer",padding:4}}>✕</button></div>}
-        {!isMobile&&<BackBtn/>}
+        {!isMobile&&backBtn()}
         <PBox t={t}>
           <SHdr label="Format de publication" t={t}/>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:5}}>
@@ -1735,7 +1764,7 @@ export default function App({session}){
             {(selType==="result"||selType==="match")&&<div><div style={{fontSize:10,color:t.text3,marginBottom:5}}>Adversaire</div><UpBtn val={logo2Url} on={setLogo2Url} w={52} h={52} r={8} label="Upload" t={t}/>{logo2Url&&<button onClick={()=>setLogo2Url(null)} style={{fontSize:10,color:t.text3,background:"none",border:"none",cursor:"pointer",marginTop:4,display:"block"}}>✕</button>}</div>}
           </div>
         </PBox>
-        <SaveBtn/>
+        {saveBtn()}
       </div>
       <DragCanvas key={editId||("new_"+selType)} layers={layers} setLayers={setLayers} bgUrl={bgUrl} playerUrl={selPhoto} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={t.accent} accent2={t.accent2} t={t} isMobile={isMobile} mobileSheet={mobileSheet} setMobileSheet={setMobileSheet} canvasScale={canvasScale} clubName={club?.name} cw={canvasW} ch={canvasH} onLogoChange={(kind,url)=>{if(kind==="logo2")setLogo2Url(url);else setLogoUrl(url);}}/>
       {isMobile&&(

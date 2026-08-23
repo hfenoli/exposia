@@ -1,7 +1,10 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 
-const ADMIN_EMAILS = ["hugo.fenoli@live.fr", "lucas.dipasquale01@gmail.com"];
+// Repli tant que la migration 0002 n'est pas appliquée. L'autorité reste la
+// base : `is_app_admin()` et les GRANT au niveau colonne. Cette liste ne fait
+// qu'afficher ou masquer l'écran — elle ne donne aucun droit par elle-même.
+const ADMIN_EMAILS_FALLBACK = ["hugo.fenoli@live.fr", "lucas.dipasquale01@gmail.com"];
 const PLANS = ["BASIC", "STANDARD", "PREMIUM"];
 
 const FONT = "system-ui,-apple-system,sans-serif";
@@ -25,13 +28,33 @@ const th = {
 const td = { padding: "12px 14px", fontSize: 12, verticalAlign: "middle" };
 
 export default function Admin({ session, onClose }) {
-  const isAuthorized = !!session && ADMIN_EMAILS.includes(session.user.email);
+  const email = session && session.user ? session.user.email : null;
+  // Autorisation demandée à la base (is_app_admin), avec repli sur la liste
+  // locale si la fonction n'existe pas encore. `undefined` = vérification en
+  // cours ; sans email connecté la réponse est immédiate.
+  const [isAuthorized, setIsAuthorized] = useState(() => (email ? undefined : false));
   const [clubs, setClubs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [weeklyVisuals, setWeeklyVisuals] = useState(0);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (!email) return;
+    let alive = true;
+    supabase.rpc("is_app_admin").then(({ data, error: e }) => {
+      if (!alive) return;
+      if (e) {
+        console.warn("[Admin] is_app_admin indisponible (migration 0002 non appliquée ?) :", e.message);
+        setIsAuthorized(ADMIN_EMAILS_FALLBACK.includes(email));
+      } else {
+        setIsAuthorized(data === true);
+      }
+    });
+    return () => { alive = false; };
+  }, [email]);
+
+  useEffect(() => {
+    if (isAuthorized === undefined) return;
     if (!isAuthorized) { setLoading(false); return; }
     let alive = true;
     async function load() {
@@ -58,17 +81,56 @@ export default function Admin({ session, onClose }) {
     return () => { alive = false; };
   }, [isAuthorized]);
 
+  // Les colonnes `approved` et `plan` ne sont plus modifiables directement
+  // (GRANT au niveau colonne) : on passe par des fonctions SECURITY DEFINER
+  // qui revérifient l'appelant côté serveur. Repli sur l'ancien chemin tant
+  // que la migration 0002 n'est pas appliquée.
+  async function callAdminRpc(fn, args, fallback) {
+    const { error: e } = await supabase.rpc(fn, args);
+    if (!e) return null;
+    if (/does not exist|not find|schema cache/i.test(e.message || "")) {
+      console.warn("[Admin] " + fn + " absente, repli sur écriture directe.");
+      const { error: e2 } = await fallback();
+      return e2 ? e2.message : null;
+    }
+    return e.message;
+  }
+
   async function toggleApprove(club) {
     const next = !club.approved;
+    const before = club.approved;
     setClubs(prev => prev.map(c => c.id === club.id ? { ...c, approved: next } : c));
-    const { error: e } = await supabase.from("clubs").update({ approved: next }).eq("id", club.id);
-    if (e) setError(e.message);
+    const msg = await callAdminRpc(
+      "admin_set_club_approval",
+      { p_club_id: club.id, p_approved: next },
+      () => supabase.from("clubs").update({ approved: next }).eq("id", club.id),
+    );
+    if (msg) {
+      setError(msg);
+      setClubs(prev => prev.map(c => c.id === club.id ? { ...c, approved: before } : c));
+    }
   }
 
   async function setPlan(club, plan) {
+    const before = club.plan;
     setClubs(prev => prev.map(c => c.id === club.id ? { ...c, plan } : c));
-    const { error: e } = await supabase.from("clubs").update({ plan }).eq("id", club.id);
-    if (e) setError(e.message);
+    const msg = await callAdminRpc(
+      "admin_set_club_plan",
+      { p_club_id: club.id, p_plan: plan },
+      () => supabase.from("clubs").update({ plan }).eq("id", club.id),
+    );
+    if (msg) {
+      setError(msg);
+      setClubs(prev => prev.map(c => c.id === club.id ? { ...c, plan: before } : c));
+    }
+  }
+
+  if (isAuthorized === undefined) {
+    return (
+      <div style={{ minHeight: "100dvh", background: "#080810", color: "rgba(240,240,248,.5)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT, fontSize: 13 }}>
+        Vérification des droits…
+      </div>
+    );
   }
 
   if (!isAuthorized) {
