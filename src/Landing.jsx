@@ -20,9 +20,9 @@ const FONT_M    = "'DM Mono', ui-monospace, monospace";
 
 // ─── CONTENT ──────────────────────────────────────────────────
 const STATS = [
-  { n: "18", l: "Templates" },
+  { n: "7",   l: "Sports" },
+  { n: "18",  l: "Templates" },
   { n: "30s", l: "Par visuel" },
-  { n: "3",   l: "Formats" },
 ];
 
 // Baseline de marque — sert au footer, aux méta-données, aux e-mails.
@@ -87,29 +87,87 @@ const PRICING = [
   },
 ];
 
-// ─── EXEMPLES DE VISUELS ──────────────────────────────────────
-// Reproductions fidèles des gabarits de l'app, dessinées en CSS : aucune image
-// à charger, et la couleur d'accent change d'une carte à l'autre pour montrer
-// que les visuels prennent les couleurs du club.
-const EXAMPLES = [
-  { type: "goal",    label: "But",             accent: "#E63329" },
-  { type: "result",  label: "Score final",     accent: "#1D7A46" },
-  { type: "match",   label: "Affiche match",   accent: "#0F5FA6" },
-  { type: "lineup",  label: "Composition XI",  accent: "#C9A227" },
-  { type: "recruit", label: "Nouvelle recrue", accent: "#7B2D8E" },
-  { type: "post",    label: "Annonce",         accent: "#D4541E" },
+// ─── EXEMPLES DE VISUELS, PAR SPORT ───────────────────────────
+// La galerie est filtrable : choisir un sport change réellement le contenu des
+// cartes — vocabulaire, types de visuels et tracé de l'aire de jeu. C'est la
+// démonstration la plus directe que l'app n'est pas qu'un outil de foot.
+// Doit rester aligné sur src/sports.js.
+const LANDING_SPORTS = [
+  { id: "football", label: "Football", icon: "⚽", accent: "#E63329", pitch: "football",
+    cards: ["goal", "result", "match", "lineup", "recruit", "post"],
+    event: "BUT !", lineupTitle: "COMPOSITION", formation: "4-3-3 · vs Adversaire",
+    rows: [[9], [7, 10, 11], [4, 6, 8], [2, 5, 3, 16], [1]],
+    comp: "2E LIGUE · J12", venue: "Stade municipal", who: "M. Rodriguez · #9",
+    recruitTag: "Nouvelle recrue", recruitName: "THOMAS<br/>MARCHAND", recruitPos: "Milieu · #8" },
+
+  { id: "rugby", label: "Rugby", icon: "🏉", accent: "#1D7A46", pitch: "rugby",
+    cards: ["goal", "result", "match", "lineup", "recruit", "post"],
+    event: "ESSAI !", lineupTitle: "COMPOSITION XV", formation: "XV de départ",
+    rows: [[15], [11, 13, 12, 14], [10, 9], [6, 8, 7], [4, 5], [1, 2, 3]],
+    comp: "LNA · J12", venue: "Stade", who: "L. Perret · #12",
+    recruitTag: "Nouvelle recrue", recruitName: "LUCAS<br/>PERRET", recruitPos: "Centre · #12" },
+
+  { id: "hockey", label: "Hockey", icon: "🏒", accent: "#0F5FA6", pitch: "ice",
+    cards: ["goal", "result", "match", "lineup", "recruit", "post"],
+    event: "BUT !", lineupTitle: "ALIGNEMENT", formation: "Alignement 5+1",
+    rows: [[17, 91, 27], [4, 55], [30]],
+    comp: "MYHOCKEY · J12", venue: "Patinoire", who: "N. Blanc · #17",
+    recruitTag: "Nouvelle recrue", recruitName: "NOAH<br/>BLANC", recruitPos: "Ailier · #17" },
+
+  { id: "basketball", label: "Basket", icon: "🏀", accent: "#D4541E", pitch: "court",
+    cards: ["goal", "result", "match", "lineup", "recruit", "post"],
+    event: "PANIER !", lineupTitle: "CINQ DE DÉPART", formation: "Cinq de départ",
+    rows: [[7, 23], [11, 14], [5]],
+    comp: "SB LEAGUE · J12", venue: "Salle", who: "A. Meier · #7",
+    recruitTag: "Nouvelle recrue", recruitName: "ALEX<br/>MEIER", recruitPos: "Meneur · #7" },
+
+  { id: "handball", label: "Handball", icon: "🤾", accent: "#7B2D8E", pitch: "handball",
+    cards: ["goal", "result", "match", "lineup", "recruit", "post"],
+    event: "BUT !", lineupTitle: "SEPT DE DÉPART", formation: "Sept de départ",
+    rows: [[9, 3, 21], [7, 11, 44], [12]],
+    comp: "SHL · J12", venue: "Salle", who: "J. Favre · #9",
+    recruitTag: "Nouvelle recrue", recruitName: "JULIE<br/>FAVRE", recruitPos: "Pivot · #9" },
+
+  { id: "natation", label: "Natation", icon: "🏊", accent: "#0E7C9B", pitch: null,
+    cards: ["perf", "result", "podium", "match", "recruit", "post"],
+    event: "RECORD !", comp: "CHAMPIONNATS ROMANDS", venue: "Piscine du Lignon",
+    who: "E. Girard · 100 m NL", chrono: "00:54:12", chronoTag: "Record personnel",
+    recruitTag: "Nouveau nageur", recruitName: "EMMA<br/>GIRARD", recruitPos: "Nage libre",
+    podium: [["1.", "E. Girard", "00:54:12"], ["2.", "L. Kunz", "00:55:47"], ["3.", "M. Roth", "00:57:03"]] },
+
+  { id: "triathlon", label: "Triathlon", icon: "🚴", accent: "#C9A227", pitch: null,
+    cards: ["perf", "result", "podium", "match", "recruit", "post"],
+    event: "FINISHER !", comp: "IRONMAN 70.3 RAPPERSWIL", venue: "Rapperswil",
+    who: "S. Aebi · dossard 142", chrono: "04:21:38", chronoTag: "Record personnel",
+    recruitTag: "Nouvel athlète", recruitName: "SARAH<br/>AEBI", recruitPos: "Olympique · dossard 142",
+    podium: [["1.", "S. Aebi", "04:21:38"], ["2.", "T. Vogel", "04:26:05"], ["3.", "N. Studer", "04:31:47"]] },
 ];
-const TICKER = ["But", "Score final", "Affiche de match", "Composition XI", "Convocation", "Nouvelle recrue", "Annonce", "Football", "Basketball", "Hockey", "Rugby", "Handball", "Story 9:16", "Post 4:5", "Carré 1:1"];
+const CARD_LABELS = {
+  goal: "But", result: "Score final", match: "Affiche match", lineup: "Composition",
+  recruit: "Nouvelle recrue", post: "Annonce", perf: "Chrono", podium: "Podium",
+};
+// L'étiquette sous la carte doit dire la même chose que la carte : « Essai »
+// au rugby, « Résultats » quand il n'y a pas de score d'équipe.
+const CARD_LABELS_BY_SPORT = {
+  rugby:      { goal: "Essai" },
+  basketball: { goal: "Panier" },
+  natation:   { result: "Résultats", match: "Affiche compét'", recruit: "Nouveau nageur" },
+  triathlon:  { result: "Résultats", match: "Affiche course",  recruit: "Nouvel athlète" },
+};
+function cardLabel(sportId, type) {
+  return (CARD_LABELS_BY_SPORT[sportId] || {})[type] || CARD_LABELS[type];
+}
+const TICKER = ["Football", "Rugby", "Hockey sur glace", "Basketball", "Handball", "Natation", "Triathlon", "But", "Essai", "Chrono", "Podium", "Composition", "Convocation", "Story 9:16", "Post 4:5", "Carré 1:1"];
 const FEATURES = [
   { n: "01", t: "Templates Pro", d: "18 templates conçus pour le sport. Pas de compétences graphiques requises. Résultat professionnel garanti à chaque fois." },
   { n: "02", t: "30 Secondes",  d: "Depuis le bord du terrain. Ouvrez l'app, choisissez le type, exportez. Publié avant le coup de sifflet final." },
-  { n: "03", t: "Vos Couleurs", d: "Logo, couleurs, joueurs — configurés une fois, appliqués automatiquement à chaque visuel créé pour votre club." },
+  { n: "03", t: "Votre Sport", d: "Sept disciplines. Un club de rugby marque des essais, un club de hockey aligne ses lignes sur une patinoire, un club de natation publie des chronos. Pas un habillage : des gabarits différents." },
 ];
 const STEPS = [
-  { n: "01", t: "Votre club, une fois pour toutes",
-    d: "Logo, deux couleurs, effectif avec les photos. Dix minutes le premier soir, et c'est fini : tous vos visuels s'y conforment ensuite tout seuls." },
+  { n: "01", t: "Votre sport, puis votre club",
+    d: "Vous choisissez votre discipline à la première connexion : le vocabulaire, les postes et les types de visuels s'y adaptent. Puis logo, deux couleurs et effectif. Dix minutes le premier soir, et c'est fini." },
   { n: "02", t: "Le type de visuel",
-    d: "But, score final, affiche de match, composition, groupe, recrue, annonce. Vous choisissez le format de publication — story, post ou carré — et le gabarit se met à la bonne taille." },
+    d: "But ou essai, score final, affiche de rencontre, composition, convocation, recrue, annonce — et pour les sports individuels, chrono et podium. Story, post ou carré : le gabarit se met à la bonne taille." },
   { n: "03", t: "Ce qui se remplit tout seul",
     d: "Vous sélectionnez un joueur : son nom et son poste se posent sur le visuel. Le fond de sa photo peut être détouré en un geste. Vos couleurs sont déjà là." },
   { n: "04", t: "Vous ajustez, vous exportez",
@@ -120,7 +178,8 @@ const TEAM = [
   { nom: "Lucas Di Pasquale",     role: "Co-fondateur", photo: "/team/lucas.jpg" },
 ];
 const FAQ_ITEMS = [
-  { q: "Pour quels sports ?",                       a: "Tous les sports collectifs : football, basketball, hockey, rugby et plus. L'éditeur s'adapte aux compositions et formats de votre discipline." },
+  { q: "Pour quels sports ?",                       a: "Sept aujourd'hui : football, rugby, hockey sur glace, basketball, handball, natation et triathlon. Vous choisissez le vôtre à la première connexion, et tout suit — le vocabulaire (joueur, nageur, athlète), les postes, les formations, le tracé de l'aire de jeu et les types de visuels. Les sports individuels n'ont ni composition ni score d'équipe, mais des visuels de chrono et de podium. Votre discipline n'y est pas ? Écrivez-nous, on l'ajoute." },
+  { q: "On pratique plusieurs sports dans le club.", a: "Un compte correspond aujourd'hui à un sport. Pour une structure omnisports, le plus simple est un accès par section — écrivez-nous, on vous arrange ça sur l'offre Institution." },
   { q: "Faut-il des compétences en design ?",       a: "Non. Vous configurez votre club une fois (logo, couleurs, joueurs), l'app fait le reste. Aucune connaissance graphique requise." },
   { q: "Ça marche sur téléphone ?",                 a: "Oui, l'app est pensée mobile. Installez-la sur votre écran d'accueil pour un accès en un tap, comme une vraie application." },
   { q: "Combien ça coûte ?",                        a: "Trois offres selon la taille du club, de 15 à 59 CHF par mois, avec 20 % de remise au paiement annuel. Le détail est dans la section Tarifs. Pas de frais d'installation, résiliable à tout moment." },
@@ -312,31 +371,78 @@ function PlayerSilhouette({ color = "#fff", opacity = 0.18 }) {
 
 // ─── EXEMPLE DE VISUEL ────────────────────────────────────────
 // Reproduction fidèle des gabarits de l'app, en 9:16 comme dans l'éditeur.
-// Tout est dessiné en CSS : rien à télécharger, et l'accent change d'une carte
-// à l'autre pour montrer que le visuel prend les couleurs du club.
-function VisualCard({ type, accent }) {
+// Tout est dessiné en CSS : rien à télécharger, et le contenu suit le sport
+// choisi dans la galerie.
+function VisualCard({ type, sp }) {
   return (
     <div style={{ containerType: "inline-size", width: "100%" }}>
-      <VisualCardBody type={type} accent={accent}/>
+      <VisualCardBody type={type} sp={sp}/>
     </div>
   );
 }
-function VisualCardBody({ type, accent }) {
+
+// Tracé simplifié de l'aire de jeu, par sport.
+function MiniPitch({ kind, accent }) {
+  const st = "rgba(255,255,255,.16)";
+  const box = { position: "absolute", inset: "14% 9% 15%" };
+  if (kind === "ice") return (
+    <svg style={box} viewBox="0 0 100 150" preserveAspectRatio="none">
+      <rect x="2" y="2" width="96" height="146" rx="22" fill="none" stroke={st}/>
+      <line x1="2" y1="75" x2="98" y2="75" stroke={accent} strokeOpacity=".5"/>
+      <line x1="2" y1="50" x2="98" y2="50" stroke={st}/><line x1="2" y1="100" x2="98" y2="100" stroke={st}/>
+      <circle cx="50" cy="75" r="13" fill="none" stroke={st}/>
+    </svg>
+  );
+  if (kind === "rugby") return (
+    <svg style={box} viewBox="0 0 100 150" preserveAspectRatio="none">
+      <rect x="2" y="2" width="96" height="146" fill="none" stroke={st}/>
+      <line x1="2" y1="75" x2="98" y2="75" stroke={st}/>
+      <line x1="2" y1="18" x2="98" y2="18" stroke={st}/><line x1="2" y1="132" x2="98" y2="132" stroke={st}/>
+      <line x1="2" y1="40" x2="98" y2="40" stroke={st} strokeDasharray="3 3"/>
+      <line x1="2" y1="110" x2="98" y2="110" stroke={st} strokeDasharray="3 3"/>
+    </svg>
+  );
+  if (kind === "court") return (
+    <svg style={box} viewBox="0 0 100 150" preserveAspectRatio="none">
+      <rect x="2" y="2" width="96" height="146" fill="none" stroke={st}/>
+      <line x1="2" y1="75" x2="98" y2="75" stroke={st}/>
+      <circle cx="50" cy="75" r="12" fill="none" stroke={st}/>
+      <rect x="34" y="2" width="32" height="26" fill="none" stroke={st}/>
+      <rect x="34" y="122" width="32" height="26" fill="none" stroke={st}/>
+    </svg>
+  );
+  if (kind === "handball") return (
+    <svg style={box} viewBox="0 0 100 150" preserveAspectRatio="none">
+      <rect x="2" y="2" width="96" height="146" fill="none" stroke={st}/>
+      <line x1="2" y1="75" x2="98" y2="75" stroke={st}/>
+      <path d="M2 2 V20 A30 30 0 0 0 98 20 V2" fill="none" stroke={st}/>
+      <path d="M2 148 V130 A30 30 0 0 1 98 130 V148" fill="none" stroke={st}/>
+    </svg>
+  );
+  return (
+    <svg style={box} viewBox="0 0 100 150" preserveAspectRatio="none">
+      <rect x="2" y="2" width="96" height="146" fill="none" stroke={st}/>
+      <line x1="2" y1="75" x2="98" y2="75" stroke={st}/>
+      <circle cx="50" cy="75" r="14" fill="none" stroke={st}/>
+      <rect x="28" y="2" width="44" height="20" fill="none" stroke={st}/>
+      <rect x="28" y="128" width="44" height="20" fill="none" stroke={st}/>
+    </svg>
+  );
+}
+
+function VisualCardBody({ type, sp }) {
+  const accent = sp.accent;
   const box = {
     position: "relative", aspectRatio: "9 / 16", width: "100%",
     background: "#0b0b12", overflow: "hidden", borderRadius: 3,
     display: "flex", flexDirection: "column", color: "#fff",
-    // La section est noire : sans liseré, les cartes s'y fondaient.
     border: "1px solid rgba(255,255,255,0.14)",
     boxShadow: "0 18px 40px rgba(0,0,0,0.5)",
-    // Toutes les tailles internes sont exprimées en `em` : la base suit la
-    // largeur du conteneur parent, donc le contenu s'adapte au nombre de
-    // colonnes sans jamais déborder.
     fontSize: "8cqw",
   };
   const band = { position: "absolute", top: 0, left: 0, right: 0, height: 3, background: accent, zIndex: 3 };
-  const badge = (txt) => (
-    <div style={{ position: "absolute", top: 10, left: 10, width: 22, height: 22, borderRadius: 3, background: accent, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT_H, fontSize: 11, letterSpacing: "0.04em", zIndex: 3 }}>{txt}</div>
+  const badge = (
+    <div style={{ position: "absolute", top: 10, left: 10, width: 22, height: 22, borderRadius: 3, background: accent, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT_H, fontSize: 11, letterSpacing: "0.04em", zIndex: 3 }}>FC</div>
   );
   const mark = (
     <div aria-hidden="true" style={{ position: "absolute", bottom: 5, right: 6, fontFamily: FONT_M, fontSize: 6, color: "rgba(255,255,255,0.85)", background: "rgba(0,0,0,0.42)", padding: "1px 5px", borderRadius: 2, letterSpacing: "0.04em", zIndex: 4 }}>Powered by Viziona</div>
@@ -344,13 +450,13 @@ function VisualCardBody({ type, accent }) {
 
   if (type === "goal") return (
     <div style={box}>
-      <div style={band}/>{badge("FC")}
-      <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(160deg,#0d0d18,#1c0a0a)" }}/>
-      <div aria-hidden="true" style={{ position: "absolute", top: "16%", left: "50%", transform: "translateX(-50%)", fontFamily: FONT_H, fontSize: "3.4em", color: accent, opacity: 0.14, letterSpacing: "0.04em" }}>BUT</div>
+      <div style={band}/>{badge}
+      <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(160deg,#0d0d18,#1a0d0d)" }}/>
+      <div aria-hidden="true" style={{ position: "absolute", top: "16%", left: "50%", transform: "translateX(-50%)", fontFamily: FONT_H, fontSize: "2.9em", color: accent, opacity: 0.16, letterSpacing: "0.04em", whiteSpace: "nowrap" }}>{sp.event.replace(" !", "")}</div>
       <div style={{ position: "absolute", top: "10%", left: "50%", transform: "translateX(-50%)", width: "46%", height: "50%" }}><PlayerSilhouette color="#fff" opacity={0.3}/></div>
       <div style={{ position: "absolute", left: 0, right: 0, bottom: "16%", textAlign: "center", zIndex: 2 }}>
-        <div style={{ fontFamily: FONT_H, fontSize: "2.4em", lineHeight: 1, letterSpacing: "0.03em", textShadow: "0 0 24px rgba(0,0,0,.6)" }}>BUT !</div>
-        <div style={{ fontFamily: FONT_M, fontSize: "0.62em", color: accent, letterSpacing: "0.14em", textTransform: "uppercase", marginTop: 4 }}>M. Rodriguez · #9</div>
+        <div style={{ fontFamily: FONT_H, fontSize: "2.1em", lineHeight: 1, letterSpacing: "0.03em", textShadow: "0 0 24px rgba(0,0,0,.6)" }}>{sp.event}</div>
+        <div style={{ fontFamily: FONT_M, fontSize: "0.58em", color: accent, letterSpacing: "0.12em", textTransform: "uppercase", marginTop: 4 }}>{sp.who}</div>
       </div>
       <div style={{ position: "absolute", left: 0, right: 0, bottom: "6%", display: "flex", justifyContent: "center", gap: 10, alignItems: "center", fontFamily: FONT_H, fontSize: "1em", zIndex: 2 }}>
         <span>1</span><span style={{ opacity: 0.35, fontSize: "0.7em" }}>—</span><span>0</span>
@@ -359,22 +465,73 @@ function VisualCardBody({ type, accent }) {
     </div>
   );
 
+  if (type === "perf") return (
+    <div style={box}>
+      <div style={band}/>{badge}
+      <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(160deg,#08131a,#0a0a12)" }}/>
+      <div style={{ position: "absolute", top: "11%", left: "50%", transform: "translateX(-50%)", width: "48%", height: "44%" }}><PlayerSilhouette color="#fff" opacity={0.28}/></div>
+      <div aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: "50%", background: "linear-gradient(to top,rgba(0,0,0,.92),transparent)" }}/>
+      <div style={{ position: "absolute", left: "8%", right: "8%", bottom: "10%", zIndex: 2, textAlign: "center" }}>
+        <div style={{ fontFamily: FONT_M, fontSize: "0.55em", letterSpacing: "0.22em", color: accent, textTransform: "uppercase", fontWeight: 500 }}>{sp.chronoTag}</div>
+        <div style={{ fontFamily: FONT_H, fontSize: "2.1em", lineHeight: 1, marginTop: 6, letterSpacing: "0.02em" }}>{sp.chrono}</div>
+        <div style={{ fontFamily: FONT_M, fontSize: "0.58em", color: "rgba(255,255,255,.66)", marginTop: 6, letterSpacing: "0.08em" }}>{sp.who}</div>
+      </div>
+      {mark}
+    </div>
+  );
+
+  if (type === "podium") return (
+    <div style={box}>
+      <div style={band}/>{badge}
+      <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,#0e0e18,#08080e)" }}/>
+      <div style={{ position: "absolute", left: "8%", right: "8%", top: "16%", zIndex: 2 }}>
+        <div style={{ fontFamily: FONT_H, fontSize: "1.7em", letterSpacing: "0.14em", textAlign: "center" }}>PODIUM</div>
+        <div style={{ fontFamily: FONT_M, fontSize: "0.52em", color: accent, letterSpacing: "0.1em", textAlign: "center", marginTop: 4, textTransform: "uppercase" }}>{sp.comp}</div>
+        <div style={{ marginTop: "1.4em", display: "grid", gap: "0.55em" }}>
+          {(sp.podium || []).map(([rk, nom, tps], i) => (
+            <div key={rk} style={{ display: "flex", alignItems: "baseline", gap: "0.4em", fontFamily: FONT_M, fontSize: i === 0 ? "0.66em" : "0.6em", color: i === 0 ? "#f5c542" : i === 1 ? "#d8d8d8" : "#cd8b5a" }}>
+              <span style={{ fontFamily: FONT_H, fontSize: "1.5em" }}>{rk}</span>
+              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nom}</span>
+              <span style={{ opacity: 0.85 }}>{tps}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{ position: "absolute", left: 0, right: 0, bottom: "8%", textAlign: "center", fontFamily: FONT_M, fontSize: "0.5em", color: "rgba(255,255,255,.4)", letterSpacing: "0.1em", zIndex: 2 }}>{sp.venue}</div>
+      {mark}
+    </div>
+  );
+
   if (type === "result") return (
     <div style={box}>
-      <div style={band}/>{badge("FC")}
+      <div style={band}/>{badge}
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,#0a1410,#080d0b)" }}/>
       <div style={{ position: "absolute", top: 10, right: 10, width: 22, height: 22, borderRadius: 3, border: "1px solid rgba(255,255,255,.28)", zIndex: 3 }}/>
       <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 2 }}>
-        <div style={{ fontFamily: FONT_M, fontSize: "0.6em", letterSpacing: "0.2em", color: "rgba(255,255,255,.45)", textTransform: "uppercase" }}>Score final</div>
-        <div style={{ fontFamily: FONT_H, fontSize: "0.9em", letterSpacing: "0.16em", color: accent, marginTop: 10 }}>VICTOIRE</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 6 }}>
-          <span style={{ fontFamily: FONT_H, fontSize: "3em", lineHeight: 1 }}>3</span>
-          <span style={{ opacity: 0.3, fontSize: "1.2em" }}>—</span>
-          <span style={{ fontFamily: FONT_H, fontSize: "3em", lineHeight: 1 }}>1</span>
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between", width: "80%", marginTop: 10, fontFamily: FONT_H, fontSize: "0.72em", letterSpacing: "0.06em", opacity: 0.8 }}>
-          <span>MON CLUB</span><span>ADVERSAIRE</span>
-        </div>
+        <div style={{ fontFamily: FONT_M, fontSize: "0.55em", letterSpacing: "0.2em", color: "rgba(255,255,255,.45)", textTransform: "uppercase" }}>{sp.pitch ? "Score final" : "Résultats"}</div>
+        <div style={{ fontFamily: FONT_H, fontSize: "0.9em", letterSpacing: "0.16em", color: accent, marginTop: 10 }}>{sp.pitch ? "VICTOIRE" : "3 PODIUMS"}</div>
+        {sp.pitch ? (
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 6 }}>
+              <span style={{ fontFamily: FONT_H, fontSize: "2.7em", lineHeight: 1 }}>3</span>
+              <span style={{ opacity: 0.3, fontSize: "1.1em" }}>—</span>
+              <span style={{ fontFamily: FONT_H, fontSize: "2.7em", lineHeight: 1 }}>1</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", width: "80%", marginTop: 10, fontFamily: FONT_H, fontSize: "0.68em", letterSpacing: "0.06em", opacity: 0.8 }}>
+              <span>MON CLUB</span><span>ADVERSAIRE</span>
+            </div>
+          </>
+        ) : (
+          <div style={{ width: "78%", marginTop: "1em", display: "grid", gap: "0.5em" }}>
+            {(sp.podium || []).map(([rk, nom, tps]) => (
+              <div key={rk} style={{ display: "flex", gap: "0.4em", fontFamily: FONT_M, fontSize: "0.56em", color: "rgba(255,255,255,.8)" }}>
+                <span style={{ color: accent }}>{rk}</span>
+                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nom}</span>
+                <span>{tps}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       {mark}
     </div>
@@ -385,16 +542,22 @@ function VisualCardBody({ type, accent }) {
       <div style={band}/>
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(200deg,#0a0f1a,#0a0a10)" }}/>
       <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 2, padding: "0 8%" }}>
-        <div style={{ fontFamily: FONT_M, fontSize: "0.55em", letterSpacing: "0.2em", color: "rgba(255,255,255,.4)", textTransform: "uppercase" }}>2e ligue · J12</div>
-        <div style={{ fontFamily: FONT_H, fontSize: "1.45em", lineHeight: 1.05, marginTop: 14, textAlign: "center", overflowWrap: "anywhere" }}>MON CLUB</div>
-        <div style={{ fontFamily: FONT_M, fontStyle: "italic", fontSize: "0.9em", color: "rgba(255,255,255,.35)", margin: "4px 0" }}>vs</div>
-        <div style={{ fontFamily: FONT_H, fontSize: "1.45em", lineHeight: 1.05, textAlign: "center", color: accent, overflowWrap: "anywhere" }}>ADVERSAIRE</div>
+        <div style={{ fontFamily: FONT_M, fontSize: "0.5em", letterSpacing: "0.16em", color: "rgba(255,255,255,.4)", textTransform: "uppercase", textAlign: "center" }}>{sp.comp}</div>
+        <div style={{ fontFamily: FONT_H, fontSize: "1.4em", lineHeight: 1.05, marginTop: 14, textAlign: "center", overflowWrap: "anywhere" }}>MON CLUB</div>
+        {sp.pitch ? (
+          <>
+            <div style={{ fontFamily: FONT_M, fontStyle: "italic", fontSize: "0.85em", color: "rgba(255,255,255,.35)", margin: "4px 0" }}>vs</div>
+            <div style={{ fontFamily: FONT_H, fontSize: "1.4em", lineHeight: 1.05, textAlign: "center", color: accent, overflowWrap: "anywhere" }}>ADVERSAIRE</div>
+          </>
+        ) : (
+          <div style={{ fontFamily: FONT_H, fontSize: "1.05em", lineHeight: 1.15, textAlign: "center", color: accent, marginTop: 8 }}>7 ENGAGÉS</div>
+        )}
         <div style={{ display: "flex", gap: 26, marginTop: 18 }}>
           <div style={{ width: 26, height: 26, borderRadius: 3, background: accent }}/>
-          <div style={{ width: 26, height: 26, borderRadius: 3, border: "1px solid rgba(255,255,255,.28)" }}/>
+          {sp.pitch && <div style={{ width: 26, height: 26, borderRadius: 3, border: "1px solid rgba(255,255,255,.28)" }}/>}
         </div>
-        <div style={{ fontFamily: FONT_M, fontSize: "0.6em", color: "rgba(255,255,255,.6)", marginTop: 18, letterSpacing: "0.08em" }}>Samedi 12 avril · 17h00</div>
-        <div style={{ fontFamily: FONT_M, fontSize: "0.55em", color: "rgba(255,255,255,.3)", marginTop: 3, letterSpacing: "0.08em" }}>Stade municipal</div>
+        <div style={{ fontFamily: FONT_M, fontSize: "0.56em", color: "rgba(255,255,255,.6)", marginTop: 18, letterSpacing: "0.08em" }}>Samedi 12 avril · 17h00</div>
+        <div style={{ fontFamily: FONT_M, fontSize: "0.5em", color: "rgba(255,255,255,.3)", marginTop: 3, letterSpacing: "0.08em" }}>{sp.venue}</div>
       </div>
       {mark}
     </div>
@@ -404,35 +567,34 @@ function VisualCardBody({ type, accent }) {
     <div style={box}>
       <div style={band}/>
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,#07110b,#050a07)" }}/>
-      <div aria-hidden="true" style={{ position: "absolute", inset: "14% 8% 16%", border: "1px solid rgba(255,255,255,.09)" }}>
-        <div style={{ position: "absolute", top: "50%", left: 0, right: 0, height: 1, background: "rgba(255,255,255,.09)" }}/>
-        <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: "34%", aspectRatio: "1", borderRadius: "50%", border: "1px solid rgba(255,255,255,.09)" }}/>
-      </div>
-      <div style={{ position: "absolute", top: "6%", left: 0, right: 0, textAlign: "center", fontFamily: FONT_H, fontSize: "0.95em", letterSpacing: "0.14em", zIndex: 2 }}>COMPOSITION</div>
+      <MiniPitch kind={sp.pitch} accent={accent}/>
+      <div style={{ position: "absolute", top: "6%", left: 0, right: 0, textAlign: "center", fontFamily: FONT_H, fontSize: "0.85em", letterSpacing: "0.12em", zIndex: 2 }}>{sp.lineupTitle}</div>
       <div style={{ position: "absolute", inset: "16% 10% 18%", display: "flex", flexDirection: "column", justifyContent: "space-around", zIndex: 2 }}>
-        {[[9],[7,10,11],[4,6,8],[2,5,3,16],[1]].map((row, ri) => (
-          <div key={ri} style={{ display: "flex", justifyContent: "center", gap: "7%" }}>
+        {sp.rows.map((row, ri) => (
+          <div key={ri} style={{ display: "flex", justifyContent: "center", gap: "6%" }}>
             {row.map(n => (
-              <div key={n} style={{ width: "0.85em", height: "0.85em", borderRadius: "50%", background: "rgba(255,255,255,.1)", border: "1px solid " + accent, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT_H, fontSize: "0.55em" }}>{n}</div>
+              <div key={n} style={{ width: "0.85em", height: "0.85em", borderRadius: "50%", background: "rgba(255,255,255,.1)", border: "1px solid " + accent, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT_H, fontSize: "0.5em" }}>{n}</div>
             ))}
           </div>
         ))}
       </div>
-      <div style={{ position: "absolute", bottom: "7%", left: 0, right: 0, textAlign: "center", fontFamily: FONT_M, fontSize: "0.55em", letterSpacing: "0.14em", color: accent, textTransform: "uppercase", zIndex: 2 }}>4-3-3 · vs Adversaire</div>
+      <div style={{ position: "absolute", bottom: "7%", left: 0, right: 0, textAlign: "center", fontFamily: FONT_M, fontSize: "0.5em", letterSpacing: "0.12em", color: accent, textTransform: "uppercase", zIndex: 2 }}>{sp.formation}</div>
       {mark}
     </div>
   );
 
   if (type === "recruit") return (
     <div style={box}>
-      <div style={band}/>{badge("FC")}
+      <div style={band}/>{badge}
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(165deg,#140a18,#0a0a12)" }}/>
       <div style={{ position: "absolute", top: "8%", left: "50%", transform: "translateX(-50%)", width: "58%", height: "56%" }}><PlayerSilhouette color="#fff" opacity={0.3}/></div>
       <div aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: "44%", background: "linear-gradient(to top,rgba(0,0,0,.92),transparent)" }}/>
       <div style={{ position: "absolute", left: "8%", right: "8%", bottom: "9%", zIndex: 2 }}>
-        <div style={{ fontFamily: FONT_M, fontSize: "0.55em", letterSpacing: "0.24em", color: accent, textTransform: "uppercase", fontWeight: 500 }}>Nouvelle recrue</div>
-        <div style={{ fontFamily: FONT_H, fontSize: "1.45em", lineHeight: 1.02, marginTop: 6, overflowWrap: "anywhere" }}>THOMAS<br/>MARCHAND</div>
-        <div style={{ fontFamily: FONT_M, fontSize: "0.6em", color: "rgba(255,255,255,.6)", marginTop: 6, letterSpacing: "0.1em" }}>Milieu · #8</div>
+        <div style={{ fontFamily: FONT_M, fontSize: "0.52em", letterSpacing: "0.22em", color: accent, textTransform: "uppercase", fontWeight: 500 }}>{sp.recruitTag}</div>
+        <div style={{ fontFamily: FONT_H, fontSize: "1.35em", lineHeight: 1.02, marginTop: 6, overflowWrap: "anywhere" }}>
+          {sp.recruitName.split("<br/>").map((l, i) => <div key={i}>{l}</div>)}
+        </div>
+        <div style={{ fontFamily: FONT_M, fontSize: "0.55em", color: "rgba(255,255,255,.6)", marginTop: 6, letterSpacing: "0.08em" }}>{sp.recruitPos}</div>
       </div>
       {mark}
     </div>
@@ -446,10 +608,10 @@ function VisualCardBody({ type, accent }) {
       <div style={{ position: "absolute", left: "8%", right: "8%", top: "40%", zIndex: 2 }}>
         <div style={{ fontFamily: FONT_H, fontSize: "1.45em", lineHeight: 1.02, letterSpacing: "0.02em" }}>MATCH<br/>REPORTÉ</div>
         <div style={{ width: 28, height: 2, background: accent, margin: "12px 0" }}/>
-        <div style={{ fontFamily: FONT_BODY, fontSize: "0.62em", lineHeight: 1.6, color: "rgba(255,255,255,.62)", fontWeight: 300 }}>
-          Le match de dimanche est reporté au samedi 18 mai, 15h00. Merci de votre compréhension.
+        <div style={{ fontFamily: FONT_BODY, fontSize: "0.6em", lineHeight: 1.6, color: "rgba(255,255,255,.62)", fontWeight: 300 }}>
+          Reporté au samedi 18 mai, 15h00. Merci de votre compréhension.
         </div>
-        <div style={{ fontFamily: FONT_M, fontSize: "0.55em", color: accent, marginTop: 12, letterSpacing: "0.1em" }}>#MonClub</div>
+        <div style={{ fontFamily: FONT_M, fontSize: "0.52em", color: accent, marginTop: 12, letterSpacing: "0.1em" }}>#MonClub</div>
       </div>
       {mark}
     </div>
@@ -480,6 +642,8 @@ export default function Landing({ onEnter }) {
   const [openFaq, setOpenFaq] = useState(null);
   const [billing, setBilling] = useState("mois");
   const [legalTab, setLegalTab] = useState("cgu");
+  const [exSportId, setExSportId] = useState("football");
+  const exSport = LANDING_SPORTS.find(x => x.id === exSportId) || LANDING_SPORTS[0];
   useEffect(() => { injectFontsAndStyles(); }, []);
   const handleEnter = (mode) => (e) => { if (e) e.preventDefault(); if (onEnter) onEnter(mode); };
 
@@ -518,7 +682,7 @@ export default function Landing({ onEnter }) {
             En 30s.
           </h1>
           <p className="viz-up" style={{ marginTop: 36, fontSize: 14, color: C.tx2, lineHeight: 1.8, fontWeight: 300, maxWidth: 440, position: "relative", zIndex: 1, animationDelay: ".4s" }}>
-            Le sifflet vient de retentir. Le temps de rejoindre le vestiaire, l'affiche du score est publiée — à vos couleurs, avec le bon joueur, au bon format. {BASELINE}
+            Le sifflet vient de retentir. Le temps de rejoindre le vestiaire, l'affiche du résultat est publiée — à vos couleurs, avec le bon nom, au bon format. Football, rugby, hockey, basket, handball, natation, triathlon : l'app parle la langue de votre discipline.
           </p>
           <div className="viz-up" style={{ marginTop: 52, display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", position: "relative", zIndex: 1, animationDelay: ".55s" }}>
             <a href="#" onClick={handleEnter("login")} className="viz-btn-text" style={{ background: "transparent", color: C.bk, border: "1.5px solid " + C.bk, padding: "13px 28px", borderRadius: 1, fontSize: 11, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", textDecoration: "none", transition: "all .2s" }}>Se connecter</a>
@@ -596,9 +760,9 @@ export default function Landing({ onEnter }) {
           </div>
           {/* Wide tags */}
           <div style={{ gridColumn: "1 / -1", background: "#0d0d0d", padding: "18px 24px", display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: FONT_M, fontSize: 9, color: "rgba(250,250,250,0.45)", letterSpacing: "0.16em", textTransform: "uppercase" }}>Types de visuels</span>
+            <span style={{ fontFamily: FONT_M, fontSize: 9, color: "rgba(250,250,250,0.45)", letterSpacing: "0.16em", textTransform: "uppercase" }}>Sports pris en charge</span>
             <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
-              {["But","Score","Composition","Groupe","Recrue","Affiche","Annonce"].map(t => (
+              {["Football","Rugby","Hockey","Basket","Handball","Natation","Triathlon"].map(t => (
                 <span key={t} style={{ background: "#161616", color: "rgba(250,250,250,0.6)", padding: "4px 11px", borderRadius: 1, fontFamily: FONT_M, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase" }}>{t}</span>
               ))}
             </div>
@@ -664,27 +828,48 @@ export default function Landing({ onEnter }) {
       {/* ─── EXEMPLES ─── */}
       <section id="examples" className="viz-features" style={{ background: C.bk, padding: "120px 52px", borderTop: "1px solid " + C.bdLite }}>
         <div style={{ maxWidth: 1340, margin: "0 auto" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 64, paddingBottom: 36, borderBottom: "1px solid rgba(250,250,250,0.12)", gap: 24, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 40, paddingBottom: 36, borderBottom: "1px solid rgba(250,250,250,0.12)", gap: 24, flexWrap: "wrap" }}>
             <div>
               <div style={{ fontFamily: FONT_M, fontSize: 10, color: "rgba(250,250,250,0.5)", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 14 }}>Exemples</div>
               <h2 style={{ fontFamily: FONT_H, fontSize: "clamp(48px, 5.5vw, 76px)", letterSpacing: "0.02em", lineHeight: 0.9, fontWeight: 400, margin: 0, color: C.wh }}>
-                Ce que vous<br/>
-                <em style={{ fontStyle: "normal", color: "transparent", WebkitTextStroke: "1px " + C.wh }}>publiez.</em>
+                Choisissez<br/>
+                <em style={{ fontStyle: "normal", color: "transparent", WebkitTextStroke: "1px " + C.wh }}>votre sport.</em>
               </h2>
             </div>
-            <p style={{ fontSize: 13, color: "rgba(250,250,250,0.55)", lineHeight: 1.8, fontWeight: 300, maxWidth: 320, margin: 0 }}>
-              Sept types de visuels, dix-huit gabarits. Chacun reprend le logo et les deux couleurs de votre club — c'est ce qui change d'une carte à l'autre ci-dessous.
+            <p style={{ fontSize: 13, color: "rgba(250,250,250,0.55)", lineHeight: 1.8, fontWeight: 300, maxWidth: 340, margin: 0 }}>
+              L'app parle la langue de votre discipline. Le vocabulaire, les postes, le tracé du terrain et les types de visuels changent avec le sport — voyez vous-même.
             </p>
           </div>
+
+          {/* Sélecteur de sport : change réellement le contenu des cartes */}
+          <div className="viz-sport-tabs" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 34 }}>
+            {LANDING_SPORTS.map(sp => {
+              const on = sp.id === exSport.id;
+              return (
+                <button key={sp.id} onClick={() => setExSportId(sp.id)}
+                  style={{ display: "flex", alignItems: "center", gap: 8, background: on ? sp.accent : "transparent", border: "1px solid " + (on ? sp.accent : "rgba(250,250,250,0.22)"), color: on ? "#fff" : "rgba(250,250,250,0.68)", borderRadius: 1, padding: "9px 16px", fontFamily: FONT_BODY, fontSize: 12, fontWeight: on ? 700 : 500, letterSpacing: "0.06em", cursor: "pointer", transition: "all .18s" }}>
+                  <span style={{ fontSize: 15, lineHeight: 1 }}>{sp.icon}</span>{sp.label}
+                </button>
+              );
+            })}
+          </div>
+
           <div className="viz-ex-grid" style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 16 }}>
-            {EXAMPLES.map(ex => (
-              <div key={ex.type}>
-                <VisualCard type={ex.type} accent={ex.accent}/>
-                <div style={{ fontFamily: FONT_M, fontSize: 9, color: "rgba(250,250,250,0.5)", letterSpacing: "0.16em", textTransform: "uppercase", marginTop: 12 }}>{ex.label}</div>
+            {exSport.cards.map(type => (
+              <div key={type}>
+                <VisualCard type={type} sp={exSport}/>
+                <div style={{ fontFamily: FONT_M, fontSize: 9, color: "rgba(250,250,250,0.5)", letterSpacing: "0.16em", textTransform: "uppercase", marginTop: 12 }}>{cardLabel(exSport.id, type)}</div>
               </div>
             ))}
           </div>
-          <div style={{ marginTop: 48, paddingTop: 32, borderTop: "1px solid rgba(250,250,250,0.12)", display: "flex", gap: 40, flexWrap: "wrap", alignItems: "center" }}>
+
+          <p style={{ fontSize: 12, color: "rgba(250,250,250,0.4)", lineHeight: 1.7, fontWeight: 300, marginTop: 26, maxWidth: 620 }}>
+            {exSport.pitch
+              ? "Sport collectif : composition sur le tracé de votre aire de jeu, convocation, célébration d'action."
+              : "Sport individuel : ni composition ni score d'équipe, mais chrono, record personnel et podium — les visuels que vous publiez vraiment."}
+          </p>
+
+          <div style={{ marginTop: 44, paddingTop: 32, borderTop: "1px solid rgba(250,250,250,0.12)", display: "flex", gap: 40, flexWrap: "wrap", alignItems: "center" }}>
             <span style={{ fontFamily: FONT_M, fontSize: 9, color: "rgba(250,250,250,0.45)", letterSpacing: "0.16em", textTransform: "uppercase" }}>Un visuel, trois formats</span>
             {[["Story", "9 : 16", "Instagram, TikTok"], ["Post", "4 : 5", "Fil Instagram"], ["Carré", "1 : 1", "Facebook, X"]].map(([n, r, u]) => (
               <div key={n} style={{ display: "flex", alignItems: "center", gap: 12 }}>
