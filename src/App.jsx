@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import { supabase } from "./supabase";
 import { compressImageFile, removeBackground, dominantBorderColor, isImageFile, formatBytes, makeThumbnail, TOLERANCE_PRESETS, MAX_SOURCE_BYTES } from "./imaging";
+import { SPORT_LIST, DEFAULT_SPORT, getSport, termsFor, ctypesFor, ctypeInfo } from "./sports";
 // ─── BOTTOM SHEET SWIPE-TO-DISMISS ────────────────────────────
 // Helper module-level pour pouvoir être utilisé dans DragCanvas comme dans App.
 function makeSwipeClose(onClose){
@@ -104,7 +105,7 @@ const HISTORY_PAGE_SIZE = 60;
 function fmt(id){ return FORMATS[id]||FORMATS[DEFAULT_FORMAT]; }
 // Les formats ne concernent que l'éditeur libre (but, score, affiche, recrue,
 // annonce). Composition XI et Groupe ont des gabarits dessinés en 9:16.
-const FORMAT_TYPES = ["goal","result","match","recruit","post"];
+const FORMAT_TYPES = ["goal","result","match","recruit","post","perf","podium"];
 // Au changement de format, les tailles de texte suivent la hauteur du canvas
 // pour que rien ne déborde de son cadre.
 function scaleLayersToFormat(layers,fromId,toId){
@@ -137,7 +138,13 @@ function sortPhotos(list){
 // Les textes par défaut des gabarits : on ne les écrase que tant qu'ils n'ont
 // pas été personnalisés (ou qu'ils portent encore le joueur précédent).
 const NAME_PLACEHOLDERS = ["","prénom nom","prenom nom","nom du joueur"];
-const POS_PLACEHOLDERS  = ["","attaquant · #9","poste · #9","attaquant · #0"];
+function posPlaceholders(sport){
+  const sp=getSport(sport), T=termsFor(sport);
+  // Le texte par défaut du gabarit, plus les variantes des autres sports :
+  // changer de sport ne doit pas figer un ancien libellé.
+  const own=(sp.defaultPosition+" · #"+T.numberPlaceholder).toLowerCase();
+  return ["", own, "attaquant · #9", "poste · #9"];
+}
 function norm(s){ return (s||"").trim().toLowerCase(); }
 function playerPosLabel(p){
   if(!p) return "";
@@ -146,7 +153,8 @@ function playerPosLabel(p){
 }
 function isNameLayer(l){ return l.id==="nm"||/nom\s*(du\s*)?joueur/i.test(l.label||""); }
 function isPosLayer(l){ return l.id==="ps"||/^poste/i.test(l.label||""); }
-function applyPlayerToLayers(layers,player,prevPlayer){
+function applyPlayerToLayers(layers,player,prevPlayer,sport){
+  const POS_PLACEHOLDERS=posPlaceholders(sport);
   if(!player) return layers;
   const name=player.name||"";
   const pos=playerPosLabel(player);
@@ -162,34 +170,23 @@ function applyPlayerToLayers(layers,player,prevPlayer){
   });
 }
 
-const POSITIONS = ["Attaquant","Milieu","Défenseur","Gardien"];
 const FONTS = ["Impact","Arial Black","Georgia","Helvetica Neue","Courier New","Montserrat"];
-const FORMATIONS = {
-  "4-4-2": [{n:1},{n:4},{n:4},{n:2}],
-  "4-3-3": [{n:1},{n:4},{n:3},{n:3}],
-  "4-2-3-1":[{n:1},{n:4},{n:2},{n:3},{n:1}],
-  "3-5-2": [{n:1},{n:3},{n:5},{n:2}],
-  "5-3-2": [{n:1},{n:5},{n:3},{n:2}],
-  "3-4-3": [{n:1},{n:3},{n:4},{n:3}],
-};
-const CTYPES = [
-  {id:"goal",   icon:"⚽", label:"But",             desc:"Célébration d'un but"},
-  {id:"result", icon:"🏁", label:"Score Final",      desc:"Résultat du match"},
-  {id:"match",  icon:"📅", label:"Affiche Match",    desc:"Avant-match"},
-  {id:"group",  icon:"📋", label:"Groupe",           desc:"Convocation officielle"},
-  {id:"lineup", icon:"🎽", label:"Composition XI",   desc:"11 de départ"},
-  {id:"recruit",icon:"⭐", label:"Nouvelle Recrue",  desc:"Arrivée d'un joueur"},
-  {id:"post",   icon:"📢", label:"Poste / Annonce",  desc:"Publication libre"},
-];
-const NAV = [
-  {id:"home",    icon:"🏠", label:"Accueil"},
-  {id:"club",    icon:"🏟️", label:"Mon Club"},
-  {id:"players", icon:"👥", label:"Joueurs"},
-  {id:"media",   icon:"🖼️", label:"Médias"},
-  {id:"create",  icon:"✨", label:"Créer"},
-  {id:"history", icon:"📁", label:"Historique"},
-  {id:"settings",icon:"⚙️", label:"Paramètres"},
-];
+// Postes, formations et types de visuels dépendent désormais du sport du club :
+// voir src/sports.js. Ces helpers évitent de trimballer l'objet sport partout.
+function positionsFor(sport){ return getSport(sport).positions; }
+function formationsFor(sport){ return getSport(sport).formations||{}; }
+function firstFormation(sport){ const f=Object.keys(formationsFor(sport)); return f[0]||"4-4-2"; }
+function navFor(terms){
+  return [
+    {id:"home",    icon:"🏠", label:"Accueil"},
+    {id:"club",    icon:"🏟️", label:"Mon Club"},
+    {id:"players", icon:"👥", label:terms.players},
+    {id:"media",   icon:"🖼️", label:"Médias"},
+    {id:"create",  icon:"✨", label:"Créer"},
+    {id:"history", icon:"📁", label:"Historique"},
+    {id:"settings",icon:"⚙️", label:"Paramètres"},
+  ];
+}
 // ─── URL ROUTING ──────────────────────────────────────────────
 // Map bidirectionnelle entre l'id de section et le path URL.
 const NAV_PATHS = {
@@ -280,7 +277,8 @@ function buildTheme(c1,c2,mode){
 }
 // ─── LAYER DEFAULTS ───────────────────────────────────────────
 const TD = {font:"Impact",bold:false,italic:false,upper:false,letterSpacing:0,lineHeight:1.2,bgColor:"#000000",bgOpacity:0,textShadow:8,align:"center",curve:0};
-function makeLayers(type,c1,c2){
+function makeLayers(type,c1,c2,sport){
+  const T=termsFor(sport);
   function L(id,z,tp,x,y,w,h,label,extra){
     return Object.assign({id,z,type:tp,x,y,w,h,locked:false,label},extra||{});
   }
@@ -288,48 +286,73 @@ function makeLayers(type,c1,c2){
     goal:[
       L("bg",0,"bg",0,0,100,100,"Fond",{locked:true}),
       L("ov",1,"overlay",0,0,100,100,"Assombrissement",{locked:true,opacity:70}),
-      L("wm",2,"watertext",-5,18,110,32,"Filigrane",Object.assign({},TD,{text:"BUT",fontSize:120,color:c1,opacity:12})),
-      L("pl",3,"photo",5,5,90,72,"Photo joueur"),
+      L("wm",2,"watertext",-5,18,110,32,"Filigrane",Object.assign({},TD,{text:T.scoreEventShort,fontSize:120,color:c1,opacity:12})),
+      L("pl",3,"photo",5,5,90,72,"Photo "+T.playerLower),
       L("lg",4,"logo",4,4,13,13,"Logo club"),
       L("st",5,"stripe",0,0,100,1.5,"Bande",{color:c1,color2:c2}),
-      L("bt",6,"text",4,73,92,14,"Texte BUT",Object.assign({},TD,{text:"BUT !",fontSize:58,color:"#ffffff",bold:true})),
-      L("nm",7,"text",4,86,92,8,"Nom joueur",Object.assign({},TD,{text:"Prénom Nom",fontSize:22,color:c2})),
+      L("bt",6,"text",4,73,92,14,"Texte principal",Object.assign({},TD,{text:T.scoreEvent,fontSize:58,color:"#ffffff",bold:true})),
+      L("nm",7,"text",4,86,92,8,"Nom "+T.playerLower,Object.assign({},TD,{text:"Prénom Nom",fontSize:22,color:c2})),
       L("sc",8,"scoreblock",18,92,64,7,"Score",{font:"Impact",color:c1,scoreHome:"1",scoreAway:"0"}),
     ],
     result:[
       L("bg",0,"bg",0,0,100,100,"Fond",{locked:true}),
       L("ov",1,"overlay",0,0,100,100,"Assombrissement",{locked:true,opacity:65}),
-      L("pl",2,"photo",5,5,90,62,"Photo joueur"),
+      L("pl",2,"photo",5,5,90,62,"Photo "+T.playerLower),
       L("lg",3,"logo",4,4,12,12,"Logo club"),
       L("lg2",4,"logo2",84,4,12,12,"Logo adversaire"),
       L("st",5,"stripe",0,0,100,1.5,"Bande",{color:c1,color2:c2}),
       L("lb",6,"text",10,5,75,7,"Étiquette",Object.assign({},TD,{text:"SCORE FINAL",fontSize:18,color:"rgba(255,255,255,0.8)",italic:true})),
       L("rl",7,"resultlabel",8,66,84,6,"Résultat auto",{scoreHome:"0",scoreAway:"0"}),
       L("sb",8,"scorebig",4,71,92,17,"Score",{font:"Impact",color:"#ffffff",scoreHome:"2",scoreAway:"0",fontSize:44}),
-      L("op",9,"text",8,88,84,6,"Adversaire",Object.assign({},TD,{text:"vs Adversaire",fontSize:14,color:"rgba(255,255,255,0.4)"})),
+      L("op",9,"text",8,88,84,6,T.opponent,Object.assign({},TD,{text:"vs "+T.opponent,fontSize:14,color:"rgba(255,255,255,0.4)"})),
     ],
     match:[
       L("bg",0,"bg",0,0,100,100,"Fond",{locked:true}),
       L("ov",1,"overlay",0,0,100,100,"Assombrissement",{locked:true,opacity:58}),
       L("st",2,"stripe",0,0,100,1.5,"Bande",{color:c1,color2:c2}),
-      L("cp",3,"text",8,6,84,6,"Compétition",Object.assign({},TD,{text:"LIGUE 1",fontSize:11,color:"rgba(255,255,255,0.4)"})),
+      L("cp",3,"text",8,6,84,6,"Compétition",Object.assign({},TD,{text:T.competitionPlaceholder.toUpperCase(),fontSize:11,color:"rgba(255,255,255,0.4)"})),
       L("cn",4,"text",4,22,92,16,"Mon club",Object.assign({},TD,{text:"MON CLUB",fontSize:40,color:"#ffffff",bold:true})),
       L("vs",5,"text",26,38,48,10,"VS",Object.assign({},TD,{text:"vs",fontSize:26,color:"rgba(255,255,255,0.35)",italic:true})),
-      L("op",6,"text",4,47,92,13,"Adversaire",Object.assign({},TD,{text:"Adversaire",fontSize:32,color:"#ffffff",bold:true,italic:true})),
+      L("op",6,"text",4,47,92,13,T.opponent,Object.assign({},TD,{text:T.opponent,fontSize:32,color:"#ffffff",bold:true,italic:true})),
       L("lg",7,"logo",3,62,14,14,"Logo club"),
-      L("lg2",8,"logo2",83,62,14,14,"Logo adversaire"),
+      L("lg2",8,"logo2",83,62,14,14,"Logo "+T.opponent.toLowerCase()),
       L("dt",9,"text",4,78,92,7,"Date",Object.assign({},TD,{text:"Samedi 12 Avril · 21h00",fontSize:14,color:"rgba(255,255,255,0.6)"})),
-      L("vn",10,"text",4,85,92,6,"Stade",Object.assign({},TD,{text:"Nom du stade",fontSize:12,color:"rgba(255,255,255,0.28)"})),
+      L("vn",10,"text",4,85,92,6,T.venue,Object.assign({},TD,{text:"Nom du lieu",fontSize:12,color:"rgba(255,255,255,0.28)"})),
     ],
     recruit:[
       L("bg",0,"bg",0,0,100,100,"Fond",{locked:true}),
       L("ov",1,"overlay",0,0,100,100,"Assombrissement",{locked:true,opacity:52}),
       L("st",2,"stripe",0,0,100,1.5,"Bande",{color:c1,color2:c2}),
-      L("pl",3,"photo",5,4,90,66,"Photo joueur"),
+      L("pl",3,"photo",5,4,90,66,"Photo "+T.playerLower),
       L("lg",4,"logo",4,4,12,12,"Logo club"),
-      L("tg",5,"text",6,72,88,6,"Étiquette",Object.assign({},TD,{text:"NOUVELLE RECRUE",fontSize:11,color:c1,bold:true,letterSpacing:4})),
-      L("nm",6,"text",6,78,88,13,"Nom joueur",Object.assign({},TD,{text:"Prénom Nom",fontSize:32,color:"#ffffff",bold:true})),
-      L("ps",7,"text",6,90,88,7,"Poste",Object.assign({},TD,{text:"Attaquant · #9",fontSize:14,color:c2})),
+      L("tg",5,"text",6,72,88,6,"Étiquette",Object.assign({},TD,{text:ctypeInfo(sport,"recruit").label.toUpperCase(),fontSize:11,color:c1,bold:true,letterSpacing:4})),
+      L("nm",6,"text",6,78,88,13,"Nom "+T.playerLower,Object.assign({},TD,{text:"Prénom Nom",fontSize:32,color:"#ffffff",bold:true})),
+      L("ps",7,"text",6,90,88,7,T.positionLabel,Object.assign({},TD,{text:getSport(sport).defaultPosition+" · #"+T.numberPlaceholder,fontSize:14,color:c2})),
+    ],
+    // Chrono / record : le « but » des sports individuels.
+    perf:[
+      L("bg",0,"bg",0,0,100,100,"Fond",{locked:true}),
+      L("ov",1,"overlay",0,0,100,100,"Assombrissement",{locked:true,opacity:66}),
+      L("pl",2,"photo",5,4,90,58,"Photo "+T.playerLower),
+      L("lg",3,"logo",4,4,13,13,"Logo club"),
+      L("st",4,"stripe",0,0,100,1.5,"Bande",{color:c1,color2:c2}),
+      L("tg",5,"text",6,64,88,6,"Étiquette",Object.assign({},TD,{text:"RECORD PERSONNEL",fontSize:11,color:c1,bold:true,letterSpacing:4})),
+      L("tm",6,"text",4,70,92,14,"Chrono",Object.assign({},TD,{text:"00:54:12",fontSize:54,color:"#ffffff",bold:true})),
+      L("nm",7,"text",4,85,92,8,"Nom "+T.playerLower,Object.assign({},TD,{text:"Prénom Nom",fontSize:22,color:"#ffffff"})),
+      L("ds",8,"text",4,92,92,6,"Épreuve",Object.assign({},TD,{text:getSport(sport).defaultPosition,fontSize:13,color:c2})),
+    ],
+    // Podium : trois places, une épreuve.
+    podium:[
+      L("bg",0,"bg",0,0,100,100,"Fond",{locked:true,fillColor:"#0b0b12"}),
+      L("ov",1,"overlay",0,0,100,100,"Assombrissement",{locked:true,opacity:40}),
+      L("st",2,"stripe",0,0,100,1.5,"Bande",{color:c1,color2:c2}),
+      L("lg",3,"logo",4,4,13,13,"Logo club"),
+      L("ti",4,"text",6,20,88,10,"Titre",Object.assign({},TD,{text:"PODIUM",fontSize:44,color:"#ffffff",bold:true,letterSpacing:6})),
+      L("ev",5,"text",6,31,88,6,"Épreuve",Object.assign({},TD,{text:T.competitionPlaceholder,fontSize:14,color:c1})),
+      L("p1",6,"text",8,44,84,8,"1re place",Object.assign({},TD,{text:"1.  Prénom Nom  ·  00:54:12",fontSize:19,color:"#f5c542",align:"left",bold:true})),
+      L("p2",7,"text",8,54,84,8,"2e place",Object.assign({},TD,{text:"2.  Prénom Nom  ·  00:55:47",fontSize:17,color:"#d8d8d8",align:"left"})),
+      L("p3",8,"text",8,64,84,8,"3e place",Object.assign({},TD,{text:"3.  Prénom Nom  ·  00:57:03",fontSize:17,color:"#cd8b5a",align:"left"})),
+      L("dt",9,"text",6,88,88,6,"Date / lieu",Object.assign({},TD,{text:"12 avril · "+T.venue,fontSize:12,color:"rgba(255,255,255,0.45)"})),
     ],
     post:[
       L("bg",0,"bg",0,0,100,100,"Fond",{locked:true,fillColor:"#000000"}),
@@ -487,15 +510,94 @@ function Watermark(){
   // Filigrane non-amovible : pas un calque, pointerEvents:none, hardcodé dans chaque canvas
   return <div aria-hidden="true" style={{position:"absolute",bottom:5,right:6,fontSize:9,color:"rgba(255,255,255,0.92)",background:"rgba(0,0,0,0.42)",padding:"2px 7px",borderRadius:3,fontFamily:"'DM Mono',ui-monospace,system-ui,monospace",letterSpacing:"0.04em",fontWeight:500,whiteSpace:"nowrap",pointerEvents:"none",userSelect:"none",zIndex:999}}>Powered by Viziona</div>;
 }
-function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScale}){
+// ─── TRACÉ DE L'AIRE DE JEU ───────────────────────────────────
+// Football, rugby, patinoire et parquet n'ont pas les mêmes lignes : la
+// composition doit être lisible comme une vraie feuille de match.
+function PitchLines({kind,stroke,dark}){
+  const wrap={position:"absolute",inset:0,width:"100%",height:"100%",opacity:dark?.12:.09,pointerEvents:"none"};
+  if(kind==="rugby") return(
+    <svg style={wrap} viewBox="0 0 270 480">
+      <rect x="18" y="6" width="234" height="375" fill="none" stroke={stroke} strokeWidth="1"/>
+      <line x1="18" y1="193" x2="252" y2="193" stroke={stroke} strokeWidth=".8"/>
+      {/* En-buts + lignes des 22 mètres */}
+      <line x1="18" y1="46" x2="252" y2="46" stroke={stroke} strokeWidth=".7"/>
+      <line x1="18" y1="341" x2="252" y2="341" stroke={stroke} strokeWidth=".7"/>
+      <line x1="18" y1="103" x2="252" y2="103" stroke={stroke} strokeWidth=".5" strokeDasharray="4 4" opacity=".7"/>
+      <line x1="18" y1="284" x2="252" y2="284" stroke={stroke} strokeWidth=".5" strokeDasharray="4 4" opacity=".7"/>
+      {/* Poteaux en H */}
+      <path d="M123 30 V52 M147 30 V52 M123 41 H147" fill="none" stroke={stroke} strokeWidth=".7" opacity=".8"/>
+      <path d="M123 335 V357 M147 335 V357 M123 346 H147" fill="none" stroke={stroke} strokeWidth=".7" opacity=".8"/>
+    </svg>
+  );
+  if(kind==="ice") return(
+    <svg style={wrap} viewBox="0 0 270 480">
+      <rect x="18" y="6" width="234" height="375" rx="46" fill="none" stroke={stroke} strokeWidth="1"/>
+      {/* Ligne rouge médiane et lignes bleues */}
+      <line x1="18" y1="193" x2="252" y2="193" stroke={stroke} strokeWidth="1"/>
+      <line x1="18" y1="132" x2="252" y2="132" stroke={stroke} strokeWidth=".8"/>
+      <line x1="18" y1="254" x2="252" y2="254" stroke={stroke} strokeWidth=".8"/>
+      <ellipse cx="135" cy="193" rx="26" ry="26" fill="none" stroke={stroke} strokeWidth=".8"/>
+      {/* Points d'engagement */}
+      {[[70,70],[200,70],[70,317],[200,317]].map(([cx,cy],i)=>(
+        <ellipse key={i} cx={cx} cy={cy} rx="17" ry="17" fill="none" stroke={stroke} strokeWidth=".5" opacity=".7"/>
+      ))}
+      {/* Buts */}
+      <rect x="117" y="24" width="36" height="9" fill="none" stroke={stroke} strokeWidth=".6" opacity=".8"/>
+      <rect x="117" y="348" width="36" height="9" fill="none" stroke={stroke} strokeWidth=".6" opacity=".8"/>
+    </svg>
+  );
+  if(kind==="handball") return(
+    <svg style={wrap} viewBox="0 0 270 480">
+      <rect x="18" y="6" width="234" height="375" fill="none" stroke={stroke} strokeWidth="1"/>
+      <line x1="18" y1="193" x2="252" y2="193" stroke={stroke} strokeWidth=".8"/>
+      {/* Zones des 6 m (trait plein) et des 9 m (pointillé) */}
+      <path d="M18 6 V52 A72 72 0 0 0 252 52 V6" fill="none" stroke={stroke} strokeWidth=".7"/>
+      <path d="M18 381 V335 A72 72 0 0 1 252 335 V381" fill="none" stroke={stroke} strokeWidth=".7"/>
+      <path d="M18 6 V78 A96 96 0 0 0 252 78 V6" fill="none" stroke={stroke} strokeWidth=".5" strokeDasharray="5 5" opacity=".75"/>
+      <path d="M18 381 V309 A96 96 0 0 1 252 309 V381" fill="none" stroke={stroke} strokeWidth=".5" strokeDasharray="5 5" opacity=".75"/>
+      {/* Buts */}
+      <rect x="117" y="6" width="36" height="7" fill="none" stroke={stroke} strokeWidth=".6" opacity=".85"/>
+      <rect x="117" y="374" width="36" height="7" fill="none" stroke={stroke} strokeWidth=".6" opacity=".85"/>
+    </svg>
+  );
+  if(kind==="court") return(
+    <svg style={wrap} viewBox="0 0 270 480">
+      <rect x="18" y="6" width="234" height="375" fill="none" stroke={stroke} strokeWidth="1"/>
+      <line x1="18" y1="193" x2="252" y2="193" stroke={stroke} strokeWidth=".8"/>
+      <ellipse cx="135" cy="193" rx="30" ry="30" fill="none" stroke={stroke} strokeWidth=".8"/>
+      {/* Raquettes et arcs */}
+      <rect x="97" y="6" width="76" height="66" fill="none" stroke={stroke} strokeWidth=".6"/>
+      <rect x="97" y="315" width="76" height="66" fill="none" stroke={stroke} strokeWidth=".6"/>
+      <path d="M97 72 A38 38 0 0 0 173 72" fill="none" stroke={stroke} strokeWidth=".6"/>
+      <path d="M97 315 A38 38 0 0 1 173 315" fill="none" stroke={stroke} strokeWidth=".6"/>
+      <path d="M42 6 V52 A93 93 0 0 0 228 52 V6" fill="none" stroke={stroke} strokeWidth=".5" opacity=".7"/>
+      <path d="M42 381 V335 A93 93 0 0 1 228 335 V381" fill="none" stroke={stroke} strokeWidth=".5" opacity=".7"/>
+    </svg>
+  );
+  // Football par défaut
+  return(
+    <svg style={wrap} viewBox="0 0 270 480">
+      <rect x="18" y="6" width="234" height="375" rx="3" fill="none" stroke={stroke} strokeWidth="1"/>
+      <line x1="18" y1="193" x2="252" y2="193" stroke={stroke} strokeWidth=".8"/>
+      <ellipse cx="135" cy="193" rx="36" ry="36" fill="none" stroke={stroke} strokeWidth=".8"/>
+      <rect x="18" y="6" width="234" height="50" fill="none" stroke={stroke} strokeWidth=".5" opacity=".7"/>
+      <rect x="18" y="331" width="234" height="50" fill="none" stroke={stroke} strokeWidth=".5" opacity=".7"/>
+      <ellipse cx="135" cy="6" rx="22" ry="11" fill="none" stroke={stroke} strokeWidth=".5" opacity=".6"/>
+      <ellipse cx="135" cy="381" rx="22" ry="11" fill="none" stroke={stroke} strokeWidth=".5" opacity=".6"/>
+    </svg>
+  );
+}
+function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScale,sport}){
   W=W||270; H=H||480; slotScale=slotScale||1;
-  const fm=ld&&ld.formation?ld.formation:"4-4-2";
+  const F0=formationsFor(sport);
+  const fm=(ld&&ld.formation&&F0[ld.formation])?ld.formation:(Object.keys(F0)[0]||"4-4-2");
   const starters=ld&&ld.starters?ld.starters:[];
   const subs=ld&&ld.subs?ld.subs.filter(Boolean):[];
   const competition=ld&&ld.competition?ld.competition:"";
-  const fRows=FORMATIONS[fm]||FORMATIONS["4-4-2"];
+  const F=formationsFor(sport);
+  const fRows=F[fm]||F[Object.keys(F)[0]]||[{n:1},{n:4},{n:4},{n:2}];
   let li=0;
-  const rows=fRows.map(function(r,ri){const lbls=["GB","DEF","MIL","ATT"];const players=starters.slice(li,li+r.n);li+=r.n;return{n:r.n,label:lbls[Math.min(ri,3)],players:players};});
+  const rows=fRows.map(function(r){const players=starters.slice(li,li+r.n);li+=r.n;return{n:r.n,label:(r.l||"").slice(0,3).toUpperCase(),players:players};});
   const dark=tpl!=="ln5"&&tpl!=="ln6";
   const root={width:W,height:H,position:"relative",overflow:"hidden",borderRadius:W<160?6:14,flexShrink:0,display:"flex",flexDirection:"column",userSelect:"none"};
   function Logo(props){const sz=props.sz||W*.1;if(!props.url)return<div style={{width:sz,height:sz,borderRadius:4,background:rgba(accent,.25),display:"flex",alignItems:"center",justifyContent:"center",color:accent,fontSize:sz*.3}}>◈</div>;return<img src={props.url} style={{width:sz,height:sz,objectFit:"contain"}} alt=""/>;}
@@ -513,16 +615,8 @@ function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScal
     {/* ln3 "Minuit Doré" (renommé "Élite" en logique) : halo teinté couleur du club, plus de jaune hardcodé */}
     {isGold&&<div style={{position:"absolute",inset:0,background:"radial-gradient(circle at 78% 18%,"+rgba(accent,.22)+" 0%,transparent 55%),linear-gradient(160deg,"+rgba(accent,.08)+" 0%,transparent 45%,"+rgba(accent2,.25)+" 100%)"}}/>}
     {tpl==="ln4"&&<svg style={{position:"absolute",inset:0,width:"100%",height:"100%",opacity:.06}} viewBox="0 0 270 480"><polygon points="0,0 200,0 0,240" fill={rgba(accent,.2)}/><polygon points="270,480 70,480 270,240" fill={rgba(accent2,.2)}/></svg>}
-    {/* Field lines : sur TOUS les templates lineup, couleur adaptée */}
-    <svg style={{position:"absolute",inset:0,width:"100%",height:"100%",opacity:dark?.12:.09,pointerEvents:"none"}} viewBox="0 0 270 480">
-      <rect x="18" y="6" width="234" height="375" rx="3" fill="none" stroke={fieldStroke} strokeWidth="1"/>
-      <line x1="18" y1="193" x2="252" y2="193" stroke={fieldStroke} strokeWidth=".8"/>
-      <ellipse cx="135" cy="193" rx="36" ry="36" fill="none" stroke={fieldStroke} strokeWidth=".8"/>
-      <rect x="18" y="6" width="234" height="50" fill="none" stroke={fieldStroke} strokeWidth=".5" opacity=".7"/>
-      <rect x="18" y="331" width="234" height="50" fill="none" stroke={fieldStroke} strokeWidth=".5" opacity=".7"/>
-      <ellipse cx="135" cy="6" rx="22" ry="11" fill="none" stroke={fieldStroke} strokeWidth=".5" opacity=".6"/>
-      <ellipse cx="135" cy="381" rx="22" ry="11" fill="none" stroke={fieldStroke} strokeWidth=".5" opacity=".6"/>
-    </svg>
+    {/* Tracé de l'aire de jeu, dessiné selon le sport du club */}
+    <PitchLines kind={getSport(sport).pitch} stroke={fieldStroke} dark={dark}/>
     {tpl==="ln6"&&<div style={{position:"absolute",left:0,top:0,bottom:0,width:4,background:"linear-gradient(to bottom,"+accent+","+accent2+")",zIndex:3}}/>}
     {tpl==="ln5"&&<div style={{position:"absolute",top:0,left:0,right:0,height:"27%",background:"linear-gradient(135deg,"+accent+","+accent2+")",zIndex:1}}/>}
     {dark&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:isGold?"linear-gradient(90deg,transparent,"+accent+","+rgba(accent,.6)+","+accent+",transparent)":"linear-gradient(90deg,transparent,"+accent+","+accent2+","+accent+",transparent)",zIndex:4}}/>}
@@ -743,7 +837,7 @@ function HistoryThumb({h,c1,c2}){
   const wr={width:W,height:H,overflow:"hidden",borderRadius:8,flexShrink:0,position:"relative"};
   const inn={width:F.w,height:F.h,transformOrigin:"top left",transform:"scale("+(W/F.w)+")",position:"absolute",top:0,left:0};
   try{
-    if(h.type==="lineup")return<div style={wr}><div style={inn}><LineupCanvas ld={h.lineupData} tpl={h.lineupTpl||"ln1"} logoUrl={h.logoUrl} logo2Url={h.logo2Url} accent={h.accent||c1} accent2={h.accent2||c2} bgUrl={h.bgUrl}/></div></div>;
+    if(h.type==="lineup")return<div style={wr}><div style={inn}><LineupCanvas sport={h.sport} ld={h.lineupData} tpl={h.lineupTpl||"ln1"} logoUrl={h.logoUrl} logo2Url={h.logo2Url} accent={h.accent||c1} accent2={h.accent2||c2} bgUrl={h.bgUrl}/></div></div>;
     if(h.type==="group")return<div style={wr}><div style={inn}><GroupCanvas gd={h.groupData} tpl={h.groupTpl||"gr1"} logoUrl={h.logoUrl} logo2Url={h.logo2Url} accent={h.accent||c1} accent2={h.accent2||c2} bgUrl={h.bgUrl}/></div></div>;
     if(h.type==="post"){
       // Post nouveau format : layers présents → rendu standard. Sinon legacy PostCanvas via postData.
@@ -1145,7 +1239,8 @@ function TplGrid({tpls,sel,onSel,t,maxTemplates}){
     </div>
   ))}</div>);
 }
-function PhotoPanel({players,selId,onSel,selUrl,onSelUrl,onAdd,onAddUrl,onFav,onDelete,t}){
+function PhotoPanel({players,selId,onSel,selUrl,onSelUrl,onAdd,onAddUrl,onFav,onDelete,t,terms}){
+  const T=terms||termsFor(DEFAULT_SPORT);
   const ref=useRef();
   const[removing,setRemoving]=useState(null);
   const[busy,setBusy]=useState(false);
@@ -1183,8 +1278,8 @@ function PhotoPanel({players,selId,onSel,selUrl,onSelUrl,onAdd,onAddUrl,onFav,on
     setRemoving(null);
   }
   return(<div>
-    <div style={{fontSize:10,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:6}}>Joueur</div>
-    <TSel v={selId?String(selId):""} on={v=>onSel(v?v:null)} t={t} opts={[{v:"",l:"Sélectionner un joueur..."},...players.map(p=>({v:p.id,l:p.name+" · #"+p.number}))]}/>
+    <div style={{fontSize:10,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:6}}>{T.player}</div>
+    <TSel v={selId?String(selId):""} on={v=>onSel(v?v:null)} t={t} opts={[{v:"",l:"Sélectionner un "+T.playerLower+"..."},...players.map(p=>({v:p.id,l:p.name+" · #"+p.number}))]}/>
     {player&&(<div style={{marginTop:10}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}><span style={{fontSize:11,color:t.text2}}>{busy?"Import en cours…":photos.length+" photo"+(photos.length!==1?"s":"")}</span><button onClick={()=>ref.current.click()} disabled={busy} style={{fontSize:11,color:t.accent,background:rgba(t.accent,.12),border:"1px solid "+rgba(t.accent,.3),borderRadius:6,padding:"4px 10px",cursor:busy?"wait":"pointer",fontWeight:600}}>+ Photo</button></div>
       <input ref={ref} type="file" accept="image/*" multiple style={{display:"none"}} onChange={pick}/>
@@ -1203,7 +1298,7 @@ function PhotoPanel({players,selId,onSel,selUrl,onSelUrl,onAdd,onAddUrl,onFav,on
               style={{background:rgba(t.accent,.85),border:"none",borderRadius:4,fontSize:10,color:contrastText(t.accent),cursor:removing===ph.id?"wait":"pointer",padding:"4px 7px",whiteSpace:"nowrap",fontWeight:600,fontFamily:"inherit"}}>
               {removing===ph.id?"…":"✂"}
             </button>
-            <button onClick={e=>{e.stopPropagation();if(window.confirm("Supprimer cette photo de "+(player.name||"ce joueur")+" ?"))onDelete&&onDelete(selId,ph.id,ph.url);}} className="viz-touch-btn"
+            <button onClick={e=>{e.stopPropagation();if(window.confirm("Supprimer cette photo de "+(player.name||"ce "+T.playerLower)+" ?"))onDelete&&onDelete(selId,ph.id,ph.url);}} className="viz-touch-btn"
               title="Supprimer cette photo"
               style={{background:"rgba(0,0,0,.7)",border:"1px solid rgba(239,68,68,.5)",borderRadius:4,fontSize:10,color:"#fca5a5",cursor:"pointer",padding:"4px 7px",whiteSpace:"nowrap",fontWeight:600,fontFamily:"inherit"}}>
               🗑
@@ -1218,15 +1313,33 @@ function PhotoPanel({players,selId,onSel,selUrl,onSelUrl,onAdd,onAddUrl,onFav,on
     </div>)}
   </div>);
 }
-function LineupEditor({ld,setLd,players,t}){
-  const fm=ld.formation||"4-4-2";const starters=ld.starters||[];const subs=ld.subs||[];
-  const fRows=FORMATIONS[fm]||FORMATIONS["4-4-2"];const labels=["Gardien","Défenseur","Milieu","Attaquant"];
-  let gi=0;const rowDefs=fRows.map((r,ri)=>{const from=gi;gi+=r.n;return{label:labels[Math.min(ri,3)],from,count:r.n};});
+function LineupEditor({ld,setLd,players,t,sport}){
+  const F=formationsFor(sport);
+  // La formation enregistrée peut venir d'un autre sport : on retombe sur la
+  // première du sport courant plutôt que d'afficher une option inexistante.
+  const fm=(ld.formation&&F[ld.formation])?ld.formation:(Object.keys(F)[0]||"4-4-2");
+  const starters=ld.starters||[];const subs=ld.subs||[];
+  const fRows=F[fm]||[{n:1},{n:4},{n:4},{n:2}];
+  let gi=0;const rowDefs=fRows.map(r=>{const from=gi;gi+=r.n;return{label:r.l||"",from,count:r.n};});
   function setStarter(i,pid){const ns=[...starters];ns[i]=pid?players.find(p=>p.id===pid)||null:null;setLd(d=>Object.assign({},d,{starters:ns}));}
   function setSub(i,pid){const ns=[...subs];ns[i]=pid?players.find(p=>p.id===pid)||null:null;setLd(d=>Object.assign({},d,{subs:ns}));}
-  function autoFill(){const byPos={};POSITIONS.forEach(p=>{byPos[p]=players.filter(x=>x.position===p);});const lineup=[];fRows.forEach((r,ri)=>{const pos=labels[Math.min(ri,3)];(byPos[pos]||[]).slice(0,r.n).forEach(p=>lineup.push(p));const got=Math.min((byPos[pos]||[]).length,r.n);for(let i=got;i<r.n;i++)lineup.push(null);});const ids=lineup.filter(Boolean).map(p=>p.id);setLd(d=>Object.assign({},d,{starters:lineup,subs:players.filter(p=>!ids.includes(p.id)).slice(0,7)}));}
+  function autoFill(){
+    const used=new Set();
+    const lineup=[];
+    fRows.forEach(r=>{
+      // Chaque rang puise dans les postes qu'il déclare, sans reprendre un
+      // joueur déjà placé sur un rang précédent.
+      const pool=players.filter(x=>(r.p||[r.l]).includes(x.position)&&!used.has(x.id));
+      for(let i=0;i<r.n;i++){
+        const pick=pool[i]||null;
+        if(pick)used.add(pick.id);
+        lineup.push(pick);
+      }
+    });
+    setLd(d=>Object.assign({},d,{starters:lineup,subs:players.filter(p=>!used.has(p.id)).slice(0,7)}));
+  }
   return(<div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Formation</div><TSel v={fm} on={v=>setLd(d=>Object.assign({},d,{formation:v,starters:[]}))} t={t} opts={Object.keys(FORMATIONS)}/></div><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Adversaire</div><TIn v={ld.opponent||""} on={v=>setLd(d=>Object.assign({},d,{opponent:v}))} ph="vs..." t={t}/></div></div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>{termsFor(sport).formationLabel}</div><TSel v={fm} on={v=>setLd(d=>Object.assign({},d,{formation:v,starters:[]}))} t={t} opts={Object.keys(F)}/></div><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>{termsFor(sport).opponent}</div><TIn v={ld.opponent||""} on={v=>setLd(d=>Object.assign({},d,{opponent:v}))} ph="vs..." t={t}/></div></div>
     <div style={{marginBottom:8}}><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Compétition</div><TIn v={ld.competition||""} on={v=>setLd(d=>Object.assign({},d,{competition:v}))} ph="Ligue 1..." t={t}/></div>
     <button onClick={autoFill} style={{width:"100%",background:rgba(t.accent,.15),color:t.accent,border:"1px solid "+rgba(t.accent,.3),borderRadius:7,padding:"7px",fontSize:11,cursor:"pointer",marginBottom:10,fontWeight:600}}>⚡ Remplissage auto</button>
     {rowDefs.map((row,ri)=>(<div key={ri} style={{marginBottom:7}}><div style={{fontSize:9,color:t.accent,letterSpacing:".1em",fontWeight:700,marginBottom:3,textTransform:"uppercase"}}>{row.label}</div>{Array.from({length:row.count}).map((_,pi)=>{const idx=row.from+pi;const cur=starters[idx];const ph=getPhoto(cur);return(<div key={pi} style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}><div style={{width:24,height:24,borderRadius:5,overflow:"hidden",background:t.bg4,flexShrink:0,border:"1px solid "+(cur?t.accent:t.border)}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:9,color:t.text3,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>{idx+1}</span>}</div><TSel v={cur?cur.id:""} on={v=>setStarter(idx,v)} t={t} opts={[{v:"",l:"— Poste libre —"},...players.map(p=>({v:p.id,l:"#"+p.number+" "+p.name}))]}/></div>);})}</div>))}
@@ -1234,13 +1347,16 @@ function LineupEditor({ld,setLd,players,t}){
     {Array.from({length:7}).map((_,i)=>{const cur=subs[i];const ph=getPhoto(cur);return(<div key={i} style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}><div style={{width:24,height:24,borderRadius:5,overflow:"hidden",background:t.bg4,flexShrink:0,border:"1px solid "+(cur?t.accent:t.border)}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:9,color:t.text3,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>{i+12}</span>}</div><TSel v={cur?cur.id:""} on={v=>setSub(i,v)} t={t} opts={[{v:"",l:"— Remplaçant —"},...players.map(p=>({v:p.id,l:"#"+p.number+" "+p.name}))]}/></div>);})}
   </div>);
 }
-function GroupEditor({gd,setGd,players,t}){
+function GroupEditor({gd,setGd,players,t,sport}){
   // FIX Lucas : ne PAS faire `gd.title||"GROUPE A"` sur l'input.
   // Sinon dès que l'utilisateur efface le champ, la valeur retourne à "GROUPE A" et
   // il ne peut plus rien saisir. On garde le fallback uniquement pour le RENDU du visuel
   // (voir GroupCanvas). Ici on utilise le placeholder pour montrer la valeur par défaut.
   const title=gd.title??"";const competition=gd.competition??"";
-  const cats=[{k:"gk",l:"🧤 Gardiens",pos:"Gardien"},{k:"def",l:"🛡 Défenseurs",pos:"Défenseur"},{k:"mid",l:"⚙️ Milieux",pos:"Milieu"},{k:"fwd",l:"⚡ Attaquants",pos:"Attaquant"},{k:"coaches",l:"👔 Staff",pos:null}];
+  // Les clés (gk/def/mid/fwd/coaches) restent identiques d'un sport à l'autre :
+  // seuls les libellés et les postes regroupés changent, pour que les visuels
+  // déjà enregistrés continuent de s'afficher.
+  const cats=getSport(sport).groupCats;
   const[impSel,setImpSel]=useState({});
   function add(k){setGd(d=>Object.assign({},d,{[k]:[...(d[k]||[]),{id:Date.now(),name:"",number:"",photo:null,captain:false}]}));}
   function rem(k,id){setGd(d=>Object.assign({},d,{[k]:(d[k]||[]).filter(p=>p.id!==id)}));}
@@ -1271,7 +1387,7 @@ function GroupEditor({gd,setGd,players,t}){
         {(gd.titleColor||gd.titleSize||gd.titleFont)&&<button onClick={()=>setGd(d=>{const n=Object.assign({},d);delete n.titleFont;delete n.titleSize;delete n.titleColor;return n;})} style={{background:"none",border:"none",color:t.accent,cursor:"pointer",fontSize:9,padding:"4px 0",textDecoration:"underline",whiteSpace:"nowrap",alignSelf:"flex-end"}}>Reset défauts</button>}
       </div>
     </div>
-    {cats.map(cat=>{const list=gd[cat.k]||[];const avail=players.filter(p=>(cat.pos?p.position===cat.pos:true)&&!list.some(x=>x.id===p.id));return(<div key={cat.k} style={{marginBottom:7,background:t.bg3,borderRadius:8,padding:"9px 10px"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:11,color:t.text,fontWeight:600}}>{cat.l} <span style={{color:t.text3,fontWeight:400}}>({list.length})</span></span><button onClick={()=>add(cat.k)} style={{fontSize:10,color:t.accent,background:rgba(t.accent,.12),border:"1px solid "+rgba(t.accent,.3),borderRadius:5,padding:"3px 7px",cursor:"pointer"}}>+ Manuel</button></div>{avail.length>0&&(<div style={{display:"flex",gap:5,marginBottom:7}}><select value={impSel[cat.k]||""} onChange={e=>setImpSel(s=>Object.assign({},s,{[cat.k]:e.target.value}))} style={{flex:1,background:t.bg4,border:"1px solid "+t.border,borderRadius:5,padding:"5px 7px",color:t.text,fontSize:11,outline:"none"}}><option value="">— Ajouter depuis l'effectif —</option>{avail.map(p=><option key={p.id} value={p.id}>{"#"+p.number+" "+p.name}</option>)}</select><button onClick={()=>importOne(cat.k)} style={{background:impSel[cat.k]?t.accent:"#2a2a2a",color:"#fff",border:"none",borderRadius:5,padding:"5px 11px",fontSize:12,cursor:"pointer",fontWeight:600}}>↓</button></div>)}{list.length===0&&<div style={{fontSize:10,color:t.text3,textAlign:"center",padding:"3px 0",fontStyle:"italic"}}>Aucun joueur</div>}{list.map(p=>(<div key={p.id} style={{display:"flex",alignItems:"center",gap:5,marginBottom:4,background:t.bg4,borderRadius:6,padding:"4px 6px"}}><div style={{width:24,height:24,borderRadius:4,overflow:"hidden",background:t.bg2,flexShrink:0,cursor:"pointer",border:"1px solid "+(p.photo?t.accent:t.border)}} onClick={()=>{const i=document.createElement("input");i.type="file";i.accept="image/*";i.onchange=e=>{const f=e.target.files[0];if(!validateImageFile(f))return;const r=new FileReader();r.onload=ev=>upd(cat.k,p.id,"photo",ev.target.result);r.readAsDataURL(f);};i.click();}}>{p.photo?<img src={p.photo} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:12,color:t.text3,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>+</span>}</div><input value={p.number||""} onChange={e=>upd(cat.k,p.id,"number",e.target.value)} placeholder="#" style={Object.assign({},inp,{width:25})}/><input value={p.name||""} onChange={e=>upd(cat.k,p.id,"name",e.target.value)} placeholder="Nom" style={Object.assign({},inp,{flex:1})}/><span onClick={()=>upd(cat.k,p.id,"captain",!p.captain)} style={{cursor:"pointer",fontSize:14,opacity:p.captain?1:.2,color:t.accent}}>©</span><button onClick={()=>rem(cat.k,p.id)} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:12,padding:0}}>✕</button></div>))}</div>);})}
+    {cats.map(cat=>{const list=gd[cat.k]||[];const avail=players.filter(p=>(cat.pos?cat.pos.includes(p.position):true)&&!list.some(x=>x.id===p.id));return(<div key={cat.k} style={{marginBottom:7,background:t.bg3,borderRadius:8,padding:"9px 10px"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:11,color:t.text,fontWeight:600}}>{cat.l} <span style={{color:t.text3,fontWeight:400}}>({list.length})</span></span><button onClick={()=>add(cat.k)} style={{fontSize:10,color:t.accent,background:rgba(t.accent,.12),border:"1px solid "+rgba(t.accent,.3),borderRadius:5,padding:"3px 7px",cursor:"pointer"}}>+ Manuel</button></div>{avail.length>0&&(<div style={{display:"flex",gap:5,marginBottom:7}}><select value={impSel[cat.k]||""} onChange={e=>setImpSel(s=>Object.assign({},s,{[cat.k]:e.target.value}))} style={{flex:1,background:t.bg4,border:"1px solid "+t.border,borderRadius:5,padding:"5px 7px",color:t.text,fontSize:11,outline:"none"}}><option value="">— Ajouter depuis l'effectif —</option>{avail.map(p=><option key={p.id} value={p.id}>{"#"+p.number+" "+p.name}</option>)}</select><button onClick={()=>importOne(cat.k)} style={{background:impSel[cat.k]?t.accent:"#2a2a2a",color:"#fff",border:"none",borderRadius:5,padding:"5px 11px",fontSize:12,cursor:"pointer",fontWeight:600}}>↓</button></div>)}{list.length===0&&<div style={{fontSize:10,color:t.text3,textAlign:"center",padding:"3px 0",fontStyle:"italic"}}>Aucun joueur</div>}{list.map(p=>(<div key={p.id} style={{display:"flex",alignItems:"center",gap:5,marginBottom:4,background:t.bg4,borderRadius:6,padding:"4px 6px"}}><div style={{width:24,height:24,borderRadius:4,overflow:"hidden",background:t.bg2,flexShrink:0,cursor:"pointer",border:"1px solid "+(p.photo?t.accent:t.border)}} onClick={()=>{const i=document.createElement("input");i.type="file";i.accept="image/*";i.onchange=e=>{const f=e.target.files[0];if(!validateImageFile(f))return;const r=new FileReader();r.onload=ev=>upd(cat.k,p.id,"photo",ev.target.result);r.readAsDataURL(f);};i.click();}}>{p.photo?<img src={p.photo} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:12,color:t.text3,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>+</span>}</div><input value={p.number||""} onChange={e=>upd(cat.k,p.id,"number",e.target.value)} placeholder="#" style={Object.assign({},inp,{width:25})}/><input value={p.name||""} onChange={e=>upd(cat.k,p.id,"name",e.target.value)} placeholder="Nom" style={Object.assign({},inp,{flex:1})}/><span onClick={()=>upd(cat.k,p.id,"captain",!p.captain)} style={{cursor:"pointer",fontSize:14,opacity:p.captain?1:.2,color:t.accent}}>©</span><button onClick={()=>rem(cat.k,p.id)} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:12,padding:0}}>✕</button></div>))}</div>);})}
   </div>);
 }
 function PostEditor({pd,setPd,t}){
@@ -1302,7 +1418,7 @@ async function insertTolerant(table,payload,optionalCols){
 // ─── PROJECTION D'UN VISUEL ───────────────────────────────────
 // Ligne Supabase → objet manipulé par l'UI. Une seule définition : les trois
 // copies précédentes divergeaient au moindre ajout de champ.
-function mapVisual(v){
+function mapVisual(v,sport){
   if(!v) return null;
   return{
     ...v,
@@ -1318,7 +1434,7 @@ function mapVisual(v){
     logo2Url:v.logo2_url,
     playerUrl:v.player_url,
     format:v.format||DEFAULT_FORMAT,
-    ct:CTYPES.find(c=>c.id===v.type),
+    ct:ctypeInfo(sport,v.type),
   };
 }
 // ─── ÉCRITURE D'UN VISUEL ─────────────────────────────────────
@@ -1342,6 +1458,36 @@ async function writeVisual(mode,payload,id){
     res=await run(rest);
   }
   return res;
+}
+// ─── CHOIX DU SPORT ───────────────────────────────────────────
+// Affiché une seule fois, à la première connexion : le sport détermine le
+// vocabulaire, les postes, les formations et les types de visuels proposés.
+function SportPicker({onPick,busy,t,clubName}){
+  return(
+    <div className="viz-minvh" style={{display:"flex",alignItems:"center",justifyContent:"center",background:t.bg,color:t.text,padding:"32px 20px",fontFamily:"'DM Sans','Helvetica Neue',sans-serif"}}>
+      <div style={{width:"100%",maxWidth:640}}>
+        <div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".18em",textTransform:"uppercase",marginBottom:10}}>Première étape</div>
+        <h1 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:44,fontWeight:400,letterSpacing:".02em",lineHeight:1,margin:"0 0 10px"}}>
+          {clubName?"Quel sport pratique "+clubName+" ?":"Quel sport pratique votre club ?"}
+        </h1>
+        <p style={{color:t.text3,fontSize:13,lineHeight:1.6,margin:"0 0 26px"}}>
+          Le vocabulaire, les postes et les types de visuels s'adaptent au sport choisi. Vous pourrez en changer plus tard dans « Mon Club ».
+        </p>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
+          {SPORT_LIST.map(sp=>(
+            <button key={sp.id} onClick={()=>!busy&&onPick(sp.id)} disabled={busy}
+              style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,padding:"20px 16px",cursor:busy?"wait":"pointer",color:t.text,fontFamily:"inherit",textAlign:"left",display:"flex",flexDirection:"column",gap:6,transition:"border-color .15s,transform .15s"}}
+              onMouseEnter={e=>{if(busy)return;e.currentTarget.style.borderColor=t.accent;e.currentTarget.style.transform="translateY(-2px)";}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}>
+              <span style={{fontSize:28,lineHeight:1}}>{sp.icon}</span>
+              <span style={{fontWeight:700,fontSize:14}}>{sp.label}</span>
+              <span style={{fontSize:11,color:t.text3}}>{sp.kind==="team"?"Sport collectif":"Sport individuel"}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 // ─── APP ──────────────────────────────────────────────────────
 export default function App({session}){
@@ -1370,7 +1516,7 @@ export default function App({session}){
   },[]);
   const[selType,setSelType]=useState(null);
   const[editId,setEditId]=useState(null);
-  const[pName,setPName]=useState("");const[pNum,setPNum]=useState("");const[pPos,setPPos]=useState("Attaquant");
+  const[pName,setPName]=useState("");const[pNum,setPNum]=useState("");const[pPos,setPPos]=useState("");
   const[layers,setLayers]=useState([]);
   const[bgUrl,setBgUrl]=useState(null);const[logoUrl,setLogoUrl]=useState(null);const[logo2Url,setLogo2Url]=useState(null);
   const[selPid,setSelPid]=useState(null);const[selPhoto,setSelPhoto]=useState(null);
@@ -1383,6 +1529,13 @@ export default function App({session}){
   const[groupTpl,setGroupTpl]=useState("gr1");
   const[postTpl,setPostTpl]=useState("pt1");
   const[format,setFormat]=useState(DEFAULT_FORMAT);
+  // Sport du club : un seul par club, choisi à la première connexion.
+  // `null` en base = pas encore choisi → on affiche le sélecteur.
+  const sport=club&&club.sport?club.sport:DEFAULT_SPORT;
+  const T=termsFor(sport);
+  const CT=useMemo(()=>ctypesFor(sport),[sport]);
+  const NAVL=useMemo(()=>navFor(termsFor(sport)),[sport]);
+  const[savingSport,setSavingSport]=useState(false);
   const[saveFlash,setSaveFlash]=useState(false);
   const[weeklyCount,setWeeklyCount]=useState(0);
   const[limitError,setLimitError]=useState("");
@@ -1453,6 +1606,10 @@ export default function App({session}){
       }
       if(!clubData?.approved){await supabase.auth.signOut();return;}
       if(stale())return;
+      if(!clubData.sport){
+        try{ const local=localStorage.getItem("sport_"+clubData.id); if(local)clubData={...clubData,sport:local}; }
+        catch(e){ console.warn("[load] localStorage indisponible:",e); }
+      }
       setClub(clubData);
       // Compter les visuels des 7 derniers jours
       const since=new Date(Date.now()-7*24*60*60*1000).toISOString();
@@ -1473,7 +1630,8 @@ export default function App({session}){
       // actif téléchargerait des dizaines de Mo à chaque ouverture.
       const{data:visualsData}=await supabase.from("visuals").select("*").eq("club_id",clubData.id).order("created_at",{ascending:false}).limit(HISTORY_PAGE_SIZE);
       if(stale())return;
-      setHistory((visualsData||[]).map(mapVisual));
+      const loadedSport=clubData.sport||DEFAULT_SPORT;
+      setHistory((visualsData||[]).map(v=>mapVisual(v,loadedSport)));
       setLoading(false);
     }
     load();
@@ -1482,9 +1640,22 @@ export default function App({session}){
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[uid]);
   async function updateClub(patch){const updated={...club,...patch};setClub(updated);await supabase.from("clubs").update(patch).eq("id",club.id);}
+  // Le sport est stocké dans clubs.sport (migration 0004). Si la colonne
+  // n'existe pas encore, on garde le choix en local pour ne pas bloquer le
+  // club derrière un écran qu'il ne peut pas valider.
+  async function chooseSport(next){
+    setSavingSport(true);
+    const{error}=await supabase.from("clubs").update({sport:next}).eq("id",club.id);
+    if(error){
+      console.warn("[chooseSport] colonne `sport` indisponible (migration 0004 non appliquée ?) :",error.message);
+      try{ localStorage.setItem("sport_"+club.id,next); }catch(e){ console.warn("[chooseSport] localStorage indisponible:",e); }
+    }
+    setClub(c=>({...c,sport:next}));
+    setSavingSport(false);
+  }
   async function addPlayer(){
     if(!pName.trim())return;
-    const{data}=await supabase.from("players").insert({club_id:club.id,name:pName.trim(),number:pNum,position:pPos}).select("*, photos:player_photos(*)").single();
+    const{data}=await supabase.from("players").insert({club_id:club.id,name:pName.trim(),number:pNum,position:pPos||getSport(sport).defaultPosition}).select("*, photos:player_photos(*)").single();
     if(data)setPlayers(p=>sortPlayers([...p,data]));
     setPName("");setPNum("");
   }
@@ -1558,7 +1729,7 @@ export default function App({session}){
       setSelPhoto(p?getPhoto(p)||null:null);
       // Le nom et le poste du joueur se posent tout seuls sur le visuel, tant
       // que ces textes n'ont pas été personnalisés à la main.
-      if(p)setLayers(cur=>applyPlayerToLayers(cur,p,prev));
+      if(p)setLayers(cur=>applyPlayerToLayers(cur,p,prev,sport));
     }
     else setSelPhoto(null);
   }
@@ -1595,8 +1766,8 @@ export default function App({session}){
     } else {
       setEditId(null);setBgUrl(null);setLogoUrl(club?.logo_url||null);setLogo2Url(null);setSelPid(null);setSelPhoto(null);
       // Post est désormais un éditeur libre : utilise makeLayers comme goal/result/match/recruit
-      if(type!=="lineup"&&type!=="group")setLayers(makeLayers(type,club?.color1||"#e63329",club?.color2||"#1a1a2e"));
-      if(type==="lineup")setLineupData({formation:"4-4-2",starters:[],subs:[],opponent:"",competition:""});
+      if(type!=="lineup"&&type!=="group")setLayers(makeLayers(type,club?.color1||"#e63329",club?.color2||"#1a1a2e",sport));
+      if(type==="lineup")setLineupData({formation:firstFormation(sport),starters:[],subs:[],opponent:"",competition:""});
       if(type==="group")setGroupData({title:"",competition:"",gk:[],def:[],mid:[],fwd:[],coaches:[]});
     }
   }
@@ -1608,19 +1779,19 @@ export default function App({session}){
         return;
       }
     }
-    const ct=CTYPES.find(c=>c.id===selType);
+    const ct=ctypeInfo(sport,selType);
     const payload={club_id:club.id,type:selType,label:ct?.label||"",icon:ct?.icon||"",layers,lineup_data:lineupData,group_data:groupData,post_data:postData,lineup_tpl:lineupTpl,group_tpl:groupTpl,post_tpl:postTpl,bg_url:bgUrl,logo_url:logoUrl,logo2_url:logo2Url,player_url:selPhoto,format:supportsFormat?format:DEFAULT_FORMAT,updated_at:new Date().toISOString()};
     let saved;
     if(editId){
       const{data,error}=await writeVisual("update",payload,editId);
       if(error){console.error("[save] update failed:",error.message);setLimitError("Erreur lors de la sauvegarde : "+error.message);setTimeout(()=>setLimitError(""),4000);return;}
       saved=data;
-      if(saved)setHistory(h=>h.map(x=>x.id===editId?mapVisual(saved):x));
+      if(saved)setHistory(h=>h.map(x=>x.id===editId?mapVisual(saved,sport):x));
     } else {
       const{data,error}=await writeVisual("insert",payload);
       if(error){console.error("[save] insert failed:",error.message);setLimitError("Erreur lors de la sauvegarde : "+error.message);setTimeout(()=>setLimitError(""),4000);return;}
       saved=data;
-      if(saved)setHistory(h=>[mapVisual(saved),...h]);
+      if(saved)setHistory(h=>[mapVisual(saved,sport),...h]);
     }
     if(saved&&!editId)setWeeklyCount(w=>w+1);
     if(saved)setEditId(saved.id);
@@ -1738,6 +1909,8 @@ export default function App({session}){
     setTimeout(()=>URL.revokeObjectURL(url),2000);
     closeExportOverlay();
   }
+  // Sport pas encore choisi → on le demande avant tout le reste.
+  if(!loading&&club&&!club.sport)return <SportPicker onPick={chooseSport} busy={savingSport} t={t} clubName={club.name}/>;
   if(loading)return(<div className="viz-fullvh" style={{display:"flex",alignItems:"center",justifyContent:"center",background:"#080810",color:"rgba(240,240,248,.4)",fontFamily:"system-ui",flexDirection:"column",gap:12}}><div style={{fontSize:28}}>⚡</div><div>Chargement de vos données...</div></div>);
   const card={background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:20};
   // Fragments rendus par appel, pas des composants : les redéfinir à chaque
@@ -1779,9 +1952,9 @@ export default function App({session}){
           </PBox>
         )}
         <PBox t={t} mb={12}>
-          <SHdr label={isL?"Composition XI":isP?"Contenu":"Joueurs & groupe"} t={t}/>
-          {isL&&<LineupEditor ld={lineupData} setLd={setLineupData} players={players} t={t}/>}
-          {isG&&<GroupEditor gd={groupData} setGd={setGroupData} players={players} t={t}/>}
+          <SHdr label={isL?T.lineupTitle:isP?"Contenu":T.squadSection} t={t}/>
+          {isL&&<LineupEditor ld={lineupData} setLd={setLineupData} players={players} t={t} sport={sport}/>}
+          {isG&&<GroupEditor gd={groupData} setGd={setGroupData} players={players} t={t} sport={sport}/>}
           {isP&&<PostEditor pd={postData} setPd={setPostData} t={t}/>}
         </PBox>
         {saveBtn()}
@@ -1790,7 +1963,7 @@ export default function App({session}){
         <div style={isMobile?{width:270*canvasScale,height:480*canvasScale,position:"relative",overflow:"visible",flexShrink:0}:{display:"inline-block"}}>
           <div style={isMobile?{position:"absolute",top:0,left:0,width:270,height:480,transform:"scale("+canvasScale+")",transformOrigin:"top left"}:{display:"contents"}}>
             <div className="visium-canvas" style={{display:"inline-block"}}>
-              {isL&&<LineupCanvas ld={lineupData} tpl={lineupTpl} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl} slotScale={slotScale}/>}
+              {isL&&<LineupCanvas ld={lineupData} tpl={lineupTpl} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl} slotScale={slotScale} sport={sport}/>}
               {isG&&<GroupCanvas gd={groupData} tpl={groupTpl} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl}/>}
               {isP&&<PostCanvas pd={postData} tpl={postTpl} logoUrl={logoUrl||club?.logo_url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl}/>}
             </div>
@@ -1831,7 +2004,7 @@ export default function App({session}){
           </div>
           <div style={{fontSize:9,color:t.text3,marginTop:6,lineHeight:1.4}}>{fmt(format).desc}</div>
         </PBox>
-        <PBox t={t}><SHdr label="Joueur & photo" t={t}/><PhotoPanel players={players} selId={selPid} onSel={selPlayer} selUrl={selPhoto} onSelUrl={setSelPhoto} onAdd={addPhoto} onAddUrl={addPhotoUrl} onFav={toggleFav} onDelete={deletePhoto} t={t}/></PBox>
+        <PBox t={t}><SHdr label={T.player+" & photo"} t={t}/><PhotoPanel players={players} selId={selPid} onSel={selPlayer} selUrl={selPhoto} onSelUrl={setSelPhoto} onAdd={addPhoto} onAddUrl={addPhotoUrl} onFav={toggleFav} onDelete={deletePhoto} t={t} terms={T}/></PBox>
         <PBox t={t}>
           <SHdr label="Image de fond" t={t}/>
           {media.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4,marginBottom:8}}>{media.map((m,i)=>(<div key={i} onClick={()=>setBgUrl(m.url)} style={{aspectRatio:"16/9",borderRadius:5,overflow:"hidden",border:"2px solid "+(bgUrl===m.url?t.accent:t.border),cursor:"pointer"}}><img src={thumbOf(m)} loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div>))}</div>}
@@ -1881,7 +2054,7 @@ export default function App({session}){
           <div style={{overflow:"hidden",flex:1}}><div style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:18,fontWeight:400,letterSpacing:".06em",color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{club?.name||"Viziona"}</div><div style={{fontFamily:"'DM Mono',ui-monospace,monospace",fontSize:9,color:t.text3,marginTop:2,letterSpacing:".1em",textTransform:"uppercase"}}>Studio visuel</div></div>
         </div>
         <nav style={{padding:"10px 8px",flex:1}}>
-          {NAV.map(n=>(<button key={n.id} onClick={()=>{setNav(n.id);if(n.id!=="create")setSelType(null);}} style={{display:"flex",alignItems:"center",gap:10,width:"100%",background:nav===n.id?rgba(t.accent,.15):"transparent",border:"none",borderRadius:9,padding:"9px 11px",color:nav===n.id?t.accent:t.text2,cursor:"pointer",fontSize:13,marginBottom:1,textAlign:"left",fontWeight:nav===n.id?600:400}}><span style={{fontSize:15,lineHeight:1}}>{n.icon}</span><span>{n.label}</span>{n.id==="history"&&history.length>0&&<span style={{marginLeft:"auto",background:rgba(t.accent,.2),color:t.accent,fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{history.length}</span>}</button>))}
+          {NAVL.map(n=>(<button key={n.id} onClick={()=>{setNav(n.id);if(n.id!=="create")setSelType(null);}} style={{display:"flex",alignItems:"center",gap:10,width:"100%",background:nav===n.id?rgba(t.accent,.15):"transparent",border:"none",borderRadius:9,padding:"9px 11px",color:nav===n.id?t.accent:t.text2,cursor:"pointer",fontSize:13,marginBottom:1,textAlign:"left",fontWeight:nav===n.id?600:400}}><span style={{fontSize:15,lineHeight:1}}>{n.icon}</span><span>{n.label}</span>{n.id==="history"&&history.length>0&&<span style={{marginLeft:"auto",background:rgba(t.accent,.2),color:t.accent,fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{history.length}</span>}</button>))}
         </nav>
         <div style={{padding:12,borderTop:"1px solid "+t.border,display:"flex",flexDirection:"column",gap:8}}>
           <button onClick={()=>openCreate("goal")} style={{background:"#0a0a0a",color:"#fff",border:"2px solid "+(club?.color1||"#e63329"),borderRadius:2,padding:"10px 10px",fontSize:11,fontWeight:700,cursor:"pointer",width:"100%",letterSpacing:".12em",textTransform:"uppercase",fontFamily:"inherit"}}>Créer un visuel</button>
@@ -1899,7 +2072,7 @@ export default function App({session}){
             if(clubDone&&playersDone&&visualsDone)return null;
             const steps=[
               {done:clubDone,label:"Configurer mon club",icon:"🎨",onClick:()=>setNav("club")},
-              {done:playersDone,label:"Ajouter mes joueurs",icon:"👥",onClick:()=>setNav("players")},
+              {done:playersDone,label:"Ajouter mes "+T.playersLower,icon:"👥",onClick:()=>setNav("players")},
               {done:visualsDone,label:"Créer mon premier visuel",icon:"✨",onClick:()=>setNav("create")},
             ];
             return(
@@ -1933,27 +2106,45 @@ export default function App({session}){
               </div>
             );
           })()}
-          <div style={{padding:"0 28px",display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:12,marginBottom:28}}>{CTYPES.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,padding:"20px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(club?.color1||"#e63329",.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}><div style={{fontSize:26,marginBottom:8}}>{c.icon}</div><div style={{fontWeight:700,color:t.text,fontSize:13,marginBottom:3}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.4}}>{c.desc}</div></div>))}</div>
-          <div style={{padding:"0 28px 28px",display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10}}>{[[history.length,"Visuels"],[players.length,"Joueurs"],[media.length,"Médias"],[LINEUP_TPLS.length+GROUP_TPLS.length+POST_TPLS.length,"Templates"]].map(([v,l])=>(<div key={l} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:22,fontWeight:700,color:t.accent,lineHeight:1}}>{v}</div><div style={{fontSize:11,color:t.text3,marginTop:4}}>{l}</div></div>))}</div>
+          <div style={{padding:"0 28px",display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:12,marginBottom:28}}>{CT.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,padding:"20px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(club?.color1||"#e63329",.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}><div style={{fontSize:26,marginBottom:8}}>{c.icon}</div><div style={{fontWeight:700,color:t.text,fontSize:13,marginBottom:3}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.4}}>{c.desc}</div></div>))}</div>
+          <div style={{padding:"0 28px 28px",display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10}}>{[[history.length,"Visuels"],[players.length,T.players],[media.length,"Médias"],[LINEUP_TPLS.length+GROUP_TPLS.length+POST_TPLS.length,"Templates"]].map(([v,l])=>(<div key={l} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:22,fontWeight:700,color:t.accent,lineHeight:1}}>{v}</div><div style={{fontSize:11,color:t.text3,marginTop:4}}>{l}</div></div>))}</div>
         </div>)}
         {nav==="club"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Mon Club</h2>
           <p style={{color:t.text3,marginBottom:24,fontSize:13}}>Appliqué automatiquement à tous vos visuels.</p>
+          <div style={Object.assign({},card,{maxWidth:650,marginBottom:16})}>
+            <div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:6}}>Sport du club</div>
+            <div style={{fontSize:12,color:t.text3,marginBottom:12,lineHeight:1.5}}>
+              Détermine le vocabulaire, les postes, les formations et les types de visuels proposés. Changer de sport ne supprime rien : vos {T.playersLower} et vos visuels sont conservés.
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8}}>
+              {SPORT_LIST.map(sp=>{
+                const on=sport===sp.id;
+                return(
+                  <button key={sp.id} onClick={()=>{if(on)return;if(window.confirm("Passer le club en « "+sp.label+" » ? Les postes et types de visuels changeront."))chooseSport(sp.id);}}
+                    style={{background:on?rgba(t.accent,.14):t.bg3,border:"2px solid "+(on?t.accent:t.border),borderRadius:9,padding:"11px 8px",cursor:on?"default":"pointer",color:t.text,fontFamily:"inherit",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                    <span style={{fontSize:20,lineHeight:1}}>{sp.icon}</span>
+                    <span style={{fontSize:11,fontWeight:on?700:500,color:on?t.accent:t.text2,textAlign:"center",lineHeight:1.25}}>{sp.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16,maxWidth:650}}>
             <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Identité</div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Nom du club</label><TIn v={club?.name||""} on={v=>updateClub({name:v,is_configured:true})} ph="FC Mon Club" t={t}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,margin:"14px 0 10px"}}><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Couleur principale</label><input type="color" value={club?.color1||"#e63329"} onChange={e=>updateClub({color1:e.target.value,is_configured:true})} style={{width:"100%",height:40,borderRadius:8,border:"1px solid "+t.border2,background:t.bg3,cursor:"pointer",padding:3}}/></div><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Couleur secondaire</label><input type="color" value={club?.color2||"#1a1a2e"} onChange={e=>updateClub({color2:e.target.value,is_configured:true})} style={{width:"100%",height:40,borderRadius:8,border:"1px solid "+t.border2,background:t.bg3,cursor:"pointer",padding:3}}/></div></div><div style={{height:24,borderRadius:8,background:"linear-gradient(90deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",marginBottom:4}}/><div style={{fontSize:10,color:t.text3,textAlign:"center"}}>Sauvegardé en temps réel ✓</div></div>
             <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Logo du club</div><UpBtn val={club?.logo_url} on={v=>updateClub({logo_url:v,is_configured:true})} w={110} h={110} r={14} label="Cliquer pour uploader" t={t}/>{club?.logo_url&&<><div style={{marginTop:12,display:"flex",alignItems:"center",gap:8}}><div style={{width:36,height:36,borderRadius:7,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center"}}><img src={club.logo_url} style={{width:28,height:28,objectFit:"contain"}} alt=""/></div><div style={{fontSize:11,color:t.text2}}>Logo configuré ✓</div></div><button onClick={()=>updateClub({logo_url:null,is_configured:true})} style={{marginTop:8,fontSize:10,color:t.text3,background:"none",border:"none",cursor:"pointer"}}>✕ Supprimer</button></>}</div>
           </div>
         </div>)}
         {nav==="players"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
-          <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Effectif & Photos</h2>
-          <p style={{color:t.text3,marginBottom:22,fontSize:13}}>Vos joueurs avec leurs photos.</p>
+          <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>{T.squadTitle}</h2>
+          <p style={{color:t.text3,marginBottom:22,fontSize:13}}>{T.squadDesc}</p>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"275px 1fr",gap:18}}>
             <div>
-              <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Nouveau joueur</div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Nom complet</label><TIn v={pName} on={setPName} ph="Prénom Nom" t={t}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,margin:"10px 0"}}><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Numéro</label><TIn v={pNum} on={v=>setPNum(v===""?"":String(Math.max(0,parseInt(v)||0)))} ph="9" type="number" min={0} t={t}/></div><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Poste</label><TSel v={pPos} on={setPPos} t={t} opts={POSITIONS}/></div></div><button onClick={addPlayer} style={{background:t.accent,color:contrastText(t.accent),border:"none",borderRadius:8,padding:9,fontSize:13,fontWeight:600,cursor:"pointer",width:"100%"}}>+ Ajouter à l'effectif</button></div>
-              {players.length>0&&<div style={Object.assign({},card,{marginTop:14})}><PhotoPanel players={players} selId={selPid} onSel={id=>{setSelPid(id||null);setSelPhoto(null);}} selUrl={selPhoto} onSelUrl={setSelPhoto} onAdd={addPhoto} onAddUrl={addPhotoUrl} onFav={toggleFav} onDelete={deletePhoto} t={t}/></div>}
+              <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>{T.newPlayer}</div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Nom complet</label><TIn v={pName} on={setPName} ph="Prénom Nom" t={t}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,margin:"10px 0"}}><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>{T.numberLabel}</label><TIn v={pNum} on={v=>setPNum(v===""?"":String(Math.max(0,parseInt(v)||0)))} ph={T.numberPlaceholder} type="number" min={0} t={t}/></div><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>{T.positionLabel}</label><TSel v={pPos||getSport(sport).defaultPosition} on={setPPos} t={t} opts={positionsFor(sport)}/></div></div><button onClick={addPlayer} style={{background:t.accent,color:contrastText(t.accent),border:"none",borderRadius:8,padding:9,fontSize:13,fontWeight:600,cursor:"pointer",width:"100%"}}>{T.addToSquad}</button></div>
+              {players.length>0&&<div style={Object.assign({},card,{marginTop:14})}><PhotoPanel players={players} selId={selPid} onSel={id=>{setSelPid(id||null);setSelPhoto(null);}} selUrl={selPhoto} onSelUrl={setSelPhoto} onAdd={addPhoto} onAddUrl={addPhotoUrl} onFav={toggleFav} onDelete={deletePhoto} t={t} terms={T}/></div>}
             </div>
-            <div><div style={{fontSize:13,fontWeight:600,color:t.text2,marginBottom:12}}>{players.length+" joueur"+(players.length!==1?"s":"")+" dans l'effectif"}</div>
-              {players.length===0?<div style={Object.assign({},card,{padding:"40px 20px",textAlign:"center",color:t.text3})}><div style={{fontSize:32,marginBottom:10}}>👥</div><div>Aucun joueur</div></div>:(
+            <div><div style={{fontSize:13,fontWeight:600,color:t.text2,marginBottom:12}}>{players.length+" "+T.playerLower+(players.length!==1?"s":"")+" · "+T.squad}</div>
+              {players.length===0?<div style={Object.assign({},card,{padding:"40px 20px",textAlign:"center",color:t.text3})}><div style={{fontSize:32,marginBottom:10}}>👥</div><div>{T.emptySquad}</div></div>:(
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>{players.map(p=>{const fv=getPhoto(p);return(<div key={p.id} onClick={()=>{setSelPid(p.id);setSelPhoto(null);}} style={Object.assign({},card,{padding:"12px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12})}><Av photo={fv} name={p.name} size={44}/><div style={{flex:1}}><div style={{fontWeight:600,color:t.text,fontSize:14}}>{p.name}</div><div style={{fontSize:11,color:t.text3,marginTop:2}}>{p.position+" · #"+p.number+" · "+(p.photos||[]).length+" photo"+(p.photos&&p.photos.length!==1?"s":"")}</div></div><button onClick={e=>{e.stopPropagation();deletePlayer(p.id);}} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:16,padding:4}}>✕</button></div>);})}</div>)}
             </div>
           </div>
@@ -1966,7 +2157,7 @@ export default function App({session}){
             <div>{media.length===0?<div style={Object.assign({},card,{padding:"40px 20px",textAlign:"center",color:t.text3})}><div style={{fontSize:32,marginBottom:10}}>🖼️</div><div>Médiathèque vide</div></div>:(<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>{media.map(m=>(<div key={m.id} style={{borderRadius:11,overflow:"hidden",border:"1px solid "+t.border}}><div style={{aspectRatio:"16/9",overflow:"hidden"}}><img src={thumbOf(m)} loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div><div style={{padding:"6px 10px",fontSize:11,color:t.text2,background:t.bg2,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"80%"}}>{m.name||"Image"}</span><button onClick={()=>deleteMedia(m.id)} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:14}}>✕</button></div></div>))}</div>)}</div>
           </div>
         </div>)}
-        {nav==="create"&&(!selType?(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}><h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Choisir un type</h2><p style={{color:t.text3,marginBottom:22,fontSize:13}}>Sélectionnez ce que vous souhaitez créer.</p><div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:14,maxWidth:680}}>{CTYPES.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:"22px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(t.accent,.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}>  <div style={{fontSize:28,marginBottom:10}}>{c.icon}</div><div style={{fontWeight:700,color:t.text,fontSize:14,marginBottom:4}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.5}}>{c.desc}</div></div>))}</div></div>):(selType==="lineup"||selType==="group")?renderSpecial():renderStandard())}
+        {nav==="create"&&(!selType?(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}><h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Choisir un type</h2><p style={{color:t.text3,marginBottom:22,fontSize:13}}>Sélectionnez ce que vous souhaitez créer.</p><div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:14,maxWidth:680}}>{CT.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:"22px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(t.accent,.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}>  <div style={{fontSize:28,marginBottom:10}}>{c.icon}</div><div style={{fontWeight:700,color:t.text,fontSize:14,marginBottom:4}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.5}}>{c.desc}</div></div>))}</div></div>):(selType==="lineup"||selType==="group")?renderSpecial():renderStandard())}
         {nav==="history"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Historique</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>{history.length+" visuel"+(history.length!==1?"s":"")+" · Cloud ☁️"}</p>
@@ -1977,7 +2168,7 @@ export default function App({session}){
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>Interface et données.</p>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16,maxWidth:650}}>
             <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Thème</div>{[["dark","🌑 Sombre","Interface noire premium"],["light","☀️ Clair","Interface blanche minimaliste"],["club","🎨 Couleurs du club","Adapté à vos couleurs"]].map(([mode,label,desc])=>(<div key={mode} onClick={()=>updateClub({theme_mode:mode})} style={{display:"flex",alignItems:"center",gap:12,padding:"13px 14px",borderRadius:10,border:"2px solid "+((club?.theme_mode||"dark")===mode?t.accent:t.border),background:(club?.theme_mode||"dark")===mode?rgba(t.accent,.12):t.bg3,cursor:"pointer",marginBottom:8}}><div style={{width:20,height:20,borderRadius:"50%",border:"2px solid "+t.accent,background:(club?.theme_mode||"dark")===mode?t.accent:"transparent",flexShrink:0}}/><div><div style={{fontSize:13,fontWeight:600,color:t.text}}>{label}</div><div style={{fontSize:11,color:t.text3,marginTop:2}}>{desc}</div></div></div>))}</div>
-            <div style={Object.assign({},card,{display:"flex",flexDirection:"column",gap:14})}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase"}}>Votre club</div><div style={{display:"flex",alignItems:"center",gap:12}}>{club?.logo_url?<img src={club.logo_url} style={{width:52,height:52,objectFit:"contain",borderRadius:8}} alt=""/>:<div style={{width:52,height:52,borderRadius:8,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:700,color:contrastText(mixC(club?.color1||"#e63329",club?.color2||"#1a1a2e",.5))}}>{(club?.name||"?")[0].toUpperCase()}</div>}<div><div style={{fontSize:16,fontWeight:700,color:t.text}}>{club?.name||"Club non configuré"}</div><div style={{fontSize:12,color:t.text3,marginTop:3}}>{session.user.email}</div><div style={{fontSize:12,color:t.text3}}>{players.length+" joueurs · "+media.length+" médias · "+history.length+" visuels"}</div></div></div><button onClick={()=>setNav("club")} style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:9,padding:"9px 16px",color:t.text2,cursor:"pointer",fontSize:12,fontWeight:500,textAlign:"left"}}>Modifier les infos du club →</button><button onClick={signOut} style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.2)",borderRadius:9,padding:"9px 16px",color:"#fca5a5",cursor:"pointer",fontSize:12,textAlign:"left"}}>Se déconnecter</button></div>
+            <div style={Object.assign({},card,{display:"flex",flexDirection:"column",gap:14})}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase"}}>Votre club</div><div style={{display:"flex",alignItems:"center",gap:12}}>{club?.logo_url?<img src={club.logo_url} style={{width:52,height:52,objectFit:"contain",borderRadius:8}} alt=""/>:<div style={{width:52,height:52,borderRadius:8,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:700,color:contrastText(mixC(club?.color1||"#e63329",club?.color2||"#1a1a2e",.5))}}>{(club?.name||"?")[0].toUpperCase()}</div>}<div><div style={{fontSize:16,fontWeight:700,color:t.text}}>{club?.name||"Club non configuré"}</div><div style={{fontSize:12,color:t.text3,marginTop:3}}>{session.user.email}</div><div style={{fontSize:12,color:t.text3}}>{players.length+" "+T.playersLower+" · "+media.length+" médias · "+history.length+" visuels"}</div></div></div><button onClick={()=>setNav("club")} style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:9,padding:"9px 16px",color:t.text2,cursor:"pointer",fontSize:12,fontWeight:500,textAlign:"left"}}>Modifier les infos du club →</button><button onClick={signOut} style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.2)",borderRadius:9,padding:"9px 16px",color:"#fca5a5",cursor:"pointer",fontSize:12,textAlign:"left"}}>Se déconnecter</button></div>
           </div>
           <div style={{marginTop:28,paddingTop:18,borderTop:"1px solid "+t.border,maxWidth:650}}>
             <a href="/#cgu" target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:t.text3,textDecoration:"underline",letterSpacing:".02em"}}>Conditions générales d'utilisation</a>
@@ -1986,8 +2177,8 @@ export default function App({session}){
       </div>
       {isMobile&&!(nav==="create"&&selType)&&(()=>{
         // Mobile nav : on garde 6 onglets (Médias retiré, faute de place). Historique réintégré.
-        const MOBILE_LABELS={home:"Accueil",club:"Club",players:"Joueurs",create:"Créer",history:"Visuels",settings:"Réglages"};
-        const mobileNav=NAV.filter(n=>n.id!=="media").map(n=>({...n,label:MOBILE_LABELS[n.id]||n.label}));
+        const MOBILE_LABELS={home:"Accueil",club:"Club",players:T.players,create:"Créer",history:"Visuels",settings:"Réglages"};
+        const mobileNav=NAVL.filter(n=>n.id!=="media").map(n=>({...n,label:MOBILE_LABELS[n.id]||n.label}));
         return(
         <div style={{position:"fixed",bottom:0,left:0,right:0,height:60,background:t.bg2,borderTop:"1px solid "+t.border,display:"flex",alignItems:"stretch",zIndex:100,paddingBottom:"env(safe-area-inset-bottom,0)"}}>
           {mobileNav.map(n=>{

@@ -27,6 +27,23 @@ Le code s'adapte si la migration n'est pas encore appliquée (repli sur
 l'ancien chemin pour l'écran admin), mais l'application reste vulnérable tant
 qu'elle ne l'est pas.
 
+### `0004_club_sport.sql` — sport du club
+
+Ajoute `clubs.sport`. Le sport détermine le vocabulaire (joueur / nageur /
+athlète), les postes, les formations, le tracé de l'aire de jeu et les types de
+visuels proposés — natation et triathlon n'ayant ni « but » ni « composition »,
+mais un chrono et un podium.
+
+La colonne est nullable sans valeur par défaut : `null` = pas encore choisi,
+ce qui déclenche l'écran de sélection à la connexion. Les clubs déjà inscrits
+le verront une fois. Un bloc commenté en fin de fichier permet de les basculer
+d'office en football si vous préférez leur épargner l'écran.
+
+⚠️ Cette migration accorde aussi `grant update (sport)` : sans elle, la
+migration 0002 empêche le club d'écrire la colonne. Sans la migration du tout,
+le choix est mémorisé dans le navigateur et le club retombe sur Football sur un
+autre appareil.
+
 ### `0003_image_thumbnails.sql` — performance mobile
 
 Ajoute `thumb_url` sur `player_photos` et `media`. Les grilles affichaient les
