@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import html2canvas from "html2canvas";
 import { supabase } from "./supabase";
+import { compressImageFile, removeBackground, dominantBorderColor, isImageFile, formatBytes, TOLERANCE_PRESETS, MAX_SOURCE_BYTES } from "./imaging";
 // ─── BOTTOM SHEET SWIPE-TO-DISMISS ────────────────────────────
 // Helper module-level pour pouvoir être utilisé dans DragCanvas comme dans App.
 function makeSwipeClose(onClose){
@@ -21,13 +22,30 @@ function makeSwipeClose(onClose){
     },
   };
 }
-// ─── FILE VALIDATION ──────────────────────────────────────────
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+// ─── FILE INTAKE ──────────────────────────────────────────────
+// Plus de rejet à 10 Mo : les photos lourdes (reflex, iPhone…) sont
+// redimensionnées et recompressées automatiquement à l'import. Seul un
+// garde-fou technique subsiste (MAX_SOURCE_BYTES), au-delà duquel le
+// navigateur ne sait de toute façon plus décoder l'image.
 function validateImageFile(f){
   if(!f) return false;
-  if(!f.type||!f.type.startsWith("image/")){alert("Format non supporté. Sélectionnez une image (JPG, PNG, WebP…).");return false;}
-  if(f.size>MAX_UPLOAD_BYTES){alert("Fichier trop volumineux. Taille maximale : 10 Mo.");return false;}
+  if(!isImageFile(f)){alert("Format non supporté. Sélectionnez une image (JPG, PNG, WebP…).");return false;}
+  if(f.size>MAX_SOURCE_BYTES){alert("Fichier trop volumineux ("+formatBytes(f.size)+"). Maximum "+formatBytes(MAX_SOURCE_BYTES)+".");return false;}
   return true;
+}
+// Lit + compresse un fichier, et renvoie la data URL prête à stocker.
+// Renvoie null (et prévient l'utilisateur) si l'image est illisible.
+async function intakeImage(file,preset){
+  if(!validateImageFile(file)) return null;
+  try{
+    const {url}=await compressImageFile(file,preset||"photo");
+    return url;
+  }catch(err){
+    console.error("[intakeImage] échec:",err);
+    alert("Image illisible : "+(err&&err.message?err.message:"format non pris en charge")
+      +"\nAstuce : les fichiers HEIC de l'iPhone doivent être exportés en JPEG.");
+    return null;
+  }
 }
 // ─── MOBILE HOOKS ─────────────────────────────────────────────
 const MOBILE_BREAKPOINT = 768;
@@ -40,7 +58,8 @@ function useIsMobile(){
   },[]);
   return v;
 }
-function useCanvasScale(){
+function useCanvasScale(cw,ch){
+  const W=cw||270, H=ch||480;
   const[scale,setScale]=useState(1);
   useEffect(()=>{
     const compute=()=>{
@@ -48,16 +67,89 @@ function useCanvasScale(){
       if(w>=MOBILE_BREAKPOINT){setScale(1);return;}
       // reservedHeight adaptatif : viewports compacts gardent plus de place pour le canvas
       const r=h<700?140:200;
-      const sw=(w-24)/270, sh=(h-r)/480;
-      setScale(Math.max(0.4,Math.min(sw,sh)));
+      const sw=(w-24)/W, sh=(h-r)/H;
+      // Les formats courts (carré, 4:5) peuvent dépasser 1 sans déborder : on
+      // les laisse grandir un peu, mais pas au point de pixelliser l'aperçu.
+      setScale(Math.max(0.4,Math.min(1.5,Math.min(sw,sh))));
     };
     compute();
     window.addEventListener("resize",compute);
     return()=>window.removeEventListener("resize",compute);
-  },[]);
+  },[W,H]);
   return scale;
 }
 // ─── CONSTANTS ────────────────────────────────────────────────
+// ─── FORMATS DE PUBLICATION ───────────────────────────────────
+// Le canvas garde toujours 270 px de large : seule la hauteur change, donc
+// les calques (positionnés en %) et les tailles de police restent cohérents
+// d'un format à l'autre.
+const FORMATS = {
+  story:  {id:"story",  label:"Story",  sub:"9:16", icon:"📱", w:270, h:480, desc:"Story / Reel Instagram, TikTok"},
+  post:   {id:"post",   label:"Post",   sub:"4:5",  icon:"🖼️", w:270, h:337.5, desc:"Post au fil, format vertical"},
+  square: {id:"square", label:"Carré",  sub:"1:1",  icon:"⬜", w:270, h:270, desc:"Post carré, Facebook / X"},
+};
+const DEFAULT_FORMAT = "story";
+function fmt(id){ return FORMATS[id]||FORMATS[DEFAULT_FORMAT]; }
+// Les formats ne concernent que l'éditeur libre (but, score, affiche, recrue,
+// annonce). Composition XI et Groupe ont des gabarits dessinés en 9:16.
+const FORMAT_TYPES = ["goal","result","match","recruit","post"];
+// Au changement de format, les tailles de texte suivent la hauteur du canvas
+// pour que rien ne déborde de son cadre.
+function scaleLayersToFormat(layers,fromId,toId){
+  const a=fmt(fromId), b=fmt(toId);
+  if(a.h===b.h) return layers;
+  const k=b.h/a.h;
+  return layers.map(l=>{
+    if(typeof l.fontSize!=="number") return l;
+    return Object.assign({},l,{fontSize:Math.max(6,Math.round(l.fontSize*k))});
+  });
+}
+
+// ─── TRI STABLE ───────────────────────────────────────────────
+// Postgres ne garantit aucun ordre sans ORDER BY : sans tri explicite,
+// l'effectif se réordonnait à chaque rechargement (joueurs qui "bougent",
+// voire semblent disparaître). On trie côté client, partout pareil.
+function sortPlayers(list){
+  return [...(list||[])].sort((a,b)=>
+    (a.name||"").localeCompare(b.name||"","fr",{sensitivity:"base"})
+    || String(a.id).localeCompare(String(b.id)));
+}
+function sortPhotos(list){
+  return [...(list||[])].sort((a,b)=>
+    ((b.is_fav||b.fav)?1:0)-((a.is_fav||a.fav)?1:0)
+    || String(a.created_at||"").localeCompare(String(b.created_at||""))
+    || String(a.id).localeCompare(String(b.id)));
+}
+
+// ─── REMPLISSAGE AUTO DU JOUEUR ───────────────────────────────
+// Les textes par défaut des gabarits : on ne les écrase que tant qu'ils n'ont
+// pas été personnalisés (ou qu'ils portent encore le joueur précédent).
+const NAME_PLACEHOLDERS = ["","prénom nom","prenom nom","nom du joueur"];
+const POS_PLACEHOLDERS  = ["","attaquant · #9","poste · #9","attaquant · #0"];
+function norm(s){ return (s||"").trim().toLowerCase(); }
+function playerPosLabel(p){
+  if(!p) return "";
+  const num=(p.number===0||p.number)?String(p.number).trim():"";
+  return [p.position||"",num?"#"+num:""].filter(Boolean).join(" · ");
+}
+function isNameLayer(l){ return l.id==="nm"||/nom\s*(du\s*)?joueur/i.test(l.label||""); }
+function isPosLayer(l){ return l.id==="ps"||/^poste/i.test(l.label||""); }
+function applyPlayerToLayers(layers,player,prevPlayer){
+  if(!player) return layers;
+  const name=player.name||"";
+  const pos=playerPosLabel(player);
+  const prevName=prevPlayer?norm(prevPlayer.name):null;
+  const prevPos=prevPlayer?norm(playerPosLabel(prevPlayer)):null;
+  const free=(cur,placeholders,prevVal)=>
+    placeholders.includes(norm(cur)) || (prevVal&&norm(cur)===prevVal);
+  return layers.map(l=>{
+    if(!l||!["text","heading","subtext"].includes(l.type)) return l;
+    if(isNameLayer(l)&&name&&free(l.text,NAME_PLACEHOLDERS,prevName)) return Object.assign({},l,{text:name});
+    if(isPosLayer(l)&&pos&&free(l.text,POS_PLACEHOLDERS,prevPos)) return Object.assign({},l,{text:pos});
+    return l;
+  });
+}
+
 const POSITIONS = ["Attaquant","Milieu","Défenseur","Gardien"];
 const FONTS = ["Impact","Arial Black","Georgia","Helvetica Neue","Courier New","Montserrat"];
 const FORMATIONS = {
@@ -284,8 +376,26 @@ function renderLayerContent(lay, bgUrl, playerUrl, logoUrl, logo2Url, accent, ac
   if(lay.type==="stripe") return(<div style={{width:"100%",height:"100%",background:"linear-gradient(90deg,"+(lay.color||accent)+","+(lay.color2||accent2)+")"}}/>);
   if(lay.type==="colorblock") return(<div style={{width:"100%",height:"100%",background:lay.color||"#ff5555",opacity:(lay.opacity==null?80:lay.opacity)/100}}/>);
   if(lay.type==="photo") return(<div style={{width:"100%",height:"100%",overflow:"hidden"}}>{playerUrl?<img src={playerUrl} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:36}}>👤</div>}</div>);
-  if(lay.type==="logo") return(<div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center"}}>{logoUrl?<img src={logoUrl} style={{width:"100%",height:"100%",objectFit:"contain"}} alt=""/>:<div style={{width:"100%",height:"100%",background:rgba(accent,.2),borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:accent}}>LOGO</div>}</div>);
-  if(lay.type==="logo2") return(<div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center"}}>{logo2Url?<img src={logo2Url} style={{width:"100%",height:"100%",objectFit:"contain"}} alt=""/>:<div style={{width:"100%",height:"100%",background:"rgba(255,255,255,.07)",borderRadius:4,border:"1px solid rgba(255,255,255,.14)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"rgba(255,255,255,.3)"}}>ADV</div>}</div>);
+  if(lay.type==="logo"||lay.type==="logo2"){
+    // Pastille de fond optionnelle : beaucoup de logos de club sont fournis
+    // avec un carré blanc incrusté. Plutôt que de le subir, on assume un fond
+    // uni (carré, arrondi ou cercle) de la couleur choisie — idéalement celle
+    // échantillonnée sur le logo lui-même, ce qui rend la jointure invisible.
+    const url=lay.type==="logo"?logoUrl:logo2Url;
+    const shape=lay.bgShape||"none";
+    const padPct=lay.pad==null?12:lay.pad;
+    const wrap={width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",boxSizing:"border-box"};
+    if(shape!=="none"){
+      wrap.background=lay.bgColor||"#ffffff";
+      wrap.borderRadius=shape==="circle"?"50%":(lay.radius==null?12:lay.radius)+"%";
+      wrap.padding=padPct+"%";
+      if(lay.bgBorder) wrap.border="1px solid "+rgba(lay.bgBorderColor||"#000000",.15);
+    }
+    const ph=lay.type==="logo"
+      ? <div style={{width:"100%",height:"100%",background:rgba(accent,.2),borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:accent}}>LOGO</div>
+      : <div style={{width:"100%",height:"100%",background:"rgba(255,255,255,.07)",borderRadius:4,border:"1px solid rgba(255,255,255,.14)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"rgba(255,255,255,.3)"}}>ADV</div>;
+    return(<div style={wrap}>{url?<img src={url} style={{width:"100%",height:"100%",objectFit:"contain"}} alt=""/>:ph}</div>);
+  }
   if(lay.type==="sponsor") return(<div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center"}}>{lay.url?<img src={lay.url} style={{width:"100%",height:"100%",objectFit:"contain"}} alt=""/>:<div style={{width:"100%",height:"100%",background:"rgba(255,255,255,.05)",border:"1px dashed rgba(255,255,255,.22)",borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"rgba(255,255,255,.4)",letterSpacing:".12em"}}>SPONSOR</div>}</div>);
   if(isTextType){
     const txt = lay.upper?(lay.text||"").toUpperCase():(lay.text||"");
@@ -327,7 +437,7 @@ function renderLayerContent(lay, bgUrl, playerUrl, logoUrl, logo2Url, accent, ac
 }
 function LayerView({lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,isSel,onMD,onResize,hideHandles,clubName}){
   const s={position:"absolute",left:lay.x+"%",top:lay.y+"%",width:lay.w+"%",height:lay.h+"%",cursor:lay.locked?"default":"grab",boxSizing:"border-box",outline:isSel&&!lay.locked?"2px solid "+accent:"none",outlineOffset:1,zIndex:lay.z};
-  const showHandles=!hideHandles&&isSel&&!lay.locked&&(lay.type==="photo"||lay.type==="colorblock"||lay.type==="sponsor");
+  const showHandles=!hideHandles&&isSel&&!lay.locked&&["photo","colorblock","sponsor","logo","logo2"].includes(lay.type);
   return(<div style={s} onMouseDown={lay.locked?undefined:e=>onMD(e,lay.id)} onTouchStart={lay.locked?undefined:e=>onMD(e,lay.id)}>
     {renderLayerContent(lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,clubName)}
     {showHandles&&["tl","tr","bl","br"].map(c=>(
@@ -598,9 +708,11 @@ function PostCanvas({pd,tpl,logoUrl,accent,accent2,bgUrl,W,H}){
 }
 // ─── HISTORY THUMB ────────────────────────────────────────────
 function HistoryThumb({h,c1,c2}){
-  const W=108,H=192;
+  // La vignette reprend le format du visuel (story, 4:5 ou carré).
+  const F=FORMAT_TYPES.includes(h.type)?fmt(h.format):FORMATS.story;
+  const W=108, H=Math.round(W*F.h/F.w);
   const wr={width:W,height:H,overflow:"hidden",borderRadius:8,flexShrink:0,position:"relative"};
-  const inn={width:270,height:480,transformOrigin:"top left",transform:"scale("+(W/270)+")",position:"absolute",top:0,left:0};
+  const inn={width:F.w,height:F.h,transformOrigin:"top left",transform:"scale("+(W/F.w)+")",position:"absolute",top:0,left:0};
   try{
     if(h.type==="lineup")return<div style={wr}><div style={inn}><LineupCanvas ld={h.lineupData} tpl={h.lineupTpl||"ln1"} logoUrl={h.logoUrl} logo2Url={h.logo2Url} accent={h.accent||c1} accent2={h.accent2||c2} bgUrl={h.bgUrl}/></div></div>;
     if(h.type==="group")return<div style={wr}><div style={inn}><GroupCanvas gd={h.groupData} tpl={h.groupTpl||"gr1"} logoUrl={h.logoUrl} logo2Url={h.logo2Url} accent={h.accent||c1} accent2={h.accent2||c2} bgUrl={h.bgUrl}/></div></div>;
@@ -617,7 +729,8 @@ function HistoryThumb({h,c1,c2}){
   }catch(e){return<div style={Object.assign({},wr,{background:"#111",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20})}>{h.ct&&h.ct.icon?h.ct.icon:"📄"}</div>;}
 }
 // ─── DRAG CANVAS ──────────────────────────────────────────────
-function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,t,isMobile,mobileSheet,setMobileSheet,canvasScale,clubName}){
+function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,t,isMobile,mobileSheet,setMobileSheet,canvasScale,clubName,cw,ch,onLogoChange}){
+  const CW=cw||270, CH=ch||480;
   const cvRef=useRef(null);const dragRef=useRef(null);const resizeRef=useRef(null);const historyRef=useRef([]);const[sel,setSel]=useState(null);const[historyDepth,setHistoryDepth]=useState(0);const[mobileToast,setMobileToast]=useState(false);const selL=sel?layers.find(l=>l.id===sel):null;
   useEffect(()=>{
     if(!isMobile||!sel||mobileSheet==="layers")return;
@@ -723,34 +836,64 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
     setSel(newId);
   }
   const[removingBg,setRemovingBg]=useState(false);
-  function removeBgOnSelected(){
-    if(!selL||!selL.url)return;
+  const[bgTol,setBgTol]=useState("normal");
+  // Détourage adaptatif : la couleur de fond est détectée sur le pourtour de
+  // l'image, puis retirée par propagation depuis les bords. Fonctionne donc
+  // sur n'importe quel fond uni, pas seulement le blanc.
+  async function removeBgOnSelected(){
+    if(!selL)return;
+    const isLogoLayer=selL.type==="logo"||selL.type==="logo2";
+    const src=isLogoLayer?(selL.type==="logo"?logoUrl:logo2Url):selL.url;
+    if(!src)return;
     setRemovingBg(true);
-    const img=new Image();
-    img.crossOrigin="anonymous";
-    img.onload=()=>{
-      try{
-        const c=document.createElement("canvas");
-        c.width=img.naturalWidth||img.width;c.height=img.naturalHeight||img.height;
-        const ctx=c.getContext("2d");
-        ctx.drawImage(img,0,0);
-        const d=ctx.getImageData(0,0,c.width,c.height);
-        const data=d.data;
-        for(let i=0;i<data.length;i+=4){
-          const r=data[i],g=data[i+1],b=data[i+2];
-          const avg=(r+g+b)/3;
-          const variance=Math.max(r,g,b)-Math.min(r,g,b);
-          if(avg>220&&variance<30) data[i+3]=0;
-        }
-        ctx.putImageData(d,0,0);
-        const newUrl=c.toDataURL("image/png");
-        pushHist();
-        setLayers(p=>p.map(l=>l.id===sel?{...l,url:newUrl}:l));
-      }catch(e){console.error("removeBg sponsor failed:",e);}
-      setRemovingBg(false);
-    };
-    img.onerror=()=>setRemovingBg(false);
-    img.src=selL.url;
+    try{
+      const{url,removedRatio}=await removeBackground(src,{tolerance:TOLERANCE_PRESETS[bgTol],trim:true});
+      if(removedRatio<0.01){
+        alert("Aucun fond uni détecté sur cette image. Essayez une tolérance plus forte, ou partez d'une image au fond uni.");
+      }else{
+        if(isLogoLayer){ onLogoChange&&onLogoChange(selL.type,url); }
+        else{ pushHist(); setLayers(p=>p.map(l=>l.id===sel?{...l,url}:l)); }
+      }
+    }catch(err){
+      console.error("[removeBg] échec:",err);
+      alert(err&&err.message?err.message:"Détourage impossible sur cette image.");
+    }
+    setRemovingBg(false);
+  }
+  // Échantillonne le fond du logo pour colorer sa pastille / son bandeau :
+  // la jointure devient invisible même quand le logo traîne un carré blanc.
+  async function pickLogoBgColor(){
+    const src=selL&&selL.type==="logo2"?logo2Url:logoUrl;
+    if(!src)return;
+    try{
+      const color=await dominantBorderColor(src);
+      pushHist();
+      setLayers(p=>p.map(l=>l.id===sel?{...l,bgShape:l.bgShape&&l.bgShape!=="none"?l.bgShape:"square",bgColor:color}:l));
+    }catch(err){console.error("[pickLogoBgColor] échec:",err);}
+  }
+  // Bandeau : une marge unie pleine largeur dans laquelle le logo vient se
+  // poser. C'est la réponse aux logos sans forme nette, qu'on ne peut pas
+  // détourer proprement — on assume la bande plutôt que le carré blanc.
+  async function addBand(where){
+    let color=accent;
+    if(logoUrl){ try{ color=await dominantBorderColor(logoUrl); }catch(err){ console.warn("[addBand] couleur auto indisponible:",err); } }
+    pushHist();
+    const bandH=15;
+    const top=where==="bottom"?100-bandH:0;
+    const maxZ=layers.reduce((m,l)=>Math.max(m,l.z),0);
+    const bandId="bn_"+Date.now();
+    const band={id:bandId,z:maxZ+1,type:"colorblock",x:0,y:top,w:100,h:bandH,locked:false,label:"Bandeau "+(where==="bottom"?"bas":"haut"),color,opacity:100};
+    const logoH=bandH*0.72, logoW=logoH*(CH/CW);
+    setLayers(prev=>{
+      const withBand=[...prev,band];
+      const hasLogo=withBand.some(l=>l.type==="logo");
+      if(!hasLogo) return withBand;
+      // Le logo se recale au centre du bandeau, juste au-dessus de lui.
+      return withBand.map(l=>l.type==="logo"
+        ?{...l,z:maxZ+2,x:50-logoW/2,y:top+(bandH-logoH)/2,w:logoW,h:logoH,bgShape:"none"}
+        :l);
+    });
+    setSel(bandId);
   }
   function upd(f,v){pushHist();setLayers(p=>p.map(l=>l.id===sel?Object.assign({},l,{[f]:v}):l));}
   function moveZ(id,d){pushHist();setLayers(prev=>{const s=[...prev].sort((a,b)=>a.z-b.z);const i=s.findIndex(l=>l.id===id),j=i+d;if(j<0||j>=s.length)return prev;const za=s[i].z,zb=s[j].z;return prev.map(l=>l.id===s[i].id?{...l,z:zb}:l.id===s[j].id?{...l,z:za}:l);});}
@@ -771,16 +914,16 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
           Calque sélectionné — appuyez sur ≡ Calques pour éditer
         </div>
       )}
-      <div style={isMobile?{width:270*cs,height:480*cs,position:"relative",flexShrink:0}:{display:"contents"}}>
-        <div style={isMobile?{position:"absolute",top:0,left:0,width:270,height:480,transform:"scale("+cs+")",transformOrigin:"top left"}:{display:"contents"}}>
-          <div ref={cvRef} className="visium-canvas" onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU} onTouchMove={onMM} onTouchEnd={onMU} onTouchCancel={onMU} onClick={layerHit} style={{width:270,height:480,position:"relative",overflow:"hidden",borderRadius:16,border:"1px solid "+t.border,background:"#111",cursor:"default",userSelect:"none",WebkitUserSelect:"none",touchAction:"none",flexShrink:0}}>
+      <div style={isMobile?{width:CW*cs,height:CH*cs,position:"relative",flexShrink:0}:{display:"contents"}}>
+        <div style={isMobile?{position:"absolute",top:0,left:0,width:CW,height:CH,transform:"scale("+cs+")",transformOrigin:"top left"}:{display:"contents"}}>
+          <div ref={cvRef} className="visium-canvas" onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU} onTouchMove={onMM} onTouchEnd={onMU} onTouchCancel={onMU} onClick={layerHit} style={{width:CW,height:CH,position:"relative",overflow:"hidden",borderRadius:16,border:"1px solid "+t.border,background:"#111",cursor:"default",userSelect:"none",WebkitUserSelect:"none",touchAction:"none",flexShrink:0}}>
             {sorted.map(lay=>(<LayerView key={lay.id} lay={lay} bgUrl={bgUrl} playerUrl={playerUrl} logoUrl={logoUrl} logo2Url={logo2Url} accent={accent} accent2={accent2} isSel={sel===lay.id} onMD={onMD} onResize={onResize} hideHandles={isMobile} clubName={clubName}/>))}
             <Watermark/>
           </div>
         </div>
       </div>
       {!isMobile&&<div style={{fontSize:11,color:"rgba(255,255,255,.2)"}}>Cliquer · Glisser pour déplacer</div>}
-      {isMobile&&selL&&!selL.locked&&(selL.type==="photo"||selL.type==="colorblock"||selL.type==="sponsor"||["text","watertext","heading","subtext"].includes(selL.type))&&(
+      {isMobile&&selL&&!selL.locked&&["photo","colorblock","sponsor","logo","logo2","text","watertext","heading","subtext"].includes(selL.type)&&(
         <div style={{display:"flex",alignItems:"center",gap:8,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,padding:"6px 10px"}}>
           <span style={{fontSize:10,color:"rgba(255,255,255,.6)",letterSpacing:".06em",textTransform:"uppercase"}}>{selL.label||"Calque"}</span>
           <button onClick={()=>{pushHist();setLayers(p=>p.map(l=>l.id===sel?{...l,w:Math.max(5,l.w*0.95),h:Math.max(5,l.h*0.95)}:l));}} className="viz-touch-btn" style={{background:t.bg4,border:"1px solid "+t.border2,color:t.text,borderRadius:8,padding:0,fontSize:18,cursor:"pointer",fontWeight:700,lineHeight:1,width:44,height:44,fontFamily:"inherit"}}>−</button>
@@ -798,6 +941,8 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
           <button onClick={addText} style={{background:rgba(accent,.15),color:accent,border:"1px solid "+rgba(accent,.35),borderRadius:6,padding:"3px 7px",fontSize:10,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>+ Texte</button>
           <button onClick={addColorBlock} style={{background:rgba(accent,.15),color:accent,border:"1px solid "+rgba(accent,.35),borderRadius:6,padding:"3px 7px",fontSize:10,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>+ Couleur</button>
           <button onClick={addSponsor} style={{background:rgba(accent,.15),color:accent,border:"1px solid "+rgba(accent,.35),borderRadius:6,padding:"3px 7px",fontSize:10,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>+ Sponsor</button>
+          <button onClick={()=>addBand("top")} title="Marge unie en haut, logo intégré dedans" style={{background:rgba(accent,.15),color:accent,border:"1px solid "+rgba(accent,.35),borderRadius:6,padding:"3px 7px",fontSize:10,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>+ Bandeau ↑</button>
+          <button onClick={()=>addBand("bottom")} title="Marge unie en bas, logo intégré dedans" style={{background:rgba(accent,.15),color:accent,border:"1px solid "+rgba(accent,.35),borderRadius:6,padding:"3px 7px",fontSize:10,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>+ Bandeau ↓</button>
         </div>
       </div>
       <div style={{marginBottom:12}}>{[...sorted].reverse().map(lay=>(<div key={lay.id} onClick={()=>setSel(lay.id)} style={{display:"flex",alignItems:"center",gap:5,padding:"5px 7px",borderRadius:6,marginBottom:2,background:sel===lay.id?rgba(accent,.14):t.bg3,border:"1px solid "+(sel===lay.id?rgba(accent,.45):t.border),cursor:"pointer"}}><span style={{fontSize:10,color:t.text,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lay.label||lay.type}</span>{!lay.locked&&<><button onClick={e=>{e.stopPropagation();moveZ(lay.id,1);}} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:11,padding:0}}>↑</button><button onClick={e=>{e.stopPropagation();moveZ(lay.id,-1);}} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:11,padding:0}}>↓</button></>}</div>))}</div>
@@ -839,11 +984,28 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
               {selL.url&&<button onClick={()=>{pushHist();upd("url",null);}} style={{fontSize:10,color:t.text3,background:"none",border:"none",cursor:"pointer",padding:"4px 0",alignSelf:"center"}}>✕ Retirer</button>}
             </div>
           </div>
-          {selL.url&&(
-            <button onClick={removeBgOnSelected} disabled={removingBg} style={{width:"100%",background:rgba(accent,.12),color:accent,border:"1px solid "+rgba(accent,.3),borderRadius:7,padding:"7px",fontSize:11,fontWeight:600,cursor:removingBg?"wait":"pointer",marginBottom:8}}>
-              {removingBg?"Traitement…":"✂ Supprimer le fond blanc"}
-            </button>
-          )}
+          {selL.url&&<CutoutBox tol={bgTol} setTol={setBgTol} onRun={removeBgOnSelected} busy={removingBg} t={t} accent={accent}/>}
+        </>}
+        {(selL.type==="logo"||selL.type==="logo2")&&<>
+          <div style={{fontSize:9,color:t.text3,marginBottom:4}}>Fond derrière le logo</div>
+          <div style={{display:"flex",gap:4,marginBottom:8}}>
+            {[["none","Aucun"],["square","Carré"],["circle","Cercle"]].map(([v,lbl])=>{
+              const on=(selL.bgShape||"none")===v;
+              return <button key={v} onClick={()=>upd("bgShape",v)} style={{flex:1,background:on?accent:"transparent",border:"1px solid "+(on?accent:t.border2),borderRadius:6,padding:"5px 2px",color:on?contrastText(accent):t.text2,cursor:"pointer",fontSize:9,fontWeight:600}}>{lbl}</button>;
+            })}
+          </div>
+          {(selL.bgShape&&selL.bgShape!=="none")&&<>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:8}}>
+              <div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Couleur</div><input type="color" value={selL.bgColor||"#ffffff"} onChange={e=>upd("bgColor",e.target.value)} style={{width:"100%",height:30,borderRadius:6,border:"1px solid "+t.border2,background:t.bg4,cursor:"pointer",padding:2}}/></div>
+              <div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Marge ({selL.pad==null?12:selL.pad}%)</div><TouchSlider value={selL.pad==null?12:selL.pad} onChange={v=>upd("pad",v)} min={0} max={35} step={1} t={t} isMobile={isMobile}/></div>
+            </div>
+            {(selL.bgShape==="square")&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Arrondi ({selL.radius==null?12:selL.radius}%)</div><TouchSlider value={selL.radius==null?12:selL.radius} onChange={v=>upd("radius",v)} min={0} max={50} step={1} t={t} isMobile={isMobile}/></div>}
+          </>}
+          <button onClick={pickLogoBgColor} style={{width:"100%",background:t.bg4,color:t.text2,border:"1px solid "+t.border2,borderRadius:7,padding:"7px",fontSize:10,cursor:"pointer",marginBottom:8,fontFamily:"inherit"}}>
+            🎯 Reprendre la couleur de fond du logo
+          </button>
+          <CutoutBox tol={bgTol} setTol={setBgTol} onRun={removeBgOnSelected} busy={removingBg} t={t} accent={accent}
+            hint="Logos sans forme nette : préférez un bandeau ou une pastille."/>
         </>}
         {(selL.type==="scoreblock"||selL.type==="scorebig")&&<>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:6}}>
@@ -879,9 +1041,42 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
   </div>);
 }
 // ─── SMALL UI ATOMS ───────────────────────────────────────────
+function CutoutBox({tol,setTol,onRun,busy,t,accent,hint}){
+  return(<div style={{marginBottom:8}}>
+    <div style={{fontSize:9,color:t.text3,marginBottom:4}}>Détourage · intensité</div>
+    <div style={{display:"flex",gap:4,marginBottom:6}}>
+      {[["low","Douce"],["normal","Normale"],["high","Forte"]].map(([v,lbl])=>{
+        const on=tol===v;
+        return <button key={v} onClick={()=>setTol(v)} style={{flex:1,background:on?accent:"transparent",border:"1px solid "+(on?accent:t.border2),borderRadius:6,padding:"5px 2px",color:on?contrastText(accent):t.text2,cursor:"pointer",fontSize:9,fontWeight:600}}>{lbl}</button>;
+      })}
+    </div>
+    <button onClick={onRun} disabled={busy} style={{width:"100%",background:rgba(accent,.12),color:accent,border:"1px solid "+rgba(accent,.3),borderRadius:7,padding:"7px",fontSize:11,fontWeight:600,cursor:busy?"wait":"pointer",fontFamily:"inherit"}}>
+      {busy?"Traitement…":"✂ Détourer le fond"}
+    </button>
+    <div style={{fontSize:9,color:t.text3,marginTop:4,lineHeight:1.4}}>{hint||"Retire le fond uni quelle que soit sa couleur (pas seulement le blanc)."}</div>
+  </div>);
+}
 function TIn({v,on,ph,type,t,st,min}){return<input value={v} type={type||"text"} placeholder={ph||""} min={min} onChange={e=>on(e.target.value)} style={Object.assign({},{background:t.bg3,border:"1px solid "+t.border2,borderRadius:7,padding:"8px 10px",color:t.text,fontSize:13,outline:"none",width:"100%",boxSizing:"border-box"},st||{})}/>;}
 function TSel({v,on,opts,t}){return<select value={v} onChange={e=>on(e.target.value)} style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:7,padding:"8px 10px",color:t.text,fontSize:13,outline:"none",width:"100%",boxSizing:"border-box"}}>{opts.map(o=>typeof o==="string"?<option key={o} value={o}>{o}</option>:<option key={o.v} value={o.v}>{o.l}</option>)}</select>;}
-function UpBtn({val,on,w,h,r,label,t}){w=w||52;h=h||44;r=r||8;const ref=useRef();const pick=e=>{const f=e.target.files[0];if(!validateImageFile(f)){e.target.value="";return;}const rd=new FileReader();rd.onload=ev=>on(ev.target.result);rd.readAsDataURL(f);};return(<div onClick={()=>ref.current.click()} style={{width:w,height:h,borderRadius:r,border:"2px dashed "+(val?t.accent:t.border2),background:t.bg3,cursor:"pointer",overflow:"hidden",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flexShrink:0,gap:2}}>{val?<img src={val} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>:<><span style={{color:t.text3,fontSize:20,lineHeight:1}}>+</span>{label&&<span style={{fontSize:9,color:t.text3,textAlign:"center",padding:"0 3px",lineHeight:1.2}}>{label}</span>}</>}<input ref={ref} type="file" accept="image/*" style={{display:"none"}} onChange={pick}/></div>);}
+function UpBtn({val,on,w,h,r,label,t,preset}){
+  w=w||52;h=h||44;r=r||8;
+  const ref=useRef();
+  const[busy,setBusy]=useState(false);
+  const pick=async e=>{
+    const f=e.target.files[0];
+    e.target.value="";
+    if(!f)return;
+    setBusy(true);
+    const url=await intakeImage(f,preset||"logo");
+    setBusy(false);
+    if(url)on(url);
+  };
+  return(<div onClick={()=>!busy&&ref.current.click()} style={{width:w,height:h,borderRadius:r,border:"2px dashed "+(val?t.accent:t.border2),background:t.bg3,cursor:busy?"wait":"pointer",overflow:"hidden",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flexShrink:0,gap:2,position:"relative"}}>
+    {val?<img src={val} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>:<><span style={{color:t.text3,fontSize:20,lineHeight:1}}>+</span>{label&&<span style={{fontSize:9,color:t.text3,textAlign:"center",padding:"0 3px",lineHeight:1.2}}>{label}</span>}</>}
+    {busy&&<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,.55)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"#fff",letterSpacing:".04em"}}>…</div>}
+    <input ref={ref} type="file" accept="image/*" style={{display:"none"}} onChange={pick}/>
+  </div>);
+}
 function Av({photo,name,size}){size=size||40;const[err,setErr]=useState(false);const ini=(name||"?").trim().split(/\s+/).map(w=>w[0]).join("").slice(0,2).toUpperCase();return(<div style={{width:size,height:size,borderRadius:"50%",overflow:"hidden",background:"linear-gradient(135deg,#e63329,#1a1a2e)",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*.32,fontWeight:700,color:"#fff"}}>{photo&&!err?<img src={photo} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt="" onError={()=>setErr(true)}/>:ini}</div>);}
 function PBox({children,t,mb}){return<div style={{background:t.bg3,borderRadius:10,padding:12,marginBottom:mb||10}}>{children}</div>;}
 function SHdr({label,t}){return<div style={{fontSize:10,color:t.text3,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",marginBottom:8,paddingBottom:6,borderBottom:"1px solid "+t.border}}>{label}</div>;}
@@ -912,70 +1107,82 @@ function TplGrid({tpls,sel,onSel,t,maxTemplates}){
     </div>
   ))}</div>);
 }
-function PhotoPanel({players,selId,onSel,selUrl,onSelUrl,onAdd,onAddUrl,onFav,t}){
+function PhotoPanel({players,selId,onSel,selUrl,onSelUrl,onAdd,onAddUrl,onFav,onDelete,t}){
   const ref=useRef();
   const[removing,setRemoving]=useState(null);
+  const[busy,setBusy]=useState(false);
+  const[tol,setTol]=useState("normal");
   const player=players.find(p=>p.id===selId);
-  const photos=player?[...(player.photos||[])].sort((a,b)=>((b.is_fav||b.fav)?1:0)-((a.is_fav||a.fav)?1:0)):[];
-  const pick=e=>{[...e.target.files].forEach(f=>{if(!validateImageFile(f))return;const r=new FileReader();r.onload=ev=>onAdd(selId,f);r.readAsDataURL(f);});e.target.value="";};
-  function handleRemoveBg(ph){
+  const photos=player?sortPhotos(player.photos):[];
+  // Les photos importées deux fois portent le même nom de fichier : on le
+  // signale pour que le doublon soit identifiable avant suppression.
+  const dupNames=new Set();
+  {
+    const seen=new Set();
+    photos.forEach(ph=>{const n=(ph.name||"").toLowerCase();if(!n)return;if(seen.has(n))dupNames.add(n);else seen.add(n);});
+  }
+  async function pick(e){
+    const files=[...e.target.files];
+    e.target.value="";
+    if(!files.length)return;
+    setBusy(true);
+    for(const f of files){ await onAdd(selId,f); }
+    setBusy(false);
+  }
+  async function handleRemoveBg(ph){
     setRemoving(ph.id);
-    const img=new Image();
-    // Pas de crossOrigin sur les data URLs : ça déclenche un faux "tainted canvas" sur iOS Safari < 16
-    const isDataUrl=typeof ph.url==="string"&&ph.url.startsWith("data:");
-    if(!isDataUrl)img.crossOrigin="anonymous";
-    img.onload=()=>{
-      try{
-        // iOS Safari limite la taille du canvas (~16 Mpx). On downscale si l'image dépasse 2048 sur le plus grand côté.
-        const MAX_DIM=2048;
-        const iw=img.naturalWidth||img.width, ih=img.naturalHeight||img.height;
-        const scale=Math.min(1,MAX_DIM/Math.max(iw,ih));
-        const cw=Math.max(1,Math.round(iw*scale)), ch=Math.max(1,Math.round(ih*scale));
-        const c=document.createElement("canvas");
-        c.width=cw; c.height=ch;
-        const ctx=c.getContext("2d");
-        if(!ctx){console.error("removeBg: canvas 2d context unavailable");setRemoving(null);return;}
-        ctx.drawImage(img,0,0,cw,ch);
-        let d;
-        try{d=ctx.getImageData(0,0,cw,ch);}
-        catch(secErr){console.error("removeBg: getImageData blocked (tainted canvas):",secErr&&secErr.message);setRemoving(null);return;}
-        const data=d.data;
-        for(let i=0;i<data.length;i+=4){
-          const r=data[i],g=data[i+1],b=data[i+2];
-          const avg=(r+g+b)/3;
-          const variance=Math.max(r,g,b)-Math.min(r,g,b);
-          if(avg>220&&variance<30) data[i+3]=0;
-        }
-        ctx.putImageData(d,0,0);
-        const newUrl=c.toDataURL("image/png");
-        Promise.resolve(onAddUrl&&onAddUrl(selId,newUrl,(ph.name||"photo")+"_nobg")).finally(()=>setRemoving(null));
-      }catch(e){
-        console.error("removeBg failed:",e&&e.message);
-        setRemoving(null);
+    try{
+      const{url,removedRatio}=await removeBackground(ph.url,{tolerance:TOLERANCE_PRESETS[tol]});
+      if(removedRatio<0.01){
+        alert("Aucun fond uni détecté sur cette photo. Essayez l'intensité « Forte », ou partez d'une photo sur fond uni.");
+      }else{
+        await(onAddUrl&&onAddUrl(selId,url,(ph.name||"photo")+"_detoure"));
       }
-    };
-    img.onerror=(e)=>{console.error("removeBg: img load failed",e);setRemoving(null);};
-    img.src=ph.url;
+    }catch(err){
+      console.error("[removeBg] échec:",err);
+      alert(err&&err.message?err.message:"Détourage impossible sur cette photo.");
+    }
+    setRemoving(null);
   }
   return(<div>
     <div style={{fontSize:10,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:6}}>Joueur</div>
     <TSel v={selId?String(selId):""} on={v=>onSel(v?v:null)} t={t} opts={[{v:"",l:"Sélectionner un joueur..."},...players.map(p=>({v:p.id,l:p.name+" · #"+p.number}))]}/>
     {player&&(<div style={{marginTop:10}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}><span style={{fontSize:11,color:t.text2}}>{photos.length} photo{photos.length!==1?"s":""}</span><button onClick={()=>ref.current.click()} style={{fontSize:11,color:t.accent,background:rgba(t.accent,.12),border:"1px solid "+rgba(t.accent,.3),borderRadius:6,padding:"4px 10px",cursor:"pointer",fontWeight:600}}>+ Photo</button></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}><span style={{fontSize:11,color:t.text2}}>{busy?"Import en cours…":photos.length+" photo"+(photos.length!==1?"s":"")}</span><button onClick={()=>ref.current.click()} disabled={busy} style={{fontSize:11,color:t.accent,background:rgba(t.accent,.12),border:"1px solid "+rgba(t.accent,.3),borderRadius:6,padding:"4px 10px",cursor:busy?"wait":"pointer",fontWeight:600}}>+ Photo</button></div>
       <input ref={ref} type="file" accept="image/*" multiple style={{display:"none"}} onChange={pick}/>
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4}}>
-        {photos.map(ph=>(<div key={ph.id} style={{position:"relative"}}>
-          <div onClick={()=>onSelUrl(ph.url)} style={{borderRadius:7,overflow:"hidden",border:"2px solid "+(selUrl===ph.url?t.accent:t.border),cursor:"pointer",aspectRatio:"3/4"}}>
+        {photos.map(ph=>{
+          const isDup=dupNames.has((ph.name||"").toLowerCase());
+          return(<div key={ph.id} style={{position:"relative"}}>
+          <div onClick={()=>onSelUrl(ph.url)} style={{borderRadius:7,overflow:"hidden",border:"2px solid "+(selUrl===ph.url?t.accent:isDup?"rgba(245,158,11,.6)":t.border),cursor:"pointer",aspectRatio:"3/4"}}>
             <img src={ph.url} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>
           </div>
           {(ph.is_fav||ph.fav)&&<div style={{position:"absolute",top:3,left:3,background:t.accent,borderRadius:3,fontSize:8,color:contrastText(t.accent),padding:"1px 4px",fontWeight:700}}>FAV</div>}
+          {isDup&&!(ph.is_fav||ph.fav)&&<div title="Même nom de fichier qu'une autre photo" style={{position:"absolute",top:3,left:3,background:"rgba(245,158,11,.9)",borderRadius:3,fontSize:8,color:"#1a1a1a",padding:"1px 4px",fontWeight:700}}>2×</div>}
           <div onClick={e=>{e.stopPropagation();onFav(selId,ph.id);}} style={{position:"absolute",top:3,right:3,fontSize:13,background:"rgba(0,0,0,.5)",borderRadius:3,padding:"1px 2px",cursor:"pointer"}}>{(ph.is_fav||ph.fav)?"★":"☆"}</div>
-          <button onClick={e=>{e.stopPropagation();handleRemoveBg(ph);}} onTouchEnd={e=>{e.stopPropagation();}} disabled={removing===ph.id} className="viz-touch-btn"
-            style={{position:"absolute",bottom:3,left:"50%",transform:"translateX(-50%)",background:rgba(t.accent,.85),border:"none",borderRadius:4,fontSize:10,color:contrastText(t.accent),cursor:removing===ph.id?"wait":"pointer",padding:"4px 9px",whiteSpace:"nowrap",fontWeight:600,fontFamily:"inherit"}}>
-            {removing===ph.id?"...":"✂ fond"}
-          </button>
-        </div>))}
+          <div style={{position:"absolute",bottom:3,left:0,right:0,display:"flex",justifyContent:"center",gap:3,padding:"0 3px"}}>
+            <button onClick={e=>{e.stopPropagation();handleRemoveBg(ph);}} disabled={removing===ph.id} className="viz-touch-btn"
+              style={{background:rgba(t.accent,.85),border:"none",borderRadius:4,fontSize:10,color:contrastText(t.accent),cursor:removing===ph.id?"wait":"pointer",padding:"4px 7px",whiteSpace:"nowrap",fontWeight:600,fontFamily:"inherit"}}>
+              {removing===ph.id?"…":"✂"}
+            </button>
+            <button onClick={e=>{e.stopPropagation();if(window.confirm("Supprimer cette photo de "+(player.name||"ce joueur")+" ?"))onDelete&&onDelete(selId,ph.id,ph.url);}} className="viz-touch-btn"
+              title="Supprimer cette photo"
+              style={{background:"rgba(0,0,0,.7)",border:"1px solid rgba(239,68,68,.5)",borderRadius:4,fontSize:10,color:"#fca5a5",cursor:"pointer",padding:"4px 7px",whiteSpace:"nowrap",fontWeight:600,fontFamily:"inherit"}}>
+              🗑
+            </button>
+          </div>
+        </div>);})}
       </div>
+      {photos.length>0&&<div style={{marginTop:8}}>
+        <div style={{fontSize:9,color:t.text3,marginBottom:4}}>Détourage · intensité (bouton ✂)</div>
+        <div style={{display:"flex",gap:4}}>
+          {[["low","Douce"],["normal","Normale"],["high","Forte"]].map(([v,lbl])=>{
+            const on=tol===v;
+            return <button key={v} onClick={()=>setTol(v)} style={{flex:1,background:on?t.accent:"transparent",border:"1px solid "+(on?t.accent:t.border2),borderRadius:6,padding:"5px 2px",color:on?contrastText(t.accent):t.text2,cursor:"pointer",fontSize:9,fontWeight:600}}>{lbl}</button>;
+          })}
+        </div>
+        <div style={{fontSize:9,color:t.text3,marginTop:4,lineHeight:1.4}}>Le détourage crée une nouvelle photo, l'originale est conservée.</div>
+      </div>}
     </div>)}
   </div>);
 }
@@ -1044,6 +1251,28 @@ function PostEditor({pd,setPd,t}){
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Date</div><TIn v={pd.date||""} on={v=>setPd(d=>Object.assign({},d,{date:v}))} ph="12 avril 2025" t={t}/></div><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Hashtag</div><TIn v={pd.hashtag||""} on={v=>setPd(d=>Object.assign({},d,{hashtag:v}))} ph="#monclub" t={t}/></div></div>
   </div>);
 }
+// ─── ÉCRITURE D'UN VISUEL ─────────────────────────────────────
+// La colonne `format` est ajoutée par la migration
+// supabase/migrations/0001_visuals_format.sql. Tant qu'elle n'est pas passée
+// en base, on réécrit sans elle plutôt que de faire échouer la sauvegarde :
+// l'app reste utilisable, seul le format retombe sur Story au rechargement.
+function isMissingFormatColumn(error){
+  if(!error)return false;
+  return error.code==="42703"||/column .*format.* does not exist/i.test(error.message||"");
+}
+async function writeVisual(mode,payload,id){
+  const run=(body)=>mode==="update"
+    ? supabase.from("visuals").update(body).eq("id",id).select().single()
+    : supabase.from("visuals").insert(body).select().single();
+  let res=await run(payload);
+  if(isMissingFormatColumn(res.error)){
+    console.warn("[writeVisual] colonne `format` absente — migration 0001 non appliquée.");
+    const rest=Object.assign({},payload);
+    delete rest.format;
+    res=await run(rest);
+  }
+  return res;
+}
 // ─── APP ──────────────────────────────────────────────────────
 export default function App({session}){
   const[club,setClub]=useState(null);
@@ -1083,6 +1312,7 @@ export default function App({session}){
   const[lineupTpl,setLineupTpl]=useState("ln1");
   const[groupTpl,setGroupTpl]=useState("gr1");
   const[postTpl,setPostTpl]=useState("pt1");
+  const[format,setFormat]=useState(DEFAULT_FORMAT);
   const[saveFlash,setSaveFlash]=useState(false);
   const[weeklyCount,setWeeklyCount]=useState(0);
   const[limitError,setLimitError]=useState("");
@@ -1090,7 +1320,12 @@ export default function App({session}){
   const[slotScale,setSlotScale]=useState(1);
   const[exportOverlay,setExportOverlay]=useState(null);  // {dataUrl, filename, blob} pour overlay iOS
   const isMobile=useIsMobile();
-  const canvasScale=useCanvasScale();
+  const F=fmt(format);
+  const supportsFormat=FORMAT_TYPES.includes(selType);
+  // Composition XI / Groupe restent en 9:16 (gabarits dessinés pour ce ratio).
+  const canvasW=supportsFormat?F.w:FORMATS.story.w;
+  const canvasH=supportsFormat?F.h:FORMATS.story.h;
+  const canvasScale=useCanvasScale(canvasW,canvasH);
   const[mobileSheet,setMobileSheet]=useState(null);
   useEffect(()=>{
     if(!document.getElementById("viziona-landing-fonts")){
@@ -1114,11 +1349,19 @@ export default function App({session}){
   const mRef=useRef();
   const t=useMemo(()=>buildTheme(club?.color1,club?.color2,club?.theme_mode||"light"),[club]);
   // ── LOAD DATA ───────────────────────────────────────────────
+  // Deux protections contre les données qui « disparaissent puis reviennent » :
+  //  - l'effet est indexé sur l'id utilisateur, pas sur l'objet session (que
+  //    Supabase remplace à chaque rafraîchissement de token) ;
+  //  - un jeton de requête ignore le résultat d'un chargement périmé, pour
+  //    qu'une réponse lente n'écrase pas un ajout fait entre-temps.
+  const uid=session&&session.user?session.user.id:null;
+  const loadTokenRef=useRef(0);
   useEffect(()=>{
-    if(!session)return;
+    if(!uid)return;
+    const token=++loadTokenRef.current;
+    const stale=()=>loadTokenRef.current!==token;
     async function load(){
       setLoading(true);
-      const uid=session.user.id;
       let{data:clubData}=await supabase.from("clubs").select("*").eq("user_id",uid).single();
       if(!clubData){
         // Première connexion via magic link : créer la ligne clubs avec le nom de club passé en user_metadata au signup.
@@ -1138,6 +1381,7 @@ export default function App({session}){
         }
       }
       if(!clubData?.approved){await supabase.auth.signOut();return;}
+      if(stale())return;
       setClub(clubData);
       // Compter les visuels des 7 derniers jours
       const since=new Date(Date.now()-7*24*60*60*1000).toISOString();
@@ -1146,38 +1390,61 @@ export default function App({session}){
         .select("*",{count:"exact",head:true})
         .eq("club_id",clubData.id)
         .gte("created_at",since);
+      if(stale())return;
       setWeeklyCount(count||0);
       const{data:playersData}=await supabase.from("players").select("*, photos:player_photos(*)").eq("club_id",clubData.id);
-      setPlayers(playersData||[]);
+      if(stale())return;
+      setPlayers(sortPlayers(playersData));
       const{data:mediaData}=await supabase.from("media").select("*").eq("club_id",clubData.id);
+      if(stale())return;
       setMedia(mediaData||[]);
       const{data:visualsData}=await supabase.from("visuals").select("*").eq("club_id",clubData.id).order("created_at",{ascending:false});
-      setHistory((visualsData||[]).map(v=>({...v,layers:v.layers||[],lineupData:v.lineup_data||{},groupData:v.group_data||{},postData:v.post_data||{},lineupTpl:v.lineup_tpl,groupTpl:v.group_tpl,postTpl:v.post_tpl,bgUrl:v.bg_url,logoUrl:v.logo_url,logo2Url:v.logo2_url,playerUrl:v.player_url,ct:CTYPES.find(c=>c.id===v.type)})));
+      if(stale())return;
+      setHistory((visualsData||[]).map(v=>({...v,layers:v.layers||[],lineupData:v.lineup_data||{},groupData:v.group_data||{},postData:v.post_data||{},lineupTpl:v.lineup_tpl,groupTpl:v.group_tpl,postTpl:v.post_tpl,bgUrl:v.bg_url,logoUrl:v.logo_url,logo2Url:v.logo2_url,playerUrl:v.player_url,format:v.format||DEFAULT_FORMAT,ct:CTYPES.find(c=>c.id===v.type)})));
       setLoading(false);
     }
     load();
-  },[session]);
+    // Volontairement indexé sur `uid` seul : dépendre de `session` ferait
+    // recharger toutes les données à chaque rafraîchissement de token.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[uid]);
   async function updateClub(patch){const updated={...club,...patch};setClub(updated);await supabase.from("clubs").update(patch).eq("id",club.id);}
   async function addPlayer(){
     if(!pName.trim())return;
     const{data}=await supabase.from("players").insert({club_id:club.id,name:pName.trim(),number:pNum,position:pPos}).select("*, photos:player_photos(*)").single();
-    if(data)setPlayers(p=>[...p,data]);
+    if(data)setPlayers(p=>sortPlayers([...p,data]));
     setPName("");setPNum("");
   }
-  async function deletePlayer(id){await supabase.from("players").delete().eq("id",id);setPlayers(p=>p.filter(x=>x.id!==id));}
-  const addPhoto=useCallback((playerId,file)=>{
-    if(!validateImageFile(file))return;
-    const reader=new FileReader();
-    reader.onload=async(e)=>{
-      const url=e.target.result;
-      const{data}=await supabase.from("player_photos").insert({player_id:playerId,url,name:file.name,is_fav:false}).select().single();
-      if(data)setPlayers(prev=>prev.map(p=>p.id===playerId?{...p,photos:[...(p.photos||[]),data]}:p));
-    };
-    reader.readAsDataURL(file);
+  async function deletePlayer(id){
+    const p=players.find(x=>x.id===id);
+    const n=p&&p.photos?p.photos.length:0;
+    if(!window.confirm("Retirer "+((p&&p.name)||"ce joueur")+" de l'effectif"+(n?" ainsi que ses "+n+" photo"+(n>1?"s":""):"")+" ?"))return;
+    await supabase.from("players").delete().eq("id",id);
+    setPlayers(prev=>prev.filter(x=>x.id!==id));
+    if(selPid===id){setSelPid(null);setSelPhoto(null);}
+  }
+  // Les photos sont redimensionnées et recompressées ici : un fichier de 25 Mo
+  // passe sans que l'utilisateur ait à préparer ses images en amont.
+  const addPhoto=useCallback(async(playerId,file)=>{
+    const url=await intakeImage(file,"photo");
+    if(!url)return;
+    const{data,error}=await supabase.from("player_photos").insert({player_id:playerId,url,name:file.name,is_fav:false}).select().single();
+    if(error){console.error("[addPhoto] échec:",error);alert("Enregistrement de la photo impossible : "+error.message);return;}
+    if(data)setPlayers(prev=>prev.map(p=>p.id===playerId?{...p,photos:sortPhotos([...(p.photos||[]),data])}:p));
   },[]);
   const addPhotoUrl=useCallback(async(playerId,url,name)=>{
-    const{data}=await supabase.from("player_photos").insert({player_id:playerId,url,name:name||"photo_nobg",is_fav:false}).select().single();
-    if(data)setPlayers(prev=>prev.map(p=>p.id===playerId?{...p,photos:[...(p.photos||[]),data]}:p));
+    const{data,error}=await supabase.from("player_photos").insert({player_id:playerId,url,name:name||"photo_nobg",is_fav:false}).select().single();
+    if(error){console.error("[addPhotoUrl] échec:",error);alert("Enregistrement de la photo impossible : "+error.message);return;}
+    if(data)setPlayers(prev=>prev.map(p=>p.id===playerId?{...p,photos:sortPhotos([...(p.photos||[]),data])}:p));
+  },[]);
+  const deletePhoto=useCallback(async(playerId,photoId,photoUrl)=>{
+    const{error}=await supabase.from("player_photos").delete().eq("id",photoId);
+    if(error){console.error("[deletePhoto] échec:",error);alert("Suppression impossible : "+error.message);return;}
+    setPlayers(prev=>prev.map(p=>p.id===playerId
+      ?{...p,photos:(p.photos||[]).filter(ph=>ph.id!==photoId)}
+      :p));
+    // Si la photo supprimée était posée sur le visuel en cours, on la retire du canvas.
+    setSelPhoto(cur=>(photoUrl&&cur===photoUrl)?null:cur);
   },[]);
   const toggleFav=useCallback(async(playerId,photoId)=>{
     const player=players.find(p=>p.id===playerId);
@@ -1187,22 +1454,34 @@ export default function App({session}){
     setPlayers(prev=>prev.map(p=>p.id===playerId?{...p,photos:p.photos.map(ph=>ph.id===photoId?{...ph,is_fav:!ph.is_fav}:ph)}:p));
   },[players]);
   async function pickMedia(e){
-    [...e.target.files].forEach(file=>{
-      if(!validateImageFile(file))return;
-      const reader=new FileReader();
-      reader.onload=async(ev)=>{
-        const url=ev.target.result;
-        const{data}=await supabase.from("media").insert({club_id:club.id,url,name:file.name}).select().single();
-        if(data)setMedia(m=>[...m,data]);
-      };
-      reader.readAsDataURL(file);
-    });
+    const files=[...e.target.files];
     e.target.value="";
+    for(const file of files){
+      const url=await intakeImage(file,"media");
+      if(!url)continue;
+      const{data,error}=await supabase.from("media").insert({club_id:club.id,url,name:file.name}).select().single();
+      if(error){console.error("[pickMedia] échec:",error);alert("Enregistrement du média impossible : "+error.message);continue;}
+      if(data)setMedia(m=>[...m,data]);
+    }
   }
   async function deleteMedia(id){await supabase.from("media").delete().eq("id",id);setMedia(m=>m.filter(x=>x.id!==id));}
+  // Changer de format ne recrée pas le visuel : les calques sont positionnés
+  // en %, seules les tailles de texte suivent la hauteur du canvas.
+  function changeFormat(next){
+    if(next===format)return;
+    setLayers(cur=>scaleLayersToFormat(cur,format,next));
+    setFormat(next);
+  }
   function selPlayer(id){
+    const prev=players.find(x=>x.id===selPid)||null;
     setSelPid(id||null);
-    if(id){const p=players.find(x=>x.id===id);setSelPhoto(p?getPhoto(p)||null:null);}
+    if(id){
+      const p=players.find(x=>x.id===id);
+      setSelPhoto(p?getPhoto(p)||null:null);
+      // Le nom et le poste du joueur se posent tout seuls sur le visuel, tant
+      // que ces textes n'ont pas été personnalisés à la main.
+      if(p)setLayers(cur=>applyPlayerToLayers(cur,p,prev));
+    }
     else setSelPhoto(null);
   }
   function postDataToLayers(pd,c1,c2){
@@ -1219,6 +1498,7 @@ export default function App({session}){
   }
   function openCreate(type,fromH){
     setSelType(type);setNav("create");
+    setFormat(fromH&&fromH.format?fromH.format:DEFAULT_FORMAT);
     if(fromH){
       setEditId(fromH.id);setBgUrl(fromH.bgUrl||null);setLogoUrl(fromH.logoUrl||null);setLogo2Url(fromH.logo2Url||null);
       setSelPhoto(fromH.playerUrl||null);setSelPid(null);
@@ -1251,18 +1531,18 @@ export default function App({session}){
       }
     }
     const ct=CTYPES.find(c=>c.id===selType);
-    const payload={club_id:club.id,type:selType,label:ct?.label||"",icon:ct?.icon||"",layers,lineup_data:lineupData,group_data:groupData,post_data:postData,lineup_tpl:lineupTpl,group_tpl:groupTpl,post_tpl:postTpl,bg_url:bgUrl,logo_url:logoUrl,logo2_url:logo2Url,player_url:selPhoto,updated_at:new Date().toISOString()};
+    const payload={club_id:club.id,type:selType,label:ct?.label||"",icon:ct?.icon||"",layers,lineup_data:lineupData,group_data:groupData,post_data:postData,lineup_tpl:lineupTpl,group_tpl:groupTpl,post_tpl:postTpl,bg_url:bgUrl,logo_url:logoUrl,logo2_url:logo2Url,player_url:selPhoto,format:supportsFormat?format:DEFAULT_FORMAT,updated_at:new Date().toISOString()};
     let saved;
     if(editId){
-      const{data,error}=await supabase.from("visuals").update(payload).eq("id",editId).select().single();
+      const{data,error}=await writeVisual("update",payload,editId);
       if(error){console.error("[save] update failed:",error.message);setLimitError("Erreur lors de la sauvegarde : "+error.message);setTimeout(()=>setLimitError(""),4000);return;}
       saved=data;
-      if(saved)setHistory(h=>h.map(x=>x.id===editId?{...saved,layers:saved.layers||[],lineupData:saved.lineup_data||{},groupData:saved.group_data||{},postData:saved.post_data||{},lineupTpl:saved.lineup_tpl,groupTpl:saved.group_tpl,postTpl:saved.post_tpl,bgUrl:saved.bg_url,logoUrl:saved.logo_url,logo2Url:saved.logo2_url,playerUrl:saved.player_url,ct}:x));
+      if(saved)setHistory(h=>h.map(x=>x.id===editId?{...saved,layers:saved.layers||[],lineupData:saved.lineup_data||{},groupData:saved.group_data||{},postData:saved.post_data||{},lineupTpl:saved.lineup_tpl,groupTpl:saved.group_tpl,postTpl:saved.post_tpl,bgUrl:saved.bg_url,logoUrl:saved.logo_url,logo2Url:saved.logo2_url,playerUrl:saved.player_url,format:saved.format||DEFAULT_FORMAT,ct}:x));
     } else {
-      const{data,error}=await supabase.from("visuals").insert(payload).select().single();
+      const{data,error}=await writeVisual("insert",payload);
       if(error){console.error("[save] insert failed:",error.message);setLimitError("Erreur lors de la sauvegarde : "+error.message);setTimeout(()=>setLimitError(""),4000);return;}
       saved=data;
-      if(saved)setHistory(h=>[{...saved,layers:saved.layers||[],lineupData:saved.lineup_data||{},groupData:saved.group_data||{},postData:saved.post_data||{},lineupTpl:saved.lineup_tpl,groupTpl:saved.group_tpl,postTpl:saved.post_tpl,bgUrl:saved.bg_url,logoUrl:saved.logo_url,logo2Url:saved.logo2_url,playerUrl:saved.player_url,ct},...h]);
+      if(saved)setHistory(h=>[{...saved,layers:saved.layers||[],lineupData:saved.lineup_data||{},groupData:saved.group_data||{},postData:saved.post_data||{},lineupTpl:saved.lineup_tpl,groupTpl:saved.group_tpl,postTpl:saved.post_tpl,bgUrl:saved.bg_url,logoUrl:saved.logo_url,logo2Url:saved.logo2_url,playerUrl:saved.player_url,format:saved.format||DEFAULT_FORMAT,ct},...h]);
     }
     if(saved&&!editId)setWeeklyCount(w=>w+1);
     if(saved)setEditId(saved.id);
@@ -1358,7 +1638,7 @@ export default function App({session}){
         <PBox t={t}>
           <SHdr label="Image de fond" t={t}/>
           {media.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4,marginBottom:8}}>{media.slice(0,6).map((m,i)=>(<div key={i} onClick={()=>setBgUrl(m.url)} style={{aspectRatio:"16/9",borderRadius:5,overflow:"hidden",border:"2px solid "+(bgUrl===m.url?t.accent:t.border),cursor:"pointer"}}><img src={m.url} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div>))}</div>}
-          <div style={{display:"flex",gap:8,alignItems:"center"}}><UpBtn val={null} on={v=>setBgUrl(v)} w={48} h={34} r={6} label="Uploader" t={t}/>{bgUrl&&<button onClick={()=>setBgUrl(null)} style={{fontSize:11,color:t.text3,background:"none",border:"none",cursor:"pointer"}}>✕ Retirer</button>}</div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}><UpBtn val={null} on={v=>setBgUrl(v)} w={48} h={34} r={6} label="Uploader" t={t} preset="media"/>{bgUrl&&<button onClick={()=>setBgUrl(null)} style={{fontSize:11,color:t.text3,background:"none",border:"none",cursor:"pointer"}}>✕ Retirer</button>}</div>
         </PBox>
         <PBox t={t}>
           <SHdr label="Logo club" t={t}/>
@@ -1409,12 +1689,29 @@ export default function App({session}){
       <div data-bottom-sheet="options" style={stdPanelStyle}>
         {isMobile&&<div {...makeSwipeClose(()=>setMobileSheet(null))} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingBottom:8,borderBottom:"1px solid "+t.border,touchAction:"none",cursor:"grab",userSelect:"none"}}><div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:34,height:4,background:"rgba(255,255,255,.2)",borderRadius:3}}/><div style={{fontSize:13,fontWeight:700,color:t.text}}>Options</div></div><button onClick={()=>setMobileSheet(null)} style={{background:"none",border:"none",color:t.text3,fontSize:18,cursor:"pointer",padding:4}}>✕</button></div>}
         {!isMobile&&<BackBtn/>}
-        <PBox t={t}><SHdr label="Joueur & photo" t={t}/><PhotoPanel players={players} selId={selPid} onSel={selPlayer} selUrl={selPhoto} onSelUrl={setSelPhoto} onAdd={addPhoto} onAddUrl={addPhotoUrl} onFav={toggleFav} t={t}/></PBox>
+        <PBox t={t}>
+          <SHdr label="Format de publication" t={t}/>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:5}}>
+            {Object.values(FORMATS).map(f=>{
+              const on=format===f.id;
+              return(
+                <button key={f.id} onClick={()=>changeFormat(f.id)} title={f.desc}
+                  style={{background:on?rgba(t.accent,.18):t.bg3,border:"2px solid "+(on?t.accent:t.border),borderRadius:8,padding:"9px 4px",cursor:"pointer",color:t.text,fontFamily:"inherit",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+                  <span style={{display:"block",width:f.id==="story"?13:f.id==="post"?17:20,height:f.id==="story"?23:f.id==="post"?21:20,border:"1.5px solid "+(on?t.accent:t.text3),borderRadius:2}}/>
+                  <span style={{fontSize:11,fontWeight:on?700:500,color:on?t.accent:t.text}}>{f.label}</span>
+                  <span style={{fontSize:9,color:t.text3}}>{f.sub}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div style={{fontSize:9,color:t.text3,marginTop:6,lineHeight:1.4}}>{fmt(format).desc}</div>
+        </PBox>
+        <PBox t={t}><SHdr label="Joueur & photo" t={t}/><PhotoPanel players={players} selId={selPid} onSel={selPlayer} selUrl={selPhoto} onSelUrl={setSelPhoto} onAdd={addPhoto} onAddUrl={addPhotoUrl} onFav={toggleFav} onDelete={deletePhoto} t={t}/></PBox>
         <PBox t={t}>
           <SHdr label="Image de fond" t={t}/>
           {media.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4,marginBottom:8}}>{media.map((m,i)=>(<div key={i} onClick={()=>setBgUrl(m.url)} style={{aspectRatio:"16/9",borderRadius:5,overflow:"hidden",border:"2px solid "+(bgUrl===m.url?t.accent:t.border),cursor:"pointer"}}><img src={m.url} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div>))}</div>}
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-            <UpBtn val={null} on={v=>setBgUrl(v)} w={52} h={36} r={6} label="Uploader" t={t}/>
+            <UpBtn val={null} on={v=>setBgUrl(v)} w={52} h={36} r={6} label="Uploader" t={t} preset="media"/>
             {bgUrl&&<button onClick={()=>setBgUrl(null)} style={{fontSize:11,color:t.text3,background:"none",border:"none",cursor:"pointer"}}>✕ Retirer</button>}
           </div>
         </PBox>
@@ -1440,7 +1737,7 @@ export default function App({session}){
         </PBox>
         <SaveBtn/>
       </div>
-      <DragCanvas key={editId||("new_"+selType)} layers={layers} setLayers={setLayers} bgUrl={bgUrl} playerUrl={selPhoto} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={t.accent} accent2={t.accent2} t={t} isMobile={isMobile} mobileSheet={mobileSheet} setMobileSheet={setMobileSheet} canvasScale={canvasScale} clubName={club?.name}/>
+      <DragCanvas key={editId||("new_"+selType)} layers={layers} setLayers={setLayers} bgUrl={bgUrl} playerUrl={selPhoto} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={t.accent} accent2={t.accent2} t={t} isMobile={isMobile} mobileSheet={mobileSheet} setMobileSheet={setMobileSheet} canvasScale={canvasScale} clubName={club?.name} cw={canvasW} ch={canvasH} onLogoChange={(kind,url)=>{if(kind==="logo2")setLogo2Url(url);else setLogoUrl(url);}}/>
       {isMobile&&(
         <div style={{position:"fixed",bottom:0,left:0,right:0,height:60,background:t.bg2,borderTop:"1px solid "+t.border,display:"flex",gap:6,alignItems:"center",padding:"0 10px",zIndex:90}}>
           <button onClick={()=>setSelType(null)} className="viz-touch-btn" style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:8,padding:"10px 12px",color:t.text2,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>↩</button>
@@ -1528,7 +1825,7 @@ export default function App({session}){
           <div style={{display:"grid",gridTemplateColumns:"275px 1fr",gap:18}}>
             <div>
               <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Nouveau joueur</div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Nom complet</label><TIn v={pName} on={setPName} ph="Prénom Nom" t={t}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,margin:"10px 0"}}><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Numéro</label><TIn v={pNum} on={v=>setPNum(v===""?"":String(Math.max(0,parseInt(v)||0)))} ph="9" type="number" min={0} t={t}/></div><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Poste</label><TSel v={pPos} on={setPPos} t={t} opts={POSITIONS}/></div></div><button onClick={addPlayer} style={{background:t.accent,color:contrastText(t.accent),border:"none",borderRadius:8,padding:9,fontSize:13,fontWeight:600,cursor:"pointer",width:"100%"}}>+ Ajouter à l'effectif</button></div>
-              {players.length>0&&<div style={Object.assign({},card,{marginTop:14})}><PhotoPanel players={players} selId={selPid} onSel={id=>{setSelPid(id||null);setSelPhoto(null);}} selUrl={selPhoto} onSelUrl={setSelPhoto} onAdd={addPhoto} onAddUrl={addPhotoUrl} onFav={toggleFav} t={t}/></div>}
+              {players.length>0&&<div style={Object.assign({},card,{marginTop:14})}><PhotoPanel players={players} selId={selPid} onSel={id=>{setSelPid(id||null);setSelPhoto(null);}} selUrl={selPhoto} onSelUrl={setSelPhoto} onAdd={addPhoto} onAddUrl={addPhotoUrl} onFav={toggleFav} onDelete={deletePhoto} t={t}/></div>}
             </div>
             <div><div style={{fontSize:13,fontWeight:600,color:t.text2,marginBottom:12}}>{players.length+" joueur"+(players.length!==1?"s":"")+" dans l'effectif"}</div>
               {players.length===0?<div style={Object.assign({},card,{padding:"40px 20px",textAlign:"center",color:t.text3})}><div style={{fontSize:32,marginBottom:10}}>👥</div><div>Aucun joueur</div></div>:(

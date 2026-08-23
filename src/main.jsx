@@ -67,6 +67,16 @@ function detectMagicLinkInUrl() {
   return h.includes("access_token=") || h.includes("refresh_token=") || h.includes("error=") || h.includes("error_description=");
 }
 
+// Supabase émet un TOKEN_REFRESHED toutes les ~50 min (et au retour d'onglet).
+// Remplacer l'objet session à chaque fois faisait re-tourner tous les effets qui
+// en dépendent côté App → rechargement complet des données, d'où les joueurs qui
+// "disparaissent puis réapparaissent". Le client Supabase garde lui-même le token
+// à jour : côté React on ne change la référence que si l'utilisateur change.
+function mergeSession(prev, next) {
+  if (prev && next && prev.user && next.user && prev.user.id === next.user.id) return prev
+  return next
+}
+
 function Root() {
   const [session, setSession] = useState(undefined)
   const [showLanding, setShowLanding] = useState(true)
@@ -81,7 +91,7 @@ function Root() {
     // L'event auth est la source canonique : SIGNED_IN/SIGNED_OUT/TOKEN_REFRESHED/INITIAL_SESSION.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!alive) return;
-      setSession(session)
+      setSession(prev => mergeSession(prev, session))
       if (session) setShowLanding(false)
       // Tout event auth = fin du processing magic link
       if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION" || event === "USER_UPDATED") {
@@ -107,7 +117,7 @@ function Root() {
       // Ne court-circuite PAS le splash si un magic link est en cours et que la session n'est pas encore là —
       // on attend l'event onAuthStateChange.
       if (session) {
-        setSession(session)
+        setSession(prev => mergeSession(prev, session))
         setShowLanding(false)
         setMagicLinkPending(false)
         clearTimeout(fallbackTimer)

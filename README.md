@@ -1,3 +1,20 @@
+# Viziona — Studio visuel
+
+## Migration base de données à appliquer
+
+Cette branche ajoute le choix du format de publication (Story 9:16 / Post 4:5 /
+Carré 1:1). Il faut appliquer une migration sur Supabase :
+
+```sql
+-- supabase/migrations/0001_visuals_format.sql
+```
+
+Tant qu'elle n'est pas passée, l'application reste utilisable : la sauvegarde
+détecte la colonne manquante et réécrit sans elle (le format retombe alors sur
+Story au rechargement). Voir `writeVisual()` dans `src/App.jsx`.
+
+---
+
 # React + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
