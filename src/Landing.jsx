@@ -212,6 +212,13 @@ const IDENTITE = {
   email:         "contact@viziona-sport.com",
   forJuridique:  "Genève",             // ← à confirmer : doit correspondre au siège
 };
+
+// Tant que l'adresse et l'IDE ne sont pas renseignés, on masque le bloc
+// d'identité plutôt que d'afficher « à compléter » en public. Dès que les
+// vraies valeurs sont saisies ci-dessus, l'affichage revient tout seul —
+// rien d'autre à modifier.
+const IDENTITE_COMPLETE = ![IDENTITE.raisonSociale, IDENTITE.adresse, IDENTITE.ide]
+  .some(v => !v || /à compléter/i.test(v));
 const MAJ_LEGAL = "23 août 2026";
 
 const CGU = [
@@ -256,7 +263,7 @@ const CGV = [
 
 const CONFIDENTIALITE = [
   { t: "1. Responsable du traitement",
-    p: IDENTITE.raisonSociale + ", " + IDENTITE.adresse + ". Pour toute question relative à vos données : " + IDENTITE.email + "." },
+    p: IDENTITE.raisonSociale + (IDENTITE_COMPLETE ? ", " + IDENTITE.adresse : "") + ". Pour toute question relative à vos données : " + IDENTITE.email + "." },
   { t: "2. Données traitées",
     p: "Nous traitons : l'adresse e-mail du club et le nom du club (nécessaires à la connexion et à la facturation) ; les données que le club saisit lui-même sur son effectif (noms, numéros, postes) ; les photographies et images qu'il importe ; les visuels qu'il crée. Nous ne collectons ni données de navigation à des fins publicitaires, ni cookies de suivi tiers." },
   { t: "3. Finalités et base légale",
@@ -1112,7 +1119,7 @@ export default function Landing({ onEnter }) {
           </div>
 
           <div style={{ marginTop: 34, paddingTop: 20, borderTop: "1px solid " + C.bd, fontFamily: FONT_M, fontSize: 10, color: C.tx4, lineHeight: 1.8, letterSpacing: "0.02em" }}>
-            <div>{IDENTITE.raisonSociale} · {IDENTITE.adresse} · IDE {IDENTITE.ide}</div>
+            {IDENTITE_COMPLETE && <div>{IDENTITE.raisonSociale} · {IDENTITE.adresse} · IDE {IDENTITE.ide}</div>}
             <div><a href={"mailto:" + IDENTITE.email} style={{ color: C.tx3, textDecoration: "underline" }}>{IDENTITE.email}</a></div>
           </div>
         </div>
