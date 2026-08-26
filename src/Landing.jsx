@@ -36,16 +36,25 @@ const BASELINE = "Le studio visuel de votre club.";
 // Les limites annoncées ici doivent rester alignées sur ce que l'app applique
 // réellement (`max_visuals_per_week`, `max_templates` sur la table clubs).
 // Ne promettez rien qui ne soit pas appliqué côté serveur.
+// Format suisse : apostrophe pour les milliers, deux décimales toujours.
+// Indispensable depuis que les prix sont en .99 — Math.round() affichait
+// « 41 » là où le client paie 41.25.
+function fmtCHF(n) {
+  const [ent, dec] = Number(n).toFixed(2).split(".");
+  return ent.replace(/\B(?=(\d{3})+(?!\d))/g, "’") + "." + dec;
+}
+
 const PRICING = [
   {
     id: "BASIC",
     nom: "Équipe",
     pour: "Une équipe, un bénévole aux commandes",
-    prixMois: 15,
-    prixAn: 144,          // soit 12.-/mois, −20 %
+    prixMois: 44.99,
+    prixAn: 494.99,       // 11 mois payés : 1 mois offert
+    offert: "1 mois offert",
     inclus: [
-      "8 visuels par semaine",
-      "6 templates sur 18",
+      "5 visuels par semaine",
+      "1 template sur 18",
       "Support par e-mail",
     ],
     absent: ["Les 18 templates", "Accompagnement au démarrage"],
@@ -54,22 +63,24 @@ const PRICING = [
     id: "STANDARD",
     nom: "Club",
     pour: "Plusieurs catégories, une vraie présence en ligne",
-    prixMois: 29,
-    prixAn: 288,          // soit 24.-/mois, −20 %
+    prixMois: 89.99,
+    prixAn: 989.99,       // 11 mois payés : 1 mois offert
+    offert: "1 mois offert",
     populaire: true,
     inclus: [
-      "30 visuels par semaine",
-      "Les 18 templates",
+      "15 visuels par semaine",
+      "5 templates sur 18",
       "Support par e-mail sous 48 h",
     ],
-    absent: ["Accompagnement au démarrage"],
+    absent: ["Les 18 templates", "Accompagnement au démarrage"],
   },
   {
     id: "PREMIUM",
     nom: "Institution",
     pour: "Grands clubs, académies, fédérations",
-    prixMois: 59,
-    prixAn: 588,          // soit 49.-/mois, −20 %
+    prixMois: 189.99,
+    prixAn: 1899.99,      // 10 mois payés : 2 mois offerts
+    offert: "2 mois offerts",
     inclus: [
       "Visuels illimités",
       "Les 18 templates",
@@ -187,7 +198,7 @@ const FAQ_ITEMS = [
   { q: "On pratique plusieurs sports dans le club.", a: "Un compte correspond aujourd'hui à un sport. Pour une structure omnisports, le plus simple est un accès par section — écrivez-nous, on vous arrange ça sur l'offre Institution." },
   { q: "Faut-il des compétences en design ?",       a: "Non. Vous configurez votre club une fois (logo, couleurs, joueurs), l'app fait le reste. Aucune connaissance graphique requise." },
   { q: "Ça marche sur téléphone ?",                 a: "Oui, l'app est pensée mobile. Installez-la sur votre écran d'accueil pour un accès en un tap, comme une vraie application." },
-  { q: "Combien ça coûte ?",                        a: "Trois offres selon la taille du club, de 15 à 59 CHF par mois, avec 20 % de remise au paiement annuel. Elles diffèrent par le volume de visuels, le nombre de templates et le niveau d'accompagnement — toutes les fonctionnalités de l'éditeur sont incluses partout. Le détail est dans la section Tarifs. Pas de frais d'installation, résiliable à tout moment." },
+  { q: "Combien ça coûte ?",                        a: "Trois offres selon la taille du club, de 44.99 à 189.99 CHF par mois. Au paiement annuel, un mois est offert sur les offres Équipe et Club, deux mois sur Institution. Elles diffèrent par le volume de visuels par semaine, le nombre de templates et le niveau d'accompagnement — toutes les fonctionnalités de l'éditeur sont incluses partout. Le détail est dans la section Tarifs. Pas de frais d'installation, résiliable à tout moment." },
   { q: "Comment accéder ?",                         a: "L'accès est sur invitation. Envoyez-nous un message à contact@viziona-sport.com, on revient sous 24h." },
   { q: "Comment configurer mon club ?",             a: "Allez dans « Mon Club », uploadez votre logo, choisissez vos deux couleurs. Tout se met à jour automatiquement dans vos visuels." },
   { q: "Comment créer mon premier visuel ?",        a: "Cliquez sur « Créer », choisissez un type (ex : But), sélectionnez un joueur si besoin, puis cliquez sur Télécharger." },
@@ -959,14 +970,14 @@ export default function Landing({ onEnter }) {
                   </button>
                 ))}
               </div>
-              <span style={{ fontFamily: FONT_M, fontSize: 10, color: C.tx3, letterSpacing: "0.08em" }}>−20 % à l’année</span>
+              <span style={{ fontFamily: FONT_M, fontSize: 10, color: C.tx3, letterSpacing: "0.08em" }}>jusqu’à 2 mois offerts</span>
             </div>
           </div>
 
           <div className="viz-price-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 1, background: C.bd, border: "1px solid " + C.bd }}>
             {PRICING.map(pl => {
               const mis = pl.populaire;
-              const prix = billing === "an" ? Math.round(pl.prixAn / 12) : pl.prixMois;
+              const prix = billing === "an" ? pl.prixAn / 12 : pl.prixMois;
               return (
                 <div key={pl.id} style={{ background: mis ? C.bk : C.bg, color: mis ? C.wh : C.tx, padding: "40px 34px", display: "flex", flexDirection: "column", position: "relative" }}>
                   {mis && (
@@ -977,11 +988,11 @@ export default function Landing({ onEnter }) {
 
                   <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
                     <span style={{ fontFamily: FONT_M, fontSize: 13, color: mis ? "rgba(250,250,250,0.5)" : C.tx4 }}>CHF</span>
-                    <span style={{ fontFamily: FONT_H, fontSize: 62, letterSpacing: "0.02em", lineHeight: 1 }}>{prix}</span>
+                    <span style={{ fontFamily: FONT_H, fontSize: 62, letterSpacing: "0.02em", lineHeight: 1 }}>{fmtCHF(prix)}</span>
                     <span style={{ fontFamily: FONT_M, fontSize: 11, color: mis ? "rgba(250,250,250,0.5)" : C.tx4, letterSpacing: "0.06em" }}>/ mois</span>
                   </div>
                   <div style={{ fontFamily: FONT_M, fontSize: 10, color: mis ? "rgba(250,250,250,0.42)" : C.tx4, letterSpacing: "0.05em", marginTop: 7, minHeight: 15 }}>
-                    {billing === "an" ? "soit " + pl.prixAn + " CHF facturés une fois par an" : "sans engagement, résiliable chaque mois"}
+                    {billing === "an" ? fmtCHF(pl.prixAn) + " CHF par an · " + pl.offert : "sans engagement, résiliable chaque mois"}
                   </div>
 
                   <div style={{ height: 1, background: mis ? "rgba(250,250,250,0.14)" : C.bd, margin: "28px 0 22px" }}/>

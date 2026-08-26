@@ -24,16 +24,18 @@ returns table (max_visuals_per_week int, max_templates int)
 language sql
 immutable
 as $$
+  -- ⚠️ Ce barème doit rester identique à la constante PRICING de
+  -- src/Landing.jsx. Si l'un change, changez l'autre dans le même commit.
   select
     case upper(coalesce(p_plan, 'BASIC'))
       when 'PREMIUM'  then 100000   -- « illimité » en pratique
-      when 'STANDARD' then 30
-      else 8                        -- BASIC et toute valeur inconnue
+      when 'STANDARD' then 15
+      else 5                        -- BASIC et toute valeur inconnue
     end,
     case upper(coalesce(p_plan, 'BASIC'))
-      when 'PREMIUM'  then 18
-      when 'STANDARD' then 18
-      else 6
+      when 'PREMIUM'  then 18       -- « illimité » = les 18 templates
+      when 'STANDARD' then 5
+      else 1
     end;
 $$;
 
