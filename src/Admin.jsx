@@ -137,7 +137,7 @@ export default function Admin({ session, onClose }) {
     return (
       <div style={{ minHeight: "100dvh", background: "#080810", color: "#f0f0f8", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT, padding: 24 }}>
         <div style={{ textAlign: "center", maxWidth: 360 }}>
-          <div style={{ fontSize: 32, marginBottom: 14 }}>🔒</div>
+          <div style={{ marginBottom: 14, display: "flex", justifyContent: "center", opacity: .6 }}><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6.5 10.5h11V20h-11zM8.8 10.5V7.6a3.2 3.2 0 0 1 6.4 0v2.9"/></svg></div>
           <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Accès refusé</div>
           <p style={{ fontSize: 13, color: "rgba(240,240,248,.5)", marginBottom: 22 }}>
             Cette zone est réservée. {session ? "Votre compte ne dispose pas des droits d'administration." : "Vous devez être connecté avec un compte autorisé."}
@@ -233,7 +233,7 @@ export default function Admin({ session, onClose }) {
                   </td>
                   <td style={td}>
                     <span style={{ padding: "3px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700, letterSpacing: ".04em", background: c.approved ? "rgba(34,197,94,.15)" : "rgba(251,191,36,.12)", color: c.approved ? "#86efac" : "#fbbf24" }}>
-                      {c.approved ? "✓ APPROUVÉ" : "⏳ EN ATTENTE"}
+                      {c.approved ? "APPROUVÉ" : "EN ATTENTE"}
                     </span>
                   </td>
                   <td style={td}>

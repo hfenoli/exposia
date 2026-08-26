@@ -29,15 +29,15 @@ const BASE_TERMS = {
 // Définitions de base des types de visuels. Chaque sport en retient une
 // sélection et peut en changer le libellé.
 export const CTYPE_BASE = {
-  goal:    { icon: "⚽", label: "But",            desc: "Célébration d'un but" },
-  result:  { icon: "🏁", label: "Score Final",    desc: "Résultat du match" },
-  match:   { icon: "📅", label: "Affiche Match",  desc: "Avant-match" },
-  group:   { icon: "📋", label: "Groupe",         desc: "Convocation officielle" },
-  lineup:  { icon: "🎽", label: "Composition XI", desc: "11 de départ" },
-  recruit: { icon: "⭐", label: "Nouvelle Recrue", desc: "Arrivée d'un joueur" },
-  post:    { icon: "📢", label: "Poste / Annonce", desc: "Publication libre" },
-  perf:    { icon: "⏱️", label: "Performance",    desc: "Chrono, record personnel" },
-  podium:  { icon: "🏆", label: "Podium",         desc: "Classement d'une épreuve" },
+  goal:    { label: "But",            desc: "Célébration d'un but" },
+  result:  { label: "Score Final",    desc: "Résultat du match" },
+  match:   { label: "Affiche Match",  desc: "Avant-match" },
+  group:   { label: "Groupe",         desc: "Convocation officielle" },
+  lineup:  { label: "Composition XI", desc: "11 de départ" },
+  recruit: { label: "Nouvelle Recrue", desc: "Arrivée d'un joueur" },
+  post:    { label: "Poste / Annonce", desc: "Publication libre" },
+  perf:    { label: "Performance",    desc: "Chrono, record personnel" },
+  podium:  { label: "Podium",         desc: "Classement d'une épreuve" },
 };
 
 // Un rang de composition : n joueurs, un libellé affiché, et les postes dans
@@ -49,7 +49,7 @@ const SOLO_TYPES = ["perf", "result", "podium", "match", "group", "recruit", "po
 
 export const SPORTS = {
   football: {
-    id: "football", label: "Football", icon: "⚽", kind: "team", pitch: "football",
+    id: "football", label: "Football", kind: "team", pitch: "football",
     positions: ["Gardien", "Défenseur", "Milieu", "Attaquant"],
     defaultPosition: "Attaquant",
     formations: {
@@ -61,18 +61,18 @@ export const SPORTS = {
       "3-4-3":   [R(1,"Gardien"), R(3,"Défenseur"), R(4,"Milieu"), R(3,"Attaquant")],
     },
     groupCats: [
-      { k: "gk",      l: "🧤 Gardiens",   pos: ["Gardien"] },
-      { k: "def",     l: "🛡 Défenseurs", pos: ["Défenseur"] },
-      { k: "mid",     l: "⚙️ Milieux",    pos: ["Milieu"] },
-      { k: "fwd",     l: "⚡ Attaquants", pos: ["Attaquant"] },
-      { k: "coaches", l: "👔 Staff",      pos: null },
+      { k: "gk",      l: "Gardiens",   pos: ["Gardien"] },
+      { k: "def",     l: "Défenseurs", pos: ["Défenseur"] },
+      { k: "mid",     l: "Milieux",    pos: ["Milieu"] },
+      { k: "fwd",     l: "Attaquants", pos: ["Attaquant"] },
+      { k: "coaches", l: "Staff",      pos: null },
     ],
     types: TEAM_TYPES,
     terms: {},
   },
 
   rugby: {
-    id: "rugby", label: "Rugby", icon: "🏉", kind: "team", pitch: "rugby",
+    id: "rugby", label: "Rugby", kind: "team", pitch: "rugby",
     positions: ["Pilier", "Talonneur", "Deuxième ligne", "Troisième ligne", "Demi de mêlée", "Demi d'ouverture", "Centre", "Ailier", "Arrière"],
     defaultPosition: "Centre",
     formations: {
@@ -82,22 +82,22 @@ export const SPORTS = {
       "Rugby à 10":   [R(1,"Arrière"), R(3,"Trois-quarts",["Centre","Ailier"]), R(3,"Demis & centres",["Demi d'ouverture","Demi de mêlée","Centre"]), R(3,"Avants",["Pilier","Talonneur","Deuxième ligne"])],
     },
     groupCats: [
-      { k: "gk",      l: "🪨 Première ligne",  pos: ["Pilier", "Talonneur"] },
-      { k: "def",     l: "🛡 Deuxième/troisième ligne", pos: ["Deuxième ligne", "Troisième ligne"] },
-      { k: "mid",     l: "⚙️ Demis",           pos: ["Demi de mêlée", "Demi d'ouverture"] },
-      { k: "fwd",     l: "⚡ Trois-quarts",    pos: ["Centre", "Ailier", "Arrière"] },
-      { k: "coaches", l: "👔 Staff",           pos: null },
+      { k: "gk",      l: "Première ligne",  pos: ["Pilier", "Talonneur"] },
+      { k: "def",     l: "Deuxième/troisième ligne", pos: ["Deuxième ligne", "Troisième ligne"] },
+      { k: "mid",     l: "Demis",           pos: ["Demi de mêlée", "Demi d'ouverture"] },
+      { k: "fwd",     l: "Trois-quarts",    pos: ["Centre", "Ailier", "Arrière"] },
+      { k: "coaches", l: "Staff",           pos: null },
     ],
     types: TEAM_TYPES,
     terms: {
       scoreEvent: "ESSAI !", scoreEventShort: "ESSAI",
       lineupTitle: "Composition XV", competitionPlaceholder: "LNA · J12",
     },
-    typeLabels: { goal: { icon: "🏉", label: "Essai", desc: "Célébration d'un essai" }, lineup: { label: "Composition XV", desc: "XV de départ" } },
+    typeLabels: { goal: { label: "Essai", desc: "Célébration d'un essai" }, lineup: { label: "Composition XV", desc: "XV de départ" } },
   },
 
   hockey: {
-    id: "hockey", label: "Hockey sur glace", icon: "🏒", kind: "team", pitch: "ice",
+    id: "hockey", label: "Hockey sur glace", kind: "team", pitch: "ice",
     positions: ["Gardien", "Défenseur", "Ailier", "Centre"],
     defaultPosition: "Centre",
     formations: {
@@ -106,21 +106,21 @@ export const SPORTS = {
       "Box play":       [R(1,"Gardien"), R(2,"Défenseur"), R(2,"Attaque",["Ailier","Centre"])],
     },
     groupCats: [
-      { k: "gk",      l: "🥅 Gardiens",   pos: ["Gardien"] },
-      { k: "def",     l: "🛡 Défenseurs", pos: ["Défenseur"] },
-      { k: "fwd",     l: "⚡ Attaquants", pos: ["Ailier", "Centre"] },
-      { k: "coaches", l: "👔 Staff",      pos: null },
+      { k: "gk",      l: "Gardiens",   pos: ["Gardien"] },
+      { k: "def",     l: "Défenseurs", pos: ["Défenseur"] },
+      { k: "fwd",     l: "Attaquants", pos: ["Ailier", "Centre"] },
+      { k: "coaches", l: "Staff",      pos: null },
     ],
     types: TEAM_TYPES,
     terms: {
       venue: "Patinoire", lineupTitle: "Alignement", lineupShort: "Alignement",
       formationLabel: "Ligne", competitionPlaceholder: "MyHockey League · J12",
     },
-    typeLabels: { goal: { icon: "🏒" }, lineup: { label: "Alignement", desc: "Ligne de départ" } },
+    typeLabels: { goal: { }, lineup: { label: "Alignement", desc: "Ligne de départ" } },
   },
 
   basketball: {
-    id: "basketball", label: "Basketball", icon: "🏀", kind: "team", pitch: "court",
+    id: "basketball", label: "Basketball", kind: "team", pitch: "court",
     positions: ["Meneur", "Arrière", "Ailier", "Ailier fort", "Pivot"],
     defaultPosition: "Ailier",
     formations: {
@@ -129,10 +129,10 @@ export const SPORTS = {
       "Twin towers":    [R(1,"Meneur"), R(2,"Extérieurs",["Arrière","Ailier"]), R(2,"Intérieurs",["Ailier fort","Pivot"])],
     },
     groupCats: [
-      { k: "gk",      l: "🎯 Meneurs",    pos: ["Meneur"] },
-      { k: "mid",     l: "⚙️ Extérieurs", pos: ["Arrière", "Ailier"] },
-      { k: "fwd",     l: "⚡ Intérieurs", pos: ["Ailier fort", "Pivot"] },
-      { k: "coaches", l: "👔 Staff",      pos: null },
+      { k: "gk",      l: "Meneurs",    pos: ["Meneur"] },
+      { k: "mid",     l: "Extérieurs", pos: ["Arrière", "Ailier"] },
+      { k: "fwd",     l: "Intérieurs", pos: ["Ailier fort", "Pivot"] },
+      { k: "coaches", l: "Staff",      pos: null },
     ],
     types: TEAM_TYPES,
     terms: {
@@ -140,11 +140,11 @@ export const SPORTS = {
       lineupTitle: "Cinq de départ", lineupShort: "Cinq de départ",
       competitionPlaceholder: "SB League · J12",
     },
-    typeLabels: { goal: { icon: "🏀", label: "Panier", desc: "Action décisive" }, lineup: { label: "Cinq de départ", desc: "Les 5 titulaires" } },
+    typeLabels: { goal: { label: "Panier", desc: "Action décisive" }, lineup: { label: "Cinq de départ", desc: "Les 5 titulaires" } },
   },
 
   handball: {
-    id: "handball", label: "Handball", icon: "🤾", kind: "team", pitch: "handball",
+    id: "handball", label: "Handball", kind: "team", pitch: "handball",
     positions: ["Gardien", "Ailier", "Arrière", "Demi-centre", "Pivot"],
     defaultPosition: "Arrière",
     formations: {
@@ -153,27 +153,27 @@ export const SPORTS = {
       "Défense 5-1":    [R(1,"Gardien"), R(5,"Défense",["Arrière","Ailier","Pivot"]), R(1,"Avancé",["Demi-centre"])],
     },
     groupCats: [
-      { k: "gk",      l: "🧤 Gardiens", pos: ["Gardien"] },
-      { k: "def",     l: "🛡 Arrières", pos: ["Arrière", "Demi-centre"] },
-      { k: "fwd",     l: "⚡ Ailiers & pivots", pos: ["Ailier", "Pivot"] },
-      { k: "coaches", l: "👔 Staff",    pos: null },
+      { k: "gk",      l: "Gardiens", pos: ["Gardien"] },
+      { k: "def",     l: "Arrières", pos: ["Arrière", "Demi-centre"] },
+      { k: "fwd",     l: "Ailiers & pivots", pos: ["Ailier", "Pivot"] },
+      { k: "coaches", l: "Staff",    pos: null },
     ],
     types: TEAM_TYPES,
     terms: {
       venue: "Salle", lineupTitle: "Sept de départ", lineupShort: "Sept de départ",
       competitionPlaceholder: "SHL · J12",
     },
-    typeLabels: { goal: { icon: "🤾" }, lineup: { label: "Sept de départ", desc: "Les 7 titulaires" } },
+    typeLabels: { goal: { }, lineup: { label: "Sept de départ", desc: "Les 7 titulaires" } },
   },
 
   natation: {
-    id: "natation", label: "Natation", icon: "🏊", kind: "individual", pitch: null,
+    id: "natation", label: "Natation", kind: "individual", pitch: null,
     positions: ["Nage libre", "Dos", "Brasse", "Papillon", "4 nages", "Eau libre"],
     defaultPosition: "Nage libre",
     formations: null,
     groupCats: [
-      { k: "fwd",     l: "🏊 Nageurs",      pos: null },
-      { k: "coaches", l: "👔 Encadrement",  pos: null },
+      { k: "fwd",     l: "Nageurs",      pos: null },
+      { k: "coaches", l: "Encadrement",  pos: null },
     ],
     types: SOLO_TYPES,
     terms: {
@@ -195,13 +195,13 @@ export const SPORTS = {
   },
 
   triathlon: {
-    id: "triathlon", label: "Triathlon", icon: "🚴", kind: "individual", pitch: null,
+    id: "triathlon", label: "Triathlon", kind: "individual", pitch: null,
     positions: ["Sprint", "Olympique", "Half (70.3)", "Ironman", "Relais", "Cross"],
     defaultPosition: "Olympique",
     formations: null,
     groupCats: [
-      { k: "fwd",     l: "🏅 Athlètes",     pos: null },
-      { k: "coaches", l: "👔 Encadrement",  pos: null },
+      { k: "fwd",     l: "Athlètes",     pos: null },
+      { k: "coaches", l: "Encadrement",  pos: null },
     ],
     types: SOLO_TYPES,
     terms: {
@@ -248,7 +248,7 @@ export function ctypesFor(id) {
  */
 export function ctypeInfo(id, typeId) {
   const base = CTYPE_BASE[typeId];
-  if (!base) return { id: typeId, icon: "📄", label: "Visuel", desc: "" };
+  if (!base) return { id: typeId, label: "Visuel", desc: "" };
   const ov = (getSport(id).typeLabels || {})[typeId] || {};
   // L'icône est surchargeable au même titre que le libellé : sans ça un essai
   // au rugby ou un panier au basket s'affichait avec un ballon de football.

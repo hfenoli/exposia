@@ -112,49 +112,49 @@ const PRICING_COMMON = [
 // démonstration la plus directe que l'app n'est pas qu'un outil de foot.
 // Doit rester aligné sur src/sports.js.
 const LANDING_SPORTS = [
-  { id: "football", label: "Football", icon: "⚽", accent: "#E63329", pitch: "football",
+  { id: "football", label: "Football", accent: "#E63329", pitch: "football",
     cards: ["goal", "result", "match", "lineup", "recruit", "post"],
     event: "BUT !", lineupTitle: "COMPOSITION", formation: "4-3-3 · vs Adversaire",
     rows: [[9], [7, 10, 11], [4, 6, 8], [2, 5, 3, 16], [1]],
     comp: "2E LIGUE · J12", venue: "Stade municipal", who: "M. Rodriguez · #9",
     recruitTag: "Nouvelle recrue", recruitName: "THOMAS<br/>MARCHAND", recruitPos: "Milieu · #8" },
 
-  { id: "rugby", label: "Rugby", icon: "🏉", accent: "#1D7A46", pitch: "rugby",
+  { id: "rugby", label: "Rugby", accent: "#1D7A46", pitch: "rugby",
     cards: ["goal", "result", "match", "lineup", "recruit", "post"],
     event: "ESSAI !", lineupTitle: "COMPOSITION XV", formation: "XV de départ",
     rows: [[15], [11, 13, 12, 14], [10, 9], [6, 8, 7], [4, 5], [1, 2, 3]],
     comp: "LNA · J12", venue: "Stade", who: "L. Perret · #12",
     recruitTag: "Nouvelle recrue", recruitName: "LUCAS<br/>PERRET", recruitPos: "Centre · #12" },
 
-  { id: "hockey", label: "Hockey", icon: "🏒", accent: "#0F5FA6", pitch: "ice",
+  { id: "hockey", label: "Hockey", accent: "#0F5FA6", pitch: "ice",
     cards: ["goal", "result", "match", "lineup", "recruit", "post"],
     event: "BUT !", lineupTitle: "ALIGNEMENT", formation: "Alignement 5+1",
     rows: [[17, 91, 27], [4, 55], [30]],
     comp: "MYHOCKEY · J12", venue: "Patinoire", who: "N. Blanc · #17",
     recruitTag: "Nouvelle recrue", recruitName: "NOAH<br/>BLANC", recruitPos: "Ailier · #17" },
 
-  { id: "basketball", label: "Basket", icon: "🏀", accent: "#D4541E", pitch: "court",
+  { id: "basketball", label: "Basket", accent: "#D4541E", pitch: "court",
     cards: ["goal", "result", "match", "lineup", "recruit", "post"],
     event: "PANIER !", lineupTitle: "CINQ DE DÉPART", formation: "Cinq de départ",
     rows: [[7, 23], [11, 14], [5]],
     comp: "SB LEAGUE · J12", venue: "Salle", who: "A. Meier · #7",
     recruitTag: "Nouvelle recrue", recruitName: "ALEX<br/>MEIER", recruitPos: "Meneur · #7" },
 
-  { id: "handball", label: "Handball", icon: "🤾", accent: "#7B2D8E", pitch: "handball",
+  { id: "handball", label: "Handball", accent: "#7B2D8E", pitch: "handball",
     cards: ["goal", "result", "match", "lineup", "recruit", "post"],
     event: "BUT !", lineupTitle: "SEPT DE DÉPART", formation: "Sept de départ",
     rows: [[9, 3, 21], [7, 11, 44], [12]],
     comp: "SHL · J12", venue: "Salle", who: "J. Favre · #9",
     recruitTag: "Nouvelle recrue", recruitName: "JULIE<br/>FAVRE", recruitPos: "Pivot · #9" },
 
-  { id: "natation", label: "Natation", icon: "🏊", accent: "#0E7C9B", pitch: null,
+  { id: "natation", label: "Natation", accent: "#0E7C9B", pitch: null,
     cards: ["perf", "result", "podium", "match", "recruit", "post"],
     event: "RECORD !", comp: "CHAMPIONNATS ROMANDS", venue: "Piscine du Lignon",
     who: "E. Girard · 100 m NL", chrono: "00:54:12", chronoTag: "Record personnel",
     recruitTag: "Nouveau nageur", recruitName: "EMMA<br/>GIRARD", recruitPos: "Nage libre",
     podium: [["1.", "E. Girard", "00:54:12"], ["2.", "L. Kunz", "00:55:47"], ["3.", "M. Roth", "00:57:03"]] },
 
-  { id: "triathlon", label: "Triathlon", icon: "🚴", accent: "#C9A227", pitch: null,
+  { id: "triathlon", label: "Triathlon", accent: "#C9A227", pitch: null,
     cards: ["perf", "result", "podium", "match", "recruit", "post"],
     event: "FINISHER !", comp: "IRONMAN 70.3 RAPPERSWIL", venue: "Rapperswil",
     who: "S. Aebi · dossard 142", chrono: "04:21:38", chronoTag: "Record personnel",
@@ -872,9 +872,13 @@ export default function Landing({ onEnter }) {
             {LANDING_SPORTS.map(sp => {
               const on = sp.id === exSport.id;
               return (
+                // Plus d'emoji : un filet vertical à la couleur de la discipline,
+                // comme une bande de maillot. C'est la couleur qui identifie, pas
+                // un pictogramme, et le libellé passe en capitales.
                 <button key={sp.id} onClick={() => setExSportId(sp.id)}
-                  style={{ display: "flex", alignItems: "center", gap: 8, background: on ? sp.accent : "transparent", border: "1px solid " + (on ? sp.accent : "rgba(250,250,250,0.22)"), color: on ? "#fff" : "rgba(250,250,250,0.68)", borderRadius: 1, padding: "9px 16px", fontFamily: FONT_BODY, fontSize: 12, fontWeight: on ? 700 : 500, letterSpacing: "0.06em", cursor: "pointer", transition: "all .18s" }}>
-                  <span style={{ fontSize: 15, lineHeight: 1 }}>{sp.icon}</span>{sp.label}
+                  style={{ display: "flex", alignItems: "center", gap: 10, background: on ? sp.accent : "transparent", border: "1px solid " + (on ? sp.accent : "rgba(250,250,250,0.22)"), color: on ? "#fff" : "rgba(250,250,250,0.68)", borderRadius: 1, padding: "9px 16px", fontFamily: FONT_M, fontSize: 11, fontWeight: on ? 700 : 500, letterSpacing: "0.14em", textTransform: "uppercase", cursor: "pointer", transition: "all .18s" }}>
+                  <span aria-hidden="true" style={{ display: "block", width: 3, height: 12, background: on ? "rgba(255,255,255,0.9)" : sp.accent, flexShrink: 0 }}/>
+                  {sp.label}
                 </button>
               );
             })}
