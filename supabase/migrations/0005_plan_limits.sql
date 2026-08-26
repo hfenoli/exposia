@@ -101,10 +101,17 @@ create trigger clubs_plan_limits
 -- N'écrase que les valeurs absentes, pour ne pas défaire un réglage manuel.
 -- Pour réaligner TOUS les clubs sur le barème, retirez les deux conditions
 -- `is null` ci-dessous.
+-- Note : on ne peut PAS écrire `from public.plan_limits(c.plan) l` ici.
+-- Postgres refuse qu'une fonction de la clause FROM référence la table cible
+-- d'un UPDATE (42P10). On passe donc par deux sous-requêtes corrélées, qui
+-- ont le droit de lire la ligne en cours de modification.
 update public.clubs c
-   set max_visuals_per_week = coalesce(c.max_visuals_per_week, l.max_visuals_per_week),
-       max_templates        = coalesce(c.max_templates,        l.max_templates)
-  from public.plan_limits(c.plan) l
+   set max_visuals_per_week = coalesce(
+         c.max_visuals_per_week,
+         (select l.max_visuals_per_week from public.plan_limits(c.plan) l)),
+       max_templates = coalesce(
+         c.max_templates,
+         (select l.max_templates from public.plan_limits(c.plan) l))
  where c.max_visuals_per_week is null
     or c.max_templates is null;
 
