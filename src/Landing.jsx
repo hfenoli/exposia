@@ -53,11 +53,12 @@ const PRICING = [
     prixAn: 494.99,       // 11 mois payés : 1 mois offert
     offert: "1 mois offert",
     inclus: [
+      "1 équipe",
       "5 visuels par semaine",
       "1 template sur 18",
       "Support par e-mail",
     ],
-    absent: ["Les 18 templates", "Accompagnement au démarrage"],
+    absent: ["Plusieurs équipes", "Les 18 templates", "Accompagnement au démarrage"],
   },
   {
     id: "STANDARD",
@@ -68,6 +69,7 @@ const PRICING = [
     offert: "1 mois offert",
     populaire: true,
     inclus: [
+      "3 équipes",
       "15 visuels par semaine",
       "5 templates sur 18",
       "Support par e-mail sous 48 h",
@@ -82,6 +84,7 @@ const PRICING = [
     prixAn: 1899.99,      // 10 mois payés : 2 mois offerts
     offert: "2 mois offerts",
     inclus: [
+      "Équipes illimitées",
       "Visuels illimités",
       "Les 18 templates",
       "Accompagnement au démarrage (1 h en visio)",
@@ -195,7 +198,7 @@ const TEAM = [
 ];
 const FAQ_ITEMS = [
   { q: "Pour quels sports ?",                       a: "Sept aujourd'hui : football, rugby, hockey sur glace, basketball, handball, natation et triathlon. Vous choisissez le vôtre à la première connexion, et tout suit — le vocabulaire (joueur, nageur, athlète), les postes, les formations, le tracé de l'aire de jeu et les types de visuels. Les sports individuels n'ont ni composition ni score d'équipe, mais des visuels de chrono et de podium. Votre discipline n'y est pas ? Écrivez-nous, on l'ajoute." },
-  { q: "On pratique plusieurs sports dans le club.", a: "Un compte correspond aujourd'hui à un sport. Pour une structure omnisports, le plus simple est un accès par section — écrivez-nous, on vous arrange ça sur l'offre Institution." },
+  { q: "On pratique plusieurs sports dans le club.", a: "Un compte correspond à un sport. Vous pouvez y gérer plusieurs équipes, mais toutes dans la même discipline. Pour une structure omnisports, le plus simple est un accès par section — écrivez-nous, on vous arrange ça sur l'offre Institution." },
   { q: "Faut-il des compétences en design ?",       a: "Non. Vous configurez votre club une fois (logo, couleurs, joueurs), l'app fait le reste. Aucune connaissance graphique requise." },
   { q: "Ça marche sur téléphone ?",                 a: "Oui, l'app est pensée mobile. Installez-la sur votre écran d'accueil pour un accès en un tap, comme une vraie application." },
   { q: "Combien ça coûte ?",                        a: "Trois offres selon la taille du club, de 44.99 à 189.99 CHF par mois. Au paiement annuel, un mois est offert sur les offres Équipe et Club, deux mois sur Institution. Elles diffèrent par le volume de visuels par semaine, le nombre de templates et le niveau d'accompagnement — toutes les fonctionnalités de l'éditeur sont incluses partout. Le détail est dans la section Tarifs. Pas de frais d'installation, résiliable à tout moment." },
@@ -206,7 +209,7 @@ const FAQ_ITEMS = [
   { q: "Le visuel se télécharge où ?",              a: "Directement dans vos photos sur iPhone et Android. Prêt à publier sur Instagram, WhatsApp ou Facebook." },
   { q: "Que deviennent les photos de nos joueurs ?", a: "Elles restent celles de votre club : nous ne les revendons pas et ne les transmettons à personne. Attention en revanche à un point qui vous incombe : pour un joueur mineur, il vous faut l'accord écrit des parents avant de publier son image. C'est détaillé dans nos conditions d'utilisation." },
   { q: "Peut-on essayer avant de payer ?",          a: "Oui. Les clubs acceptés en bêta disposent d'un mois complet sans engagement ni carte bancaire. Si ça ne vous convient pas, vous partez avec vos visuels et on supprime vos données." },
-  { q: "Puis-je gérer plusieurs équipes ?",         a: "Aujourd'hui un compte correspond à un effectif. Vous pouvez y réunir tous vos joueurs et créer des compositions différentes selon les matchs, mais les catégories ne sont pas encore séparées en équipes distinctes. C'est prévu, et les clubs abonnés sont prioritaires sur cette évolution." },
+  { q: "Puis-je gérer plusieurs équipes ?",         a: "Oui. Chaque équipe — juniors, seniors, féminines — a son propre effectif et son propre historique de visuels, et vous basculez de l'une à l'autre en un clic. Le logo, les couleurs et le sport restent communs au club, vous ne les ressaisissez pas. L'offre Équipe en autorise une, l'offre Club trois, l'offre Institution autant que nécessaire." },
 ];
 
 // ─── DOCUMENTS JURIDIQUES ─────────────────────────────────────

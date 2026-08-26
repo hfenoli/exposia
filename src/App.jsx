@@ -1247,6 +1247,27 @@ function UpBtn({val,on,w,h,r,label,t,preset}){
   </div>);
 }
 function Av({photo,name,size}){size=size||40;const[err,setErr]=useState(false);const ini=(name||"?").trim().split(/\s+/).map(w=>w[0]).join("").slice(0,2).toUpperCase();return(<div style={{width:size,height:size,borderRadius:"50%",overflow:"hidden",background:"linear-gradient(135deg,#e63329,#1a1a2e)",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*.32,fontWeight:700,color:"#fff"}}>{photo&&!err?<img src={photo} loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt="" onError={()=>setErr(true)}/>:ini}</div>);}
+// Bandeau de bascule d'équipe. Ne s'affiche qu'à partir de deux équipes :
+// un club mono-équipe ne voit aucune différence avec l'existant.
+function TeamBar({teams,teamId,onPick,t,label}){
+  if(!teams||teams.length<2)return null;
+  return(
+    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:16,padding:"9px 12px",background:t.bg3,borderRadius:9,border:"1px solid "+t.border}}>
+      <span style={{fontSize:9,color:t.text3,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",flexShrink:0}}>{label||"Équipe"}</span>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",minWidth:0}}>
+        {teams.map(tm=>{
+          const on=tm.id===teamId;
+          return(
+            <button key={tm.id} onClick={()=>{if(!on)onPick(tm.id);}}
+              style={{background:on?t.accent:t.bg4,color:on?contrastText(t.accent):t.text2,border:"1px solid "+(on?t.accent:t.border2),borderRadius:7,padding:"6px 12px",fontSize:12,fontWeight:on?700:500,cursor:on?"default":"pointer",fontFamily:"inherit",whiteSpace:"nowrap",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis"}}>
+              {tm.name}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 function PBox({children,t,mb}){return<div style={{background:t.bg3,borderRadius:10,padding:12,marginBottom:mb||10}}>{children}</div>;}
 function SHdr({label,t}){return<div style={{fontSize:10,color:t.text3,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",marginBottom:8,paddingBottom:6,borderBottom:"1px solid "+t.border}}>{label}</div>;}
 function TplGrid({tpls,sel,onSel,t,maxTemplates}){
@@ -1487,20 +1508,22 @@ function mapVisual(v,sport){
 // supabase/migrations/0001_visuals_format.sql. Tant qu'elle n'est pas passée
 // en base, on réécrit sans elle plutôt que de faire échouer la sauvegarde :
 // l'app reste utilisable, seul le format retombe sur Story au rechargement.
-function isMissingFormatColumn(error){
-  if(!error)return false;
-  return error.code==="42703"||/column .*format.* does not exist/i.test(error.message||"");
-}
 async function writeVisual(mode,payload,id){
   const run=(body)=>mode==="update"
     ? supabase.from("visuals").update(body).eq("id",id).select().single()
     : supabase.from("visuals").insert(body).select().single();
   let res=await run(payload);
-  if(isMissingFormatColumn(res.error)){
-    console.warn("[writeVisual] colonne `format` absente — migration 0001 non appliquée.");
-    const rest=Object.assign({},payload);
-    delete rest.format;
-    res=await run(rest);
+  // Deux colonnes peuvent manquer selon les migrations déjà passées :
+  // `format` (0001) et `team_id` (0006). On retire celle que la base refuse
+  // et on réessaie, plutôt que de perdre la sauvegarde du club.
+  for(const[col,mig] of [["team_id","0006"],["format","0001"]]){
+    if(res.error&&payload[col]!==undefined&&isMissingColumn(res.error)){
+      console.warn("[writeVisual] colonne `"+col+"` absente — migration "+mig+" non appliquée.");
+      const rest=Object.assign({},payload);
+      delete rest[col];
+      res=await run(rest);
+      payload=rest;
+    }
   }
   return res;
 }
@@ -1537,14 +1560,39 @@ function SportPicker({onPick,busy,t,clubName}){
 // ─── APP ──────────────────────────────────────────────────────
 export default function App({session}){
   const[club,setClub]=useState(null);
-  const[players,setPlayers]=useState([]);
+  // Listes brutes telles que renvoyées par la base, toutes équipes confondues.
+  // Les vues filtrées `players` et `history` sont dérivées plus bas : les
+  // setters gardent leur nom, donc toutes les écritures existantes (ajout,
+  // suppression, photos) continuent de porter sur la liste complète.
+  const[allPlayers,setPlayers]=useState([]);
   const[media,setMedia]=useState([]);
-  const[history,setHistory]=useState([]);
+  const[allHistory,setHistory]=useState([]);
+  // Équipes du club et équipe active. teams vide = migration 0006 non
+  // appliquée, l'app fonctionne alors en mode club unique.
+  const[teams,setTeams]=useState([]);
+  const[teamId,_setTeamId]=useState(null);
   const[loading,setLoading]=useState(true);
   // Écrans d'état de la connexion, pour ne plus déconnecter en silence :
   // "pending"  → club créé, en attente d'approbation admin
   // "error"    → la lecture du club a échoué (réseau, RLS, doublons)
   const[accessState,setAccessState]=useState(null);
+  // Équipe active mémorisée par club : on retrouve la même en revenant.
+  function setTeamId(id){
+    _setTeamId(id);
+    if(club&&id)lsSet("team_"+club.id,id);
+  }
+  // Un joueur ou un visuel sans équipe n'est pas perdu : il apparaît dans la
+  // première équipe. Ce cas ne survient qu'après suppression d'une équipe
+  // (on delete set null) ou sur des données antérieures à la migration 0006.
+  const isDefaultTeam = teams.length>0 && teams[0].id===teamId;
+  const players = useMemo(()=>{
+    if(!teamId) return allPlayers;
+    return allPlayers.filter(p=>p.team_id===teamId||(!p.team_id&&isDefaultTeam));
+  },[allPlayers,teamId,isDefaultTeam]);
+  const history = useMemo(()=>{
+    if(!teamId) return allHistory;
+    return allHistory.filter(h=>h.team_id===teamId||(!h.team_id&&isDefaultTeam));
+  },[allHistory,teamId,isDefaultTeam]);
   const[nav,_setNav]=useState(navFromUrl);
   // Wrapper qui synchronise nav state + URL navigateur (pushState).
   // Back/forward natif : géré via popstate (useEffect ci-dessous).
@@ -1705,6 +1753,24 @@ export default function App({session}){
         .gte("created_at",since);
       if(stale())return;
       setWeeklyCount(count||0);
+
+      // ── Équipes (migration 0006) ────────────────────────────────────────
+      // Tant que la table n'existe pas, on reste en mode club unique : la
+      // requête échoue, on garde une liste vide et rien n'est filtré. Le club
+      // retrouve exactement le comportement d'avant.
+      const{data:teamsData,error:teamsErr}=await supabase
+        .from("teams").select("*").eq("club_id",clubData.id)
+        .order("created_at",{ascending:true});
+      if(stale())return;
+      const teamList=teamsErr?[]:(teamsData||[]);
+      if(teamsErr)console.warn("[load] teams indisponible (migration 0006 non appliquée ?) :",teamsErr.message);
+      setTeams(teamList);
+      // Équipe active : celle mémorisée pour ce club si elle existe encore,
+      // sinon la plus ancienne.
+      const savedTid=lsGet("team_"+clubData.id);
+      const active=teamList.find(t=>t.id===savedTid)||teamList[0]||null;
+      setTeamId(active?active.id:null);
+
       const{data:playersData}=await supabase.from("players").select("*, photos:player_photos(*)").eq("club_id",clubData.id);
       if(stale())return;
       setPlayers(sortPlayers(playersData));
@@ -1738,9 +1804,65 @@ export default function App({session}){
     setClub(c=>({...c,sport:next}));
     setSavingSport(false);
   }
+  // ─── ÉQUIPES ────────────────────────────────────────────────────────────
+  // Le quota est aussi appliqué par un trigger côté base (migration 0006) :
+  // ce contrôle-ci sert à donner un message utile, pas à faire respecter la
+  // règle, qu'un appel direct à l'API contournerait.
+  const maxTeams = club?.max_teams || 1;
+  const teamQuotaReached = teams.length > 0 && teams.length >= maxTeams;
+  async function addTeam(name){
+    const label=(name||"").trim();
+    if(!label)return;
+    if(teamQuotaReached){
+      setLimitError("Votre offre est limitée à "+maxTeams+(maxTeams>1?" équipes":" équipe")+". Passez à l'offre supérieure pour en ajouter.");
+      setTimeout(()=>setLimitError(""),4000);return;
+    }
+    const{data,error}=await supabase.from("teams").insert({club_id:club.id,name:label}).select().single();
+    if(error){
+      console.error("[addTeam] échec:",error.message);
+      setLimitError(error.code==="54000"?error.message:"Impossible de créer l'équipe : "+error.message);
+      setTimeout(()=>setLimitError(""),4000);return;
+    }
+    setTeams(ts=>[...ts,data]);
+    setTeamId(data.id);
+  }
+  async function renameTeam(id,name){
+    const label=(name||"").trim();
+    if(!label)return;
+    setTeams(ts=>ts.map(x=>x.id===id?{...x,name:label}:x));
+    const{error}=await supabase.from("teams").update({name:label}).eq("id",id);
+    if(error)console.error("[renameTeam] échec:",error.message);
+  }
+  async function deleteTeam(id){
+    // La base est en `on delete set null` : joueurs et visuels ne sont pas
+    // détruits, ils basculent dans la première équipe. Le message le dit.
+    const team=teams.find(x=>x.id===id);
+    const n=allPlayers.filter(p=>p.team_id===id).length;
+    const v=allHistory.filter(h=>h.team_id===id).length;
+    const detail=(n||v)?"\n\nSes "+n+" "+T.playersLower+" et "+v+" visuel"+(v>1?"s":"")+" ne seront pas supprimés : ils rejoindront la première équipe.":"";
+    if(!window.confirm("Supprimer l'équipe « "+(team?team.name:"")+" » ?"+detail))return;
+    const{error}=await supabase.from("teams").delete().eq("id",id);
+    if(error){console.error("[deleteTeam] échec:",error.message);return;}
+    const rest=teams.filter(x=>x.id!==id);
+    setTeams(rest);
+    setPlayers(ps=>ps.map(p=>p.team_id===id?{...p,team_id:null}:p));
+    setHistory(hs=>hs.map(h=>h.team_id===id?{...h,team_id:null}:h));
+    if(teamId===id)setTeamId(rest[0]?rest[0].id:null);
+  }
   async function addPlayer(){
     if(!pName.trim())return;
-    const{data}=await supabase.from("players").insert({club_id:club.id,name:pName.trim(),number:pNum,position:pPos||getSport(sport).defaultPosition}).select("*, photos:player_photos(*)").single();
+    const row={club_id:club.id,name:pName.trim(),number:pNum,position:pPos||getSport(sport).defaultPosition};
+    // Rattaché à l'équipe active. Si la colonne n'existe pas encore
+    // (migration 0006 non appliquée), on réessaie sans elle.
+    if(teamId)row.team_id=teamId;
+    const sel="*, photos:player_photos(*)";
+    let{data,error}=await supabase.from("players").insert(row).select(sel).single();
+    if(error&&row.team_id!==undefined&&isMissingColumn(error)){
+      console.warn("[addPlayer] colonne `team_id` absente — migration 0006 non appliquée.");
+      const rest=Object.assign({},row);delete rest.team_id;
+      ({data,error}=await supabase.from("players").insert(rest).select(sel).single());
+    }
+    if(error){console.error("[addPlayer] échec:",error.message);return;}
     if(data)setPlayers(p=>sortPlayers([...p,data]));
     setPName("");setPNum("");
   }
@@ -1866,6 +1988,9 @@ export default function App({session}){
     }
     const ct=ctypeInfo(sport,selType);
     const payload={club_id:club.id,type:selType,label:ct?.label||"",icon:ct?.icon||"",layers,lineup_data:lineupData,group_data:groupData,post_data:postData,lineup_tpl:lineupTpl,group_tpl:groupTpl,post_tpl:postTpl,bg_url:bgUrl,logo_url:logoUrl,logo2_url:logo2Url,player_url:selPhoto,format:supportsFormat?format:DEFAULT_FORMAT,updated_at:new Date().toISOString()};
+    // Le visuel appartient à l'équipe active. Omis si aucune équipe n'existe
+    // (migration 0006 non appliquée) : writeVisual retire la colonne au besoin.
+    if(teamId)payload.team_id=teamId;
     let saved;
     if(editId){
       const{data,error}=await writeVisual("update",payload,editId);
@@ -2215,6 +2340,34 @@ export default function App({session}){
         {nav==="club"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Mon Club</h2>
           <p style={{color:t.text3,marginBottom:24,fontSize:13}}>Appliqué automatiquement à tous vos visuels.</p>
+          {teams.length>0&&(
+          <div style={Object.assign({},card,{maxWidth:650,marginBottom:16})}>
+            <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:10,marginBottom:6}}>
+              <div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase"}}>Équipes</div>
+              <div style={{fontSize:11,color:teamQuotaReached?t.accent:t.text3,fontVariantNumeric:"tabular-nums"}}>{teams.length} / {maxTeams>=999?"illimité":maxTeams}</div>
+            </div>
+            <div style={{fontSize:12,color:t.text3,marginBottom:12,lineHeight:1.5}}>
+              Chaque équipe a son propre {T.playersLower.replace(/s$/,"")} et ses propres visuels. Le logo, les couleurs et le sport restent communs au club.
+            </div>
+            {teams.map(tm=>{
+              const on=tm.id===teamId;
+              const nb=allPlayers.filter(p=>p.team_id===tm.id||(!p.team_id&&teams[0].id===tm.id)).length;
+              return(
+                <div key={tm.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,background:on?rgba(t.accent,.1):t.bg3,border:"1px solid "+(on?rgba(t.accent,.4):t.border),borderRadius:8,padding:"8px 10px"}}>
+                  <button onClick={()=>setTeamId(tm.id)} title={on?"Équipe active":"Activer cette équipe"}
+                    style={{width:16,height:16,flexShrink:0,borderRadius:"50%",border:"2px solid "+(on?t.accent:t.border2),background:on?t.accent:"transparent",cursor:on?"default":"pointer",padding:0}}/>
+                  <input value={tm.name} onChange={e=>renameTeam(tm.id,e.target.value)}
+                    style={{flex:1,minWidth:0,background:"transparent",border:"none",color:t.text,fontSize:13,fontWeight:on?600:400,outline:"none",fontFamily:"inherit"}}/>
+                  <span style={{fontSize:11,color:t.text3,flexShrink:0,fontVariantNumeric:"tabular-nums"}}>{nb}</span>
+                  {teams.length>1&&<button onClick={()=>deleteTeam(tm.id)} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:13,padding:"0 2px",flexShrink:0}}>✕</button>}
+                </div>
+              );
+            })}
+            {teamQuotaReached
+              ? <div style={{fontSize:11,color:t.text3,marginTop:8,lineHeight:1.5}}>Votre offre est limitée à {maxTeams}&nbsp;{maxTeams>1?"équipes":"équipe"}. Passez à l'offre supérieure pour en ajouter.</div>
+              : <button onClick={()=>{const n=window.prompt("Nom de la nouvelle équipe","Équipe "+(teams.length+1));if(n)addTeam(n);}}
+                  style={{marginTop:6,background:rgba(t.accent,.14),color:t.accent,border:"1px solid "+rgba(t.accent,.35),borderRadius:7,padding:"8px 14px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>+ Ajouter une équipe</button>}
+          </div>)}
           <div style={Object.assign({},card,{maxWidth:650,marginBottom:16})}>
             <div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:6}}>Sport du club</div>
             <div style={{fontSize:12,color:t.text3,marginBottom:12,lineHeight:1.5}}>
@@ -2241,6 +2394,7 @@ export default function App({session}){
         {nav==="players"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>{T.squadTitle}</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>{T.squadDesc}</p>
+          <TeamBar teams={teams} teamId={teamId} onPick={setTeamId} t={t}/>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"275px 1fr",gap:18}}>
             <div>
               <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>{T.newPlayer}</div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Nom complet</label><TIn v={pName} on={setPName} ph="Prénom Nom" t={t}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,margin:"10px 0"}}><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>{T.numberLabel}</label><TIn v={pNum} on={v=>setPNum(v===""?"":String(Math.max(0,parseInt(v)||0)))} ph={T.numberPlaceholder} type="number" min={0} t={t}/></div><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>{T.positionLabel}</label><TSel v={pPos||getSport(sport).defaultPosition} on={setPPos} t={t} opts={positionsFor(sport)}/></div></div><button onClick={addPlayer} style={{background:t.accent,color:contrastText(t.accent),border:"none",borderRadius:8,padding:9,fontSize:13,fontWeight:600,cursor:"pointer",width:"100%"}}>{T.addToSquad}</button></div>
@@ -2260,10 +2414,11 @@ export default function App({session}){
             <div>{media.length===0?<div style={Object.assign({},card,{padding:"40px 20px",textAlign:"center",color:t.text3})}><div style={{fontSize:32,marginBottom:10}}>🖼️</div><div>Médiathèque vide</div></div>:(<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>{media.map(m=>(<div key={m.id} style={{borderRadius:11,overflow:"hidden",border:"1px solid "+t.border}}><div style={{aspectRatio:"16/9",overflow:"hidden"}}><img src={thumbOf(m)} loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div><div style={{padding:"6px 10px",fontSize:11,color:t.text2,background:t.bg2,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"80%"}}>{m.name||"Image"}</span><button onClick={()=>deleteMedia(m.id)} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:14}}>✕</button></div></div>))}</div>)}</div>
           </div>
         </div>)}
-        {nav==="create"&&(!selType?(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}><h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Choisir un type</h2><p style={{color:t.text3,marginBottom:22,fontSize:13}}>Sélectionnez ce que vous souhaitez créer.</p><div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:14,maxWidth:680}}>{CT.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:"22px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(t.accent,.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}>  <div style={{fontSize:28,marginBottom:10}}>{c.icon}</div><div style={{fontWeight:700,color:t.text,fontSize:14,marginBottom:4}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.5}}>{c.desc}</div></div>))}</div></div>):(selType==="lineup"||selType==="group")?renderSpecial():renderStandard())}
+        {nav==="create"&&(!selType?(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}><h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Choisir un type</h2><p style={{color:t.text3,marginBottom:22,fontSize:13}}>Sélectionnez ce que vous souhaitez créer.</p><TeamBar teams={teams} teamId={teamId} onPick={setTeamId} t={t} label="Créer pour"/><div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:14,maxWidth:680}}>{CT.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:"22px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(t.accent,.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}>  <div style={{fontSize:28,marginBottom:10}}>{c.icon}</div><div style={{fontWeight:700,color:t.text,fontSize:14,marginBottom:4}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.5}}>{c.desc}</div></div>))}</div></div>):(selType==="lineup"||selType==="group")?renderSpecial():renderStandard())}
         {nav==="history"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Historique</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>{history.length+" visuel"+(history.length!==1?"s":"")+" · Cloud ☁️"}</p>
+          <TeamBar teams={teams} teamId={teamId} onPick={setTeamId} t={t}/>
           {history.length===0?<div style={Object.assign({},card,{padding:"60px 20px",textAlign:"center",color:t.text3})}><div style={{fontSize:36,marginBottom:12}}>📁</div><div style={{fontSize:14}}>Aucun visuel sauvegardé</div></div>:(<div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:14}}>{history.map(h=>(<div key={h.id} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,overflow:"hidden"}}><div style={{background:"#030306",display:"flex",alignItems:"center",justifyContent:"center",padding:10}}><WhenVisible minHeight={140}><HistoryThumb h={h} c1={club?.color1||"#e63329"} c2={club?.color2||"#1a1a2e"}/></WhenVisible></div><div style={{padding:"10px 12px",borderTop:"1px solid "+t.border}}><div style={{fontSize:12,fontWeight:600,color:t.text,marginBottom:6}}>{(h.ct&&h.ct.icon?h.ct.icon:"📄")+" "+(h.ct&&h.ct.label?h.ct.label:"Visuel")}</div><div style={{display:"flex",gap:6}}><button onClick={()=>{openCreate(h.type,h);setNav("create");}} style={{flex:1,background:rgba(t.accent,.15),color:t.accent,border:"1px solid "+rgba(t.accent,.3),borderRadius:7,padding:"6px 8px",fontSize:11,cursor:"pointer",fontWeight:600}}>↩ Modifier</button><button onClick={()=>deleteVisual(h.id)} style={{background:"rgba(239,68,68,.1)",color:"#fca5a5",border:"1px solid rgba(239,68,68,.25)",borderRadius:7,padding:"6px 8px",fontSize:11,cursor:"pointer"}}>✕</button></div></div></div>))}</div>)}
         </div>)}
         {nav==="settings"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
