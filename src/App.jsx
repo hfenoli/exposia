@@ -378,39 +378,64 @@ function makeLayers(type,c1,c2,sport){
 }
 // ─── CURVED TEXT ──────────────────────────────────────────────
 function CurvedText({lay,containerW}){
-  if(!lay.text) return null;
-  const txt = lay.upper ? lay.text.toUpperCase() : lay.text;
+  const txt = lay.upper ? (lay.text||"").toUpperCase() : (lay.text||"");
   const curve = lay.curve||0;
-  if(curve===0) return null;
+  if(!txt || curve===0) return null;
   const fontSize = lay.fontSize||20;
   const font = (lay.font||"Impact")+",sans-serif";
   const color = lay.color||"#fff";
   const lsp = lay.letterSpacing||0;
-  const W = containerW||270;
+
+  // ── Géométrie ──────────────────────────────────────────────────────────
+  // On part de la CORDE, pas de l'angle. La corde vaut exactement la largeur
+  // du calque : l'arc va donc toujours du bord gauche au bord droit de la
+  // boîte, quel que soit l'angle choisi.
+  //
+  // L'ancienne version déduisait le rayon du seul angle (W*180/(|curve|*2)),
+  // ce qui donnait r ≈ 24 000 px à 1° et ancrait le tracé sur le centre du
+  // cercle : le texte sautait de plusieurs milliers de pixels dès qu'on
+  // touchait le curseur, et la hauteur du SVG suivait le rayon.
+  //
+  // Autre correction : la largeur utilisée était celle du canvas (270) et non
+  // celle du calque, donc l'arc débordait de sa propre boîte et ignorait le
+  // redimensionnement.
+  const W = Math.max(8,(containerW||270)*((lay.w||100)/100));
+  const half = (Math.abs(curve)*Math.PI/180)/2;   // demi-angle balayé
+  // r = W / (2·sin(θ/2)) ⇒ corde = W. Quand θ → 0, r → ∞ et l'arc tend vers
+  // la ligne droite de largeur W : le passage courbe/plat est continu.
+  // Borne de sécurité numérique. Le curseur s'arrête à 1°, qui demande
+  // r ≈ 57·W : on prend 60·W pour ne jamais rogner la corde dans la plage utile.
+  const r = Math.min(W/(2*Math.sin(half)), W*60);
+  const sag = r*(1-Math.cos(half));               // flèche (hauteur du bombé)
+  const up = curve>0;
+  const padTop = fontSize*1.15;                   // place pour les hampes
+  const padBot = fontSize*0.45;                   // place pour les jambages
+  const H = sag+padTop+padBot;                    // borné par la flèche, plus par r
   const cx = W/2;
-  const r = Math.max(W*0.35, W*180/(Math.abs(curve)*2));
-  const isUp = curve>0;
-  const cy = isUp ? r*0.9 : -r*0.9+fontSize*1.4;
-  const halfAngle = (Math.abs(curve)*Math.PI/180)/2;
-  const x1 = cx + r*Math.sin(-halfAngle);
-  const y1 = cy - r*Math.cos(-halfAngle);
-  const x2 = cx + r*Math.sin(halfAngle);
-  const y2 = cy - r*Math.cos(halfAngle);
-  const large = Math.abs(curve)>180?1:0;
-  const sweep = isUp?1:0;
+  // Sommet de l'arc calé sur un bord fixe du SVG : c'est lui qui ne bouge
+  // plus quand on fait varier l'angle.
+  const apexY = up ? padTop : H-padBot;
+  const cy = up ? apexY+r : apexY-r;
+  const dx = r*Math.sin(half), dy = r*Math.cos(half);
+  const x1 = cx-dx, x2 = cx+dx;
+  const y = up ? cy-dy : cy+dy;                   // les deux extrémités sont à la même hauteur
   const pid = "arc_"+lay.id;
-  const arcD = "M "+x1+" "+y1+" A "+r+" "+r+" 0 "+large+" "+sweep+" "+x2+" "+y2;
-  const svgH = Math.abs(cy)+r+fontSize*2;
-  // Bounding box approximative de l'arc pour la hit zone tactile : largeur W, hauteur svgH
+  // θ ≤ 180° par construction (curseur borné) ⇒ large-arc-flag toujours 0.
+  const arcD = "M "+x1.toFixed(2)+" "+y.toFixed(2)+" A "+r.toFixed(2)+" "+r.toFixed(2)+" 0 0 "+(up?1:0)+" "+x2.toFixed(2)+" "+y.toFixed(2);
+  // L'alignement du calque s'applique aussi au texte courbé.
+  const anchor = lay.align==="left"?"start":lay.align==="right"?"end":"middle";
+  const offset = lay.align==="left"?"0%":lay.align==="right"?"100%":"50%";
   return(
-    <svg width={W} height={svgH} style={{position:"absolute",left:0,top:"50%",transform:"translateY(-50%)",overflow:"visible",cursor:"inherit"}}>
+    <svg width={W} height={H} viewBox={"0 0 "+W.toFixed(2)+" "+H.toFixed(2)} style={{position:"absolute",left:0,top:"50%",transform:"translateY(-50%)",overflow:"visible",cursor:"inherit"}}>
       <defs><path id={pid} d={arcD}/></defs>
-      {/* Hit zone tactile : rect couvrant toute la bbox du SVG, garantit tap iOS Safari (pointerEvents=stroke n'est pas fiable en touch) */}
-      <rect x="0" y="0" width={W} height={svgH} fill="rgba(0,0,0,0)" pointerEvents="all"/>
-      {/* Hit zone précise le long de l'arc pour le desktop (mieux que la rect entière) */}
-      <path d={arcD} fill="none" stroke="rgba(0,0,0,0)" strokeWidth={fontSize*1.4} strokeLinecap="round" pointerEvents="stroke"/>
+      {/* Zone tactile épousant le tracé. L'ancienne version ajoutait en plus un
+          rect couvrant toute la bbox : à faible courbure il faisait des milliers
+          de pixels de haut et interceptait les clics destinés aux autres calques.
+          Un trait épais suffit et reste précis. Alpha non nul : certains moteurs
+          n'effectuent le test de survol que sur un tracé effectivement peint. */}
+      <path d={arcD} fill="none" stroke="rgba(0,0,0,0.01)" strokeWidth={Math.max(fontSize*1.5,18)} strokeLinecap="round"/>
       <text fontFamily={font} fontSize={fontSize} fontWeight={lay.bold?"900":"400"} fontStyle={lay.italic?"italic":"normal"} fill={color} letterSpacing={lsp} pointerEvents="visiblePainted">
-        <textPath href={"#"+pid} startOffset="50%" textAnchor="middle">{txt}</textPath>
+        <textPath href={"#"+pid} startOffset={offset} textAnchor={anchor}>{txt}</textPath>
       </text>
     </svg>
   );
