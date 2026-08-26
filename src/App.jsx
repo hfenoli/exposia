@@ -425,15 +425,24 @@ function CurvedText({lay,containerW}){
   // L'alignement du calque s'applique aussi au texte courbé.
   const anchor = lay.align==="left"?"start":lay.align==="right"?"end":"middle";
   const offset = lay.align==="left"?"0%":lay.align==="right"?"100%":"50%";
+  // Le SVG occupe EXACTEMENT la boîte du calque (100 % / 100 %), et l'arc est
+  // ramené dedans par le viewBox. C'est ce qui rend le texte à nouveau
+  // sélectionnable : c'est la boîte du calque qui porte le onMouseDown, or
+  // l'ancienne version dimensionnait le SVG sur la flèche de l'arc (jusqu'à
+  // 199 px pour une boîte qui en fait souvent 48). Le texte était donc dessiné
+  // hors de sa propre zone cliquable : on cliquait dessus et l'événement
+  // partait au calque du dessous, en général le fond, qui est verrouillé.
+  //
+  // preserveAspectRatio="meet" : l'arc est mis à l'échelle sans déformation et
+  // reste entièrement visible. La taille rendue suit donc aussi la taille du
+  // calque, ce qui rend les boutons − / + opérants sur un texte courbé.
   return(
-    <svg width={W} height={H} viewBox={"0 0 "+W.toFixed(2)+" "+H.toFixed(2)} style={{position:"absolute",left:0,top:"50%",transform:"translateY(-50%)",overflow:"visible",cursor:"inherit"}}>
+    <svg width="100%" height="100%" viewBox={"0 0 "+W.toFixed(2)+" "+H.toFixed(2)} preserveAspectRatio="xMidYMid meet" style={{position:"absolute",left:0,top:0,cursor:"inherit"}}>
       <defs><path id={pid} d={arcD}/></defs>
-      {/* Zone tactile épousant le tracé. L'ancienne version ajoutait en plus un
-          rect couvrant toute la bbox : à faible courbure il faisait des milliers
-          de pixels de haut et interceptait les clics destinés aux autres calques.
-          Un trait épais suffit et reste précis. Alpha non nul : certains moteurs
-          n'effectuent le test de survol que sur un tracé effectivement peint. */}
-      <path d={arcD} fill="none" stroke="rgba(0,0,0,0.01)" strokeWidth={Math.max(fontSize*1.5,18)} strokeLinecap="round"/>
+      {/* Toute la boîte est cliquable, comme pour un texte droit. C'est sans
+          danger maintenant que le rect est borné au calque : la version qui
+          posait problème le dimensionnait sur le rayon et couvrait le canvas. */}
+      <rect x="0" y="0" width={W.toFixed(2)} height={H.toFixed(2)} fill="rgba(0,0,0,0)" pointerEvents="all"/>
       <text fontFamily={font} fontSize={fontSize} fontWeight={lay.bold?"900":"400"} fontStyle={lay.italic?"italic":"normal"} fill={color} letterSpacing={lsp} pointerEvents="visiblePainted">
         <textPath href={"#"+pid} startOffset={offset} textAnchor={anchor}>{txt}</textPath>
       </text>
