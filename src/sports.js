@@ -93,7 +93,7 @@ export const SPORTS = {
       scoreEvent: "ESSAI !", scoreEventShort: "ESSAI",
       lineupTitle: "Composition XV", competitionPlaceholder: "LNA · J12",
     },
-    typeLabels: { goal: { label: "Essai", desc: "Célébration d'un essai" }, lineup: { label: "Composition XV", desc: "XV de départ" } },
+    typeLabels: { goal: { icon: "🏉", label: "Essai", desc: "Célébration d'un essai" }, lineup: { label: "Composition XV", desc: "XV de départ" } },
   },
 
   hockey: {
@@ -116,7 +116,7 @@ export const SPORTS = {
       venue: "Patinoire", lineupTitle: "Alignement", lineupShort: "Alignement",
       formationLabel: "Ligne", competitionPlaceholder: "MyHockey League · J12",
     },
-    typeLabels: { lineup: { label: "Alignement", desc: "Ligne de départ" } },
+    typeLabels: { goal: { icon: "🏒" }, lineup: { label: "Alignement", desc: "Ligne de départ" } },
   },
 
   basketball: {
@@ -140,7 +140,7 @@ export const SPORTS = {
       lineupTitle: "Cinq de départ", lineupShort: "Cinq de départ",
       competitionPlaceholder: "SB League · J12",
     },
-    typeLabels: { goal: { label: "Panier", desc: "Action décisive" }, lineup: { label: "Cinq de départ", desc: "Les 5 titulaires" } },
+    typeLabels: { goal: { icon: "🏀", label: "Panier", desc: "Action décisive" }, lineup: { label: "Cinq de départ", desc: "Les 5 titulaires" } },
   },
 
   handball: {
@@ -163,7 +163,7 @@ export const SPORTS = {
       venue: "Salle", lineupTitle: "Sept de départ", lineupShort: "Sept de départ",
       competitionPlaceholder: "SHL · J12",
     },
-    typeLabels: { lineup: { label: "Sept de départ", desc: "Les 7 titulaires" } },
+    typeLabels: { goal: { icon: "🤾" }, lineup: { label: "Sept de départ", desc: "Les 7 titulaires" } },
   },
 
   natation: {
@@ -250,7 +250,9 @@ export function ctypeInfo(id, typeId) {
   const base = CTYPE_BASE[typeId];
   if (!base) return { id: typeId, icon: "📄", label: "Visuel", desc: "" };
   const ov = (getSport(id).typeLabels || {})[typeId] || {};
-  return { id: typeId, icon: base.icon, label: ov.label || base.label, desc: ov.desc || base.desc };
+  // L'icône est surchargeable au même titre que le libellé : sans ça un essai
+  // au rugby ou un panier au basket s'affichait avec un ballon de football.
+  return { id: typeId, icon: ov.icon || base.icon, label: ov.label || base.label, desc: ov.desc || base.desc };
 }
 
 export function isTeamSport(id) {
