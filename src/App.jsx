@@ -1547,12 +1547,17 @@ function SportPicker({onPick,busy,t,clubName}){
         <h1 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:44,fontWeight:400,letterSpacing:".02em",lineHeight:1,margin:"0 0 10px"}}>
           {clubName?"Quel sport pratique "+clubName+" ?":"Quel sport pratique votre club ?"}
         </h1>
-        <p style={{color:t.text3,fontSize:13,lineHeight:1.6,margin:"0 0 26px"}}>
-          Le vocabulaire, les postes et les types de visuels s'adaptent au sport choisi. Vous pourrez en changer plus tard dans « Mon Club ».
+        <p style={{color:t.text3,fontSize:13,lineHeight:1.6,margin:"0 0 20px"}}>
+          Le vocabulaire, les postes, les formations et les types de visuels s'adaptent au sport choisi.
+        </p>
+        {/* Le choix est définitif : il faut le dire ici, et pas seulement une
+            fois que le club a cliqué. */}
+        <p style={{color:t.text2,fontSize:12,lineHeight:1.6,margin:"0 0 26px",padding:"10px 12px",background:t.bg3,border:"1px solid "+t.border,borderRadius:8}}>
+          Ce choix est définitif. Il structure votre effectif et vos visuels, et ne pourra plus être modifié ensuite. Si vous pratiquez plusieurs disciplines, prenez un accès par discipline.
         </p>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
           {SPORT_LIST.map(sp=>(
-            <button key={sp.id} onClick={()=>!busy&&onPick(sp.id)} disabled={busy}
+            <button key={sp.id} onClick={()=>{if(busy)return;if(window.confirm("Confirmer « "+sp.label+" » comme sport du club ?\n\nCe choix est définitif et ne pourra plus être modifié."))onPick(sp.id);}} disabled={busy}
               style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,padding:"20px 16px",cursor:busy?"wait":"pointer",color:t.text,fontFamily:"inherit",textAlign:"left",display:"flex",flexDirection:"column",gap:6,transition:"border-color .15s,transform .15s"}}
               onMouseEnter={e=>{if(busy)return;e.currentTarget.style.borderColor=t.accent;e.currentTarget.style.transform="translateY(-2px)";}}
               onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}>
@@ -2377,23 +2382,28 @@ export default function App({session}){
               : <button onClick={()=>{const n=window.prompt("Nom de la nouvelle équipe","Équipe "+(teams.length+1));if(n)addTeam(n);}}
                   style={{marginTop:6,background:rgba(t.accent,.14),color:t.accent,border:"1px solid "+rgba(t.accent,.35),borderRadius:7,padding:"8px 14px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>+ Ajouter une équipe</button>}
           </div>)}
+          {/* Le sport est choisi une seule fois, à la première connexion, et
+              n'est plus modifiable ensuite : il détermine les postes, les
+              formations et les types de visuels, donc en changer laisserait
+              derrière lui un effectif et des visuels incohérents. Affichage en
+              lecture seule. Un administrateur peut le corriger en base si un
+              club s'est trompé (voir la migration 0007). */}
           <div style={Object.assign({},card,{maxWidth:650,marginBottom:16})}>
             <div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:6}}>Sport du club</div>
-            <div style={{fontSize:12,color:t.text3,marginBottom:12,lineHeight:1.5}}>
-              Détermine le vocabulaire, les postes, les formations et les types de visuels proposés. Changer de sport ne supprime rien : vos {T.playersLower} et vos visuels sont conservés.
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8}}>
-              {SPORT_LIST.map(sp=>{
-                const on=sport===sp.id;
-                return(
-                  <button key={sp.id} onClick={()=>{if(on)return;if(window.confirm("Passer le club en « "+sp.label+" » ? Les postes et types de visuels changeront."))chooseSport(sp.id);}}
-                    style={{background:on?rgba(t.accent,.14):t.bg3,border:"2px solid "+(on?t.accent:t.border),borderRadius:9,padding:"11px 8px",cursor:on?"default":"pointer",color:t.text,fontFamily:"inherit",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
-                    <span style={{fontSize:20,lineHeight:1}}>{sp.icon}</span>
-                    <span style={{fontSize:11,fontWeight:on?700:500,color:on?t.accent:t.text2,textAlign:"center",lineHeight:1.25}}>{sp.label}</span>
-                  </button>
-                );
-              })}
-            </div>
+            {(()=>{
+              const sp=SPORT_LIST.find(x=>x.id===sport);
+              return(
+                <div style={{display:"flex",alignItems:"center",gap:12,background:t.bg3,border:"1px solid "+t.border,borderRadius:9,padding:"12px 14px"}}>
+                  <span style={{fontSize:26,lineHeight:1,flexShrink:0}}>{sp?sp.icon:"🏅"}</span>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontSize:14,fontWeight:700,color:t.text}}>{sp?sp.label:"Non défini"}</div>
+                    <div style={{fontSize:11,color:t.text3,marginTop:2,lineHeight:1.45}}>
+                      Défini à la création du club. Il fixe le vocabulaire, les postes, les formations et les types de visuels, et n'est plus modifiable ensuite. Écrivez-nous si vous devez le corriger.
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16,maxWidth:650}}>
             <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Identité</div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Nom du club</label><TIn v={club?.name||""} on={v=>updateClub({name:v,is_configured:true})} ph="FC Mon Club" t={t}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,margin:"14px 0 10px"}}><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Couleur principale</label><input type="color" value={club?.color1||"#e63329"} onChange={e=>updateClub({color1:e.target.value,is_configured:true})} style={{width:"100%",height:40,borderRadius:8,border:"1px solid "+t.border2,background:t.bg3,cursor:"pointer",padding:3}}/></div><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Couleur secondaire</label><input type="color" value={club?.color2||"#1a1a2e"} onChange={e=>updateClub({color2:e.target.value,is_configured:true})} style={{width:"100%",height:40,borderRadius:8,border:"1px solid "+t.border2,background:t.bg3,cursor:"pointer",padding:3}}/></div></div><div style={{height:24,borderRadius:8,background:"linear-gradient(90deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",marginBottom:4}}/><div style={{fontSize:10,color:t.text3,textAlign:"center"}}>Sauvegardé en temps réel ✓</div></div>
