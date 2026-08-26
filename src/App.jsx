@@ -1516,6 +1516,10 @@ export default function App({session}){
   const[media,setMedia]=useState([]);
   const[history,setHistory]=useState([]);
   const[loading,setLoading]=useState(true);
+  // Écrans d'état de la connexion, pour ne plus déconnecter en silence :
+  // "pending"  → club créé, en attente d'approbation admin
+  // "error"    → la lecture du club a échoué (réseau, RLS, doublons)
+  const[accessState,setAccessState]=useState(null);
   const[nav,_setNav]=useState(navFromUrl);
   // Wrapper qui synchronise nav state + URL navigateur (pushState).
   // Back/forward natif : géré via popstate (useEffect ci-dessous).
@@ -1606,14 +1610,34 @@ export default function App({session}){
     const stale=()=>loadTokenRef.current!==token;
     async function load(){
       setLoading(true);
-      let{data:clubData}=await supabase.from("clubs").select("*").eq("user_id",uid).single();
+      // ── Lecture du club ───────────────────────────────────────────────
+      // NE PAS utiliser .single() ici : il lève une erreur si le résultat
+      // n'est pas exactement une ligne — zéro, mais AUSSI deux ou plus.
+      // L'ancien code ne lisait que `data` et ignorait l'erreur, donc toute
+      // anomalie (doublon, RLS, réseau) tombait dans la branche « créer » et
+      // ajoutait une ligne clubs + un mail admin à CHAQUE connexion.
+      // On borne à 1 ligne, la plus ancienne, et on distingue les trois cas :
+      // trouvé / aucun / échec.
+      const{data:clubRows,error:selErr}=await supabase
+        .from("clubs").select("*").eq("user_id",uid)
+        .order("created_at",{ascending:true}).limit(1);
+      if(stale())return;
+      if(selErr){
+        console.error("[load] lecture clubs échouée:",selErr);
+        setAccessState("error");setLoading(false);return;
+      }
+      let clubData=(clubRows&&clubRows.length)?clubRows[0]:null;
       if(!clubData){
         // Première connexion via magic link : créer la ligne clubs avec le nom de club passé en user_metadata au signup.
         const meta=session.user.user_metadata||{};
         const newName=meta.club_name||"Mon Club";
         const newEmail=session.user.email||null;
         const{data:newClub,error:cErr}=await supabase.from("clubs").insert({user_id:uid,email:newEmail,name:newName}).select().single();
-        if(cErr)console.error("[load] insert clubs failed:",cErr);
+        if(stale())return;
+        if(cErr){
+          console.error("[load] insert clubs failed:",cErr);
+          setAccessState("error");setLoading(false);return;
+        }
         clubData=newClub;
         // Notifier l'admin uniquement à la création initiale (pas à chaque login).
         if(newClub){
@@ -1624,7 +1648,9 @@ export default function App({session}){
           }).catch(e=>console.warn("[load] notify-signup failed:",e));
         }
       }
-      if(!clubData?.approved){await supabase.auth.signOut();return;}
+      // Club connu mais pas encore validé : on l'affiche au lieu de déconnecter
+      // sans explication. La session reste ouverte, un bouton permet de réessayer.
+      if(!clubData?.approved){setAccessState("pending");setLoading(false);return;}
       if(stale())return;
       if(!clubData.sport){
         const local=lsGet("sport_"+clubData.id);
@@ -1932,6 +1958,24 @@ export default function App({session}){
   // Sport pas encore choisi → on le demande avant tout le reste.
   if(!loading&&club&&!club.sport)return <SportPicker onPick={chooseSport} busy={savingSport} t={t} clubName={club.name}/>;
   if(loading)return(<div className="viz-fullvh" style={{display:"flex",alignItems:"center",justifyContent:"center",background:"#080810",color:"rgba(240,240,248,.4)",fontFamily:"system-ui",flexDirection:"column",gap:12}}><div style={{fontSize:28}}>⚡</div><div>Chargement de vos données...</div></div>);
+  // Compte connu mais accès pas encore ouvert, ou lecture impossible.
+  // On garde la session : l'utilisateur peut réessayer sans redemander un lien.
+  if(accessState){
+    const isPending=accessState==="pending";
+    return(<div className="viz-fullvh" style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"#FAFAFA",color:"#0A0A0A",padding:24,textAlign:"center",fontFamily:"'DM Sans',system-ui,sans-serif"}}>
+      <div style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:56,letterSpacing:".02em",marginBottom:10}}>{isPending?"PRESQUE.":"OUPS."}</div>
+      <p style={{fontSize:15,color:"#555",maxWidth:430,lineHeight:1.6,marginBottom:8}}>
+        {isPending
+          ? "Votre compte existe bien. Il attend encore la validation manuelle de votre accès — vous recevrez un e-mail dès qu'il est ouvert."
+          : "Nous n'avons pas réussi à charger votre club. C'est temporaire, votre compte et vos visuels sont intacts."}
+      </p>
+      <p style={{fontSize:13,color:"#888",marginBottom:28}}>{session?.user?.email||""}</p>
+      <div style={{display:"flex",gap:12,flexWrap:"wrap",justifyContent:"center"}}>
+        <button onClick={()=>{setAccessState(null);setLoading(true);loadTokenRef.current++;window.location.reload();}} style={{background:"#0A0A0A",color:"#FAFAFA",border:"none",padding:"14px 32px",borderRadius:2,fontSize:12,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",cursor:"pointer",fontFamily:"inherit"}}>Réessayer</button>
+        <button onClick={()=>supabase.auth.signOut()} style={{background:"transparent",color:"#0A0A0A",border:"1px solid #0A0A0A",padding:"14px 32px",borderRadius:2,fontSize:12,fontWeight:600,letterSpacing:".12em",textTransform:"uppercase",cursor:"pointer",fontFamily:"inherit"}}>Se déconnecter</button>
+      </div>
+    </div>);
+  }
   const card={background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:20};
   // Fragments rendus par appel, pas des composants : les redéfinir à chaque
   // rendu créerait un nouveau type de composant et remonterait le sous-arbre.
