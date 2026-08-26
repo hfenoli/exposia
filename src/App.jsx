@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
-import html2canvas from "html2canvas";
 import { supabase } from "./supabase";
+import { compressImageFile, removeBackground, dominantBorderColor, isImageFile, formatBytes, makeThumbnail, TOLERANCE_PRESETS, MAX_SOURCE_BYTES } from "./imaging";
+import { SPORT_LIST, DEFAULT_SPORT, getSport, termsFor, ctypesFor, ctypeInfo } from "./sports";
 // ─── BOTTOM SHEET SWIPE-TO-DISMISS ────────────────────────────
 // Helper module-level pour pouvoir être utilisé dans DragCanvas comme dans App.
 function makeSwipeClose(onClose){
@@ -21,13 +22,53 @@ function makeSwipeClose(onClose){
     },
   };
 }
-// ─── FILE VALIDATION ──────────────────────────────────────────
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+// ─── FILE INTAKE ──────────────────────────────────────────────
+// Plus de rejet à 10 Mo : les photos lourdes (reflex, iPhone…) sont
+// redimensionnées et recompressées automatiquement à l'import. Seul un
+// garde-fou technique subsiste (MAX_SOURCE_BYTES), au-delà duquel le
+// navigateur ne sait de toute façon plus décoder l'image.
 function validateImageFile(f){
   if(!f) return false;
-  if(!f.type||!f.type.startsWith("image/")){alert("Format non supporté. Sélectionnez une image (JPG, PNG, WebP…).");return false;}
-  if(f.size>MAX_UPLOAD_BYTES){alert("Fichier trop volumineux. Taille maximale : 10 Mo.");return false;}
+  if(!isImageFile(f)){alert("Format non supporté. Sélectionnez une image (JPG, PNG, WebP…).");return false;}
+  if(f.size>MAX_SOURCE_BYTES){alert("Fichier trop volumineux ("+formatBytes(f.size)+"). Maximum "+formatBytes(MAX_SOURCE_BYTES)+".");return false;}
   return true;
+}
+// Lit + compresse un fichier, et renvoie la data URL prête à stocker.
+// Renvoie null (et prévient l'utilisateur) si l'image est illisible.
+async function intakeImage(file,preset){
+  const r=await intakeImageWithThumb(file,preset);
+  return r?r.url:null;
+}
+// Variante qui produit aussi la vignette, pour les images affichées en grille.
+async function intakeImageWithThumb(file,preset){
+  if(!validateImageFile(file)) return null;
+  try{
+    const {url}=await compressImageFile(file,preset||"photo");
+    let thumbUrl=null;
+    try{ thumbUrl=await makeThumbnail(url); }
+    catch(e){ console.warn("[intakeImage] vignette non générée:",e); }
+    return {url,thumbUrl};
+  }catch(err){
+    console.error("[intakeImage] échec:",err);
+    alert("Image illisible : "+(err&&err.message?err.message:"format non pris en charge")
+      +"\nAstuce : les fichiers HEIC de l'iPhone doivent être exportés en JPEG.");
+    return null;
+  }
+}
+// Affichage en grille : la vignette si elle existe, sinon l'original (lignes
+// créées avant la migration 0003).
+function thumbOf(row){ return (row&&(row.thumb_url||row.thumbUrl))||(row&&row.url)||null; }
+// ─── STOCKAGE LOCAL ───────────────────────────────────────────
+// Certains contextes (navigation privée, cookies bloqués, mode verrouillage)
+// font lever l'accès à localStorage. Une exception dans un initialiseur de
+// state ferait planter toute l'application : on encapsule.
+function lsGet(key){
+  try{ return localStorage.getItem(key); }
+  catch(e){ console.warn("[localStorage] lecture impossible:",e&&e.message); return null; }
+}
+function lsSet(key,value){
+  try{ localStorage.setItem(key,value); return true; }
+  catch(e){ console.warn("[localStorage] écriture impossible:",e&&e.message); return false; }
 }
 // ─── MOBILE HOOKS ─────────────────────────────────────────────
 const MOBILE_BREAKPOINT = 768;
@@ -40,7 +81,8 @@ function useIsMobile(){
   },[]);
   return v;
 }
-function useCanvasScale(){
+function useCanvasScale(cw,ch){
+  const W=cw||270, H=ch||480;
   const[scale,setScale]=useState(1);
   useEffect(()=>{
     const compute=()=>{
@@ -48,44 +90,115 @@ function useCanvasScale(){
       if(w>=MOBILE_BREAKPOINT){setScale(1);return;}
       // reservedHeight adaptatif : viewports compacts gardent plus de place pour le canvas
       const r=h<700?140:200;
-      const sw=(w-24)/270, sh=(h-r)/480;
-      setScale(Math.max(0.4,Math.min(sw,sh)));
+      const sw=(w-24)/W, sh=(h-r)/H;
+      // Les formats courts (carré, 4:5) peuvent dépasser 1 sans déborder : on
+      // les laisse grandir un peu, mais pas au point de pixelliser l'aperçu.
+      setScale(Math.max(0.4,Math.min(1.5,Math.min(sw,sh))));
     };
     compute();
     window.addEventListener("resize",compute);
     return()=>window.removeEventListener("resize",compute);
-  },[]);
+  },[W,H]);
   return scale;
 }
 // ─── CONSTANTS ────────────────────────────────────────────────
-const POSITIONS = ["Attaquant","Milieu","Défenseur","Gardien"];
-const FONTS = ["Impact","Arial Black","Georgia","Helvetica Neue","Courier New","Montserrat"];
-const FORMATIONS = {
-  "4-4-2": [{n:1},{n:4},{n:4},{n:2}],
-  "4-3-3": [{n:1},{n:4},{n:3},{n:3}],
-  "4-2-3-1":[{n:1},{n:4},{n:2},{n:3},{n:1}],
-  "3-5-2": [{n:1},{n:3},{n:5},{n:2}],
-  "5-3-2": [{n:1},{n:5},{n:3},{n:2}],
-  "3-4-3": [{n:1},{n:3},{n:4},{n:3}],
+// ─── FORMATS DE PUBLICATION ───────────────────────────────────
+// Le canvas garde toujours 270 px de large : seule la hauteur change, donc
+// les calques (positionnés en %) et les tailles de police restent cohérents
+// d'un format à l'autre.
+const FORMATS = {
+  story:  {id:"story",  label:"Story",  sub:"9:16", icon:"📱", w:270, h:480, desc:"Story / Reel Instagram, TikTok"},
+  post:   {id:"post",   label:"Post",   sub:"4:5",  icon:"🖼️", w:270, h:337.5, desc:"Post au fil, format vertical"},
+  square: {id:"square", label:"Carré",  sub:"1:1",  icon:"⬜", w:270, h:270, desc:"Post carré, Facebook / X"},
 };
-const CTYPES = [
-  {id:"goal",   icon:"⚽", label:"But",             desc:"Célébration d'un but"},
-  {id:"result", icon:"🏁", label:"Score Final",      desc:"Résultat du match"},
-  {id:"match",  icon:"📅", label:"Affiche Match",    desc:"Avant-match"},
-  {id:"group",  icon:"📋", label:"Groupe",           desc:"Convocation officielle"},
-  {id:"lineup", icon:"🎽", label:"Composition XI",   desc:"11 de départ"},
-  {id:"recruit",icon:"⭐", label:"Nouvelle Recrue",  desc:"Arrivée d'un joueur"},
-  {id:"post",   icon:"📢", label:"Poste / Annonce",  desc:"Publication libre"},
-];
-const NAV = [
-  {id:"home",    icon:"🏠", label:"Accueil"},
-  {id:"club",    icon:"🏟️", label:"Mon Club"},
-  {id:"players", icon:"👥", label:"Joueurs"},
-  {id:"media",   icon:"🖼️", label:"Médias"},
-  {id:"create",  icon:"✨", label:"Créer"},
-  {id:"history", icon:"📁", label:"Historique"},
-  {id:"settings",icon:"⚙️", label:"Paramètres"},
-];
+const DEFAULT_FORMAT = "story";
+// Nombre de visuels rapatriés dans l'historique (voir commentaire au chargement).
+const HISTORY_PAGE_SIZE = 60;
+function fmt(id){ return FORMATS[id]||FORMATS[DEFAULT_FORMAT]; }
+// Les formats ne concernent que l'éditeur libre (but, score, affiche, recrue,
+// annonce). Composition XI et Groupe ont des gabarits dessinés en 9:16.
+const FORMAT_TYPES = ["goal","result","match","recruit","post","perf","podium"];
+// Au changement de format, les tailles de texte suivent la hauteur du canvas
+// pour que rien ne déborde de son cadre.
+function scaleLayersToFormat(layers,fromId,toId){
+  const a=fmt(fromId), b=fmt(toId);
+  if(a.h===b.h) return layers;
+  const k=b.h/a.h;
+  return layers.map(l=>{
+    if(typeof l.fontSize!=="number") return l;
+    return Object.assign({},l,{fontSize:Math.max(6,Math.round(l.fontSize*k))});
+  });
+}
+
+// ─── TRI STABLE ───────────────────────────────────────────────
+// Postgres ne garantit aucun ordre sans ORDER BY : sans tri explicite,
+// l'effectif se réordonnait à chaque rechargement (joueurs qui "bougent",
+// voire semblent disparaître). On trie côté client, partout pareil.
+function sortPlayers(list){
+  return [...(list||[])].sort((a,b)=>
+    (a.name||"").localeCompare(b.name||"","fr",{sensitivity:"base"})
+    || String(a.id).localeCompare(String(b.id)));
+}
+function sortPhotos(list){
+  return [...(list||[])].sort((a,b)=>
+    ((b.is_fav||b.fav)?1:0)-((a.is_fav||a.fav)?1:0)
+    || String(a.created_at||"").localeCompare(String(b.created_at||""))
+    || String(a.id).localeCompare(String(b.id)));
+}
+
+// ─── REMPLISSAGE AUTO DU JOUEUR ───────────────────────────────
+// Les textes par défaut des gabarits : on ne les écrase que tant qu'ils n'ont
+// pas été personnalisés (ou qu'ils portent encore le joueur précédent).
+const NAME_PLACEHOLDERS = ["","prénom nom","prenom nom","nom du joueur"];
+function posPlaceholders(sport){
+  const sp=getSport(sport), T=termsFor(sport);
+  // Le texte par défaut du gabarit, plus les variantes des autres sports :
+  // changer de sport ne doit pas figer un ancien libellé.
+  const own=(sp.defaultPosition+" · #"+T.numberPlaceholder).toLowerCase();
+  return ["", own, "attaquant · #9", "poste · #9"];
+}
+function norm(s){ return (s||"").trim().toLowerCase(); }
+function playerPosLabel(p){
+  if(!p) return "";
+  const num=(p.number===0||p.number)?String(p.number).trim():"";
+  return [p.position||"",num?"#"+num:""].filter(Boolean).join(" · ");
+}
+function isNameLayer(l){ return l.id==="nm"||/nom\s*(du\s*)?joueur/i.test(l.label||""); }
+function isPosLayer(l){ return l.id==="ps"||/^poste/i.test(l.label||""); }
+function applyPlayerToLayers(layers,player,prevPlayer,sport){
+  const POS_PLACEHOLDERS=posPlaceholders(sport);
+  if(!player) return layers;
+  const name=player.name||"";
+  const pos=playerPosLabel(player);
+  const prevName=prevPlayer?norm(prevPlayer.name):null;
+  const prevPos=prevPlayer?norm(playerPosLabel(prevPlayer)):null;
+  const free=(cur,placeholders,prevVal)=>
+    placeholders.includes(norm(cur)) || (prevVal&&norm(cur)===prevVal);
+  return layers.map(l=>{
+    if(!l||!["text","heading","subtext"].includes(l.type)) return l;
+    if(isNameLayer(l)&&name&&free(l.text,NAME_PLACEHOLDERS,prevName)) return Object.assign({},l,{text:name});
+    if(isPosLayer(l)&&pos&&free(l.text,POS_PLACEHOLDERS,prevPos)) return Object.assign({},l,{text:pos});
+    return l;
+  });
+}
+
+const FONTS = ["Impact","Arial Black","Georgia","Helvetica Neue","Courier New","Montserrat"];
+// Postes, formations et types de visuels dépendent désormais du sport du club :
+// voir src/sports.js. Ces helpers évitent de trimballer l'objet sport partout.
+function positionsFor(sport){ return getSport(sport).positions; }
+function formationsFor(sport){ return getSport(sport).formations||{}; }
+function firstFormation(sport){ const f=Object.keys(formationsFor(sport)); return f[0]||"4-4-2"; }
+function navFor(terms){
+  return [
+    {id:"home",    icon:"🏠", label:"Accueil"},
+    {id:"club",    icon:"🏟️", label:"Mon Club"},
+    {id:"players", icon:"👥", label:terms.players},
+    {id:"media",   icon:"🖼️", label:"Médias"},
+    {id:"create",  icon:"✨", label:"Créer"},
+    {id:"history", icon:"📁", label:"Historique"},
+    {id:"settings",icon:"⚙️", label:"Paramètres"},
+  ];
+}
 // ─── URL ROUTING ──────────────────────────────────────────────
 // Map bidirectionnelle entre l'id de section et le path URL.
 const NAV_PATHS = {
@@ -176,7 +289,8 @@ function buildTheme(c1,c2,mode){
 }
 // ─── LAYER DEFAULTS ───────────────────────────────────────────
 const TD = {font:"Impact",bold:false,italic:false,upper:false,letterSpacing:0,lineHeight:1.2,bgColor:"#000000",bgOpacity:0,textShadow:8,align:"center",curve:0};
-function makeLayers(type,c1,c2){
+function makeLayers(type,c1,c2,sport){
+  const T=termsFor(sport);
   function L(id,z,tp,x,y,w,h,label,extra){
     return Object.assign({id,z,type:tp,x,y,w,h,locked:false,label},extra||{});
   }
@@ -184,48 +298,73 @@ function makeLayers(type,c1,c2){
     goal:[
       L("bg",0,"bg",0,0,100,100,"Fond",{locked:true}),
       L("ov",1,"overlay",0,0,100,100,"Assombrissement",{locked:true,opacity:70}),
-      L("wm",2,"watertext",-5,18,110,32,"Filigrane",Object.assign({},TD,{text:"BUT",fontSize:120,color:c1,opacity:12})),
-      L("pl",3,"photo",5,5,90,72,"Photo joueur"),
+      L("wm",2,"watertext",-5,18,110,32,"Filigrane",Object.assign({},TD,{text:T.scoreEventShort,fontSize:120,color:c1,opacity:12})),
+      L("pl",3,"photo",5,5,90,72,"Photo "+T.playerLower),
       L("lg",4,"logo",4,4,13,13,"Logo club"),
       L("st",5,"stripe",0,0,100,1.5,"Bande",{color:c1,color2:c2}),
-      L("bt",6,"text",4,73,92,14,"Texte BUT",Object.assign({},TD,{text:"BUT !",fontSize:58,color:"#ffffff",bold:true})),
-      L("nm",7,"text",4,86,92,8,"Nom joueur",Object.assign({},TD,{text:"Prénom Nom",fontSize:22,color:c2})),
+      L("bt",6,"text",4,73,92,14,"Texte principal",Object.assign({},TD,{text:T.scoreEvent,fontSize:58,color:"#ffffff",bold:true})),
+      L("nm",7,"text",4,86,92,8,"Nom "+T.playerLower,Object.assign({},TD,{text:"Prénom Nom",fontSize:22,color:c2})),
       L("sc",8,"scoreblock",18,92,64,7,"Score",{font:"Impact",color:c1,scoreHome:"1",scoreAway:"0"}),
     ],
     result:[
       L("bg",0,"bg",0,0,100,100,"Fond",{locked:true}),
       L("ov",1,"overlay",0,0,100,100,"Assombrissement",{locked:true,opacity:65}),
-      L("pl",2,"photo",5,5,90,62,"Photo joueur"),
+      L("pl",2,"photo",5,5,90,62,"Photo "+T.playerLower),
       L("lg",3,"logo",4,4,12,12,"Logo club"),
       L("lg2",4,"logo2",84,4,12,12,"Logo adversaire"),
       L("st",5,"stripe",0,0,100,1.5,"Bande",{color:c1,color2:c2}),
       L("lb",6,"text",10,5,75,7,"Étiquette",Object.assign({},TD,{text:"SCORE FINAL",fontSize:18,color:"rgba(255,255,255,0.8)",italic:true})),
       L("rl",7,"resultlabel",8,66,84,6,"Résultat auto",{scoreHome:"0",scoreAway:"0"}),
       L("sb",8,"scorebig",4,71,92,17,"Score",{font:"Impact",color:"#ffffff",scoreHome:"2",scoreAway:"0",fontSize:44}),
-      L("op",9,"text",8,88,84,6,"Adversaire",Object.assign({},TD,{text:"vs Adversaire",fontSize:14,color:"rgba(255,255,255,0.4)"})),
+      L("op",9,"text",8,88,84,6,T.opponent,Object.assign({},TD,{text:"vs "+T.opponent,fontSize:14,color:"rgba(255,255,255,0.4)"})),
     ],
     match:[
       L("bg",0,"bg",0,0,100,100,"Fond",{locked:true}),
       L("ov",1,"overlay",0,0,100,100,"Assombrissement",{locked:true,opacity:58}),
       L("st",2,"stripe",0,0,100,1.5,"Bande",{color:c1,color2:c2}),
-      L("cp",3,"text",8,6,84,6,"Compétition",Object.assign({},TD,{text:"LIGUE 1",fontSize:11,color:"rgba(255,255,255,0.4)"})),
+      L("cp",3,"text",8,6,84,6,"Compétition",Object.assign({},TD,{text:T.competitionPlaceholder.toUpperCase(),fontSize:11,color:"rgba(255,255,255,0.4)"})),
       L("cn",4,"text",4,22,92,16,"Mon club",Object.assign({},TD,{text:"MON CLUB",fontSize:40,color:"#ffffff",bold:true})),
       L("vs",5,"text",26,38,48,10,"VS",Object.assign({},TD,{text:"vs",fontSize:26,color:"rgba(255,255,255,0.35)",italic:true})),
-      L("op",6,"text",4,47,92,13,"Adversaire",Object.assign({},TD,{text:"Adversaire",fontSize:32,color:"#ffffff",bold:true,italic:true})),
+      L("op",6,"text",4,47,92,13,T.opponent,Object.assign({},TD,{text:T.opponent,fontSize:32,color:"#ffffff",bold:true,italic:true})),
       L("lg",7,"logo",3,62,14,14,"Logo club"),
-      L("lg2",8,"logo2",83,62,14,14,"Logo adversaire"),
+      L("lg2",8,"logo2",83,62,14,14,"Logo "+T.opponent.toLowerCase()),
       L("dt",9,"text",4,78,92,7,"Date",Object.assign({},TD,{text:"Samedi 12 Avril · 21h00",fontSize:14,color:"rgba(255,255,255,0.6)"})),
-      L("vn",10,"text",4,85,92,6,"Stade",Object.assign({},TD,{text:"Nom du stade",fontSize:12,color:"rgba(255,255,255,0.28)"})),
+      L("vn",10,"text",4,85,92,6,T.venue,Object.assign({},TD,{text:"Nom du lieu",fontSize:12,color:"rgba(255,255,255,0.28)"})),
     ],
     recruit:[
       L("bg",0,"bg",0,0,100,100,"Fond",{locked:true}),
       L("ov",1,"overlay",0,0,100,100,"Assombrissement",{locked:true,opacity:52}),
       L("st",2,"stripe",0,0,100,1.5,"Bande",{color:c1,color2:c2}),
-      L("pl",3,"photo",5,4,90,66,"Photo joueur"),
+      L("pl",3,"photo",5,4,90,66,"Photo "+T.playerLower),
       L("lg",4,"logo",4,4,12,12,"Logo club"),
-      L("tg",5,"text",6,72,88,6,"Étiquette",Object.assign({},TD,{text:"NOUVELLE RECRUE",fontSize:11,color:c1,bold:true,letterSpacing:4})),
-      L("nm",6,"text",6,78,88,13,"Nom joueur",Object.assign({},TD,{text:"Prénom Nom",fontSize:32,color:"#ffffff",bold:true})),
-      L("ps",7,"text",6,90,88,7,"Poste",Object.assign({},TD,{text:"Attaquant · #9",fontSize:14,color:c2})),
+      L("tg",5,"text",6,72,88,6,"Étiquette",Object.assign({},TD,{text:ctypeInfo(sport,"recruit").label.toUpperCase(),fontSize:11,color:c1,bold:true,letterSpacing:4})),
+      L("nm",6,"text",6,78,88,13,"Nom "+T.playerLower,Object.assign({},TD,{text:"Prénom Nom",fontSize:32,color:"#ffffff",bold:true})),
+      L("ps",7,"text",6,90,88,7,T.positionLabel,Object.assign({},TD,{text:getSport(sport).defaultPosition+" · #"+T.numberPlaceholder,fontSize:14,color:c2})),
+    ],
+    // Chrono / record : le « but » des sports individuels.
+    perf:[
+      L("bg",0,"bg",0,0,100,100,"Fond",{locked:true}),
+      L("ov",1,"overlay",0,0,100,100,"Assombrissement",{locked:true,opacity:66}),
+      L("pl",2,"photo",5,4,90,58,"Photo "+T.playerLower),
+      L("lg",3,"logo",4,4,13,13,"Logo club"),
+      L("st",4,"stripe",0,0,100,1.5,"Bande",{color:c1,color2:c2}),
+      L("tg",5,"text",6,64,88,6,"Étiquette",Object.assign({},TD,{text:"RECORD PERSONNEL",fontSize:11,color:c1,bold:true,letterSpacing:4})),
+      L("tm",6,"text",4,70,92,14,"Chrono",Object.assign({},TD,{text:"00:54:12",fontSize:54,color:"#ffffff",bold:true})),
+      L("nm",7,"text",4,85,92,8,"Nom "+T.playerLower,Object.assign({},TD,{text:"Prénom Nom",fontSize:22,color:"#ffffff"})),
+      L("ds",8,"text",4,92,92,6,"Épreuve",Object.assign({},TD,{text:getSport(sport).defaultPosition,fontSize:13,color:c2})),
+    ],
+    // Podium : trois places, une épreuve.
+    podium:[
+      L("bg",0,"bg",0,0,100,100,"Fond",{locked:true,fillColor:"#0b0b12"}),
+      L("ov",1,"overlay",0,0,100,100,"Assombrissement",{locked:true,opacity:40}),
+      L("st",2,"stripe",0,0,100,1.5,"Bande",{color:c1,color2:c2}),
+      L("lg",3,"logo",4,4,13,13,"Logo club"),
+      L("ti",4,"text",6,20,88,10,"Titre",Object.assign({},TD,{text:"PODIUM",fontSize:44,color:"#ffffff",bold:true,letterSpacing:6})),
+      L("ev",5,"text",6,31,88,6,"Épreuve",Object.assign({},TD,{text:T.competitionPlaceholder,fontSize:14,color:c1})),
+      L("p1",6,"text",8,44,84,8,"1re place",Object.assign({},TD,{text:"1.  Prénom Nom  ·  00:54:12",fontSize:19,color:"#f5c542",align:"left",bold:true})),
+      L("p2",7,"text",8,54,84,8,"2e place",Object.assign({},TD,{text:"2.  Prénom Nom  ·  00:55:47",fontSize:17,color:"#d8d8d8",align:"left"})),
+      L("p3",8,"text",8,64,84,8,"3e place",Object.assign({},TD,{text:"3.  Prénom Nom  ·  00:57:03",fontSize:17,color:"#cd8b5a",align:"left"})),
+      L("dt",9,"text",6,88,88,6,"Date / lieu",Object.assign({},TD,{text:"12 avril · "+T.venue,fontSize:12,color:"rgba(255,255,255,0.45)"})),
     ],
     post:[
       L("bg",0,"bg",0,0,100,100,"Fond",{locked:true,fillColor:"#000000"}),
@@ -284,8 +423,26 @@ function renderLayerContent(lay, bgUrl, playerUrl, logoUrl, logo2Url, accent, ac
   if(lay.type==="stripe") return(<div style={{width:"100%",height:"100%",background:"linear-gradient(90deg,"+(lay.color||accent)+","+(lay.color2||accent2)+")"}}/>);
   if(lay.type==="colorblock") return(<div style={{width:"100%",height:"100%",background:lay.color||"#ff5555",opacity:(lay.opacity==null?80:lay.opacity)/100}}/>);
   if(lay.type==="photo") return(<div style={{width:"100%",height:"100%",overflow:"hidden"}}>{playerUrl?<img src={playerUrl} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:36}}>👤</div>}</div>);
-  if(lay.type==="logo") return(<div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center"}}>{logoUrl?<img src={logoUrl} style={{width:"100%",height:"100%",objectFit:"contain"}} alt=""/>:<div style={{width:"100%",height:"100%",background:rgba(accent,.2),borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:accent}}>LOGO</div>}</div>);
-  if(lay.type==="logo2") return(<div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center"}}>{logo2Url?<img src={logo2Url} style={{width:"100%",height:"100%",objectFit:"contain"}} alt=""/>:<div style={{width:"100%",height:"100%",background:"rgba(255,255,255,.07)",borderRadius:4,border:"1px solid rgba(255,255,255,.14)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"rgba(255,255,255,.3)"}}>ADV</div>}</div>);
+  if(lay.type==="logo"||lay.type==="logo2"){
+    // Pastille de fond optionnelle : beaucoup de logos de club sont fournis
+    // avec un carré blanc incrusté. Plutôt que de le subir, on assume un fond
+    // uni (carré, arrondi ou cercle) de la couleur choisie — idéalement celle
+    // échantillonnée sur le logo lui-même, ce qui rend la jointure invisible.
+    const url=lay.type==="logo"?logoUrl:logo2Url;
+    const shape=lay.bgShape||"none";
+    const padPct=lay.pad==null?12:lay.pad;
+    const wrap={width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",boxSizing:"border-box"};
+    if(shape!=="none"){
+      wrap.background=lay.bgColor||"#ffffff";
+      wrap.borderRadius=shape==="circle"?"50%":(lay.radius==null?12:lay.radius)+"%";
+      wrap.padding=padPct+"%";
+      if(lay.bgBorder) wrap.border="1px solid "+rgba(lay.bgBorderColor||"#000000",.15);
+    }
+    const ph=lay.type==="logo"
+      ? <div style={{width:"100%",height:"100%",background:rgba(accent,.2),borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:accent}}>LOGO</div>
+      : <div style={{width:"100%",height:"100%",background:"rgba(255,255,255,.07)",borderRadius:4,border:"1px solid rgba(255,255,255,.14)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"rgba(255,255,255,.3)"}}>ADV</div>;
+    return(<div style={wrap}>{url?<img src={url} style={{width:"100%",height:"100%",objectFit:"contain"}} alt=""/>:ph}</div>);
+  }
   if(lay.type==="sponsor") return(<div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center"}}>{lay.url?<img src={lay.url} style={{width:"100%",height:"100%",objectFit:"contain"}} alt=""/>:<div style={{width:"100%",height:"100%",background:"rgba(255,255,255,.05)",border:"1px dashed rgba(255,255,255,.22)",borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"rgba(255,255,255,.4)",letterSpacing:".12em"}}>SPONSOR</div>}</div>);
   if(isTextType){
     const txt = lay.upper?(lay.text||"").toUpperCase():(lay.text||"");
@@ -327,7 +484,7 @@ function renderLayerContent(lay, bgUrl, playerUrl, logoUrl, logo2Url, accent, ac
 }
 function LayerView({lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,isSel,onMD,onResize,hideHandles,clubName}){
   const s={position:"absolute",left:lay.x+"%",top:lay.y+"%",width:lay.w+"%",height:lay.h+"%",cursor:lay.locked?"default":"grab",boxSizing:"border-box",outline:isSel&&!lay.locked?"2px solid "+accent:"none",outlineOffset:1,zIndex:lay.z};
-  const showHandles=!hideHandles&&isSel&&!lay.locked&&(lay.type==="photo"||lay.type==="colorblock"||lay.type==="sponsor");
+  const showHandles=!hideHandles&&isSel&&!lay.locked&&["photo","colorblock","sponsor","logo","logo2"].includes(lay.type);
   return(<div style={s} onMouseDown={lay.locked?undefined:e=>onMD(e,lay.id)} onTouchStart={lay.locked?undefined:e=>onMD(e,lay.id)}>
     {renderLayerContent(lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,clubName)}
     {showHandles&&["tl","tr","bl","br"].map(c=>(
@@ -350,11 +507,9 @@ function LayerView({lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,isSel,on
 }
 // ─── LINEUP CANVAS ────────────────────────────────────────────
 // Slider tactile : +/− 44×44 sur mobile pour ajustement fin
-function TouchSlider({value,onChange,min,max,step,t,isMobile,format,decimals}){
+function TouchSlider({value,onChange,min,max,step,t,isMobile}){
   const v=value==null?min:value;
   const stp=step||1;
-  const dec=decimals==null?0:decimals;
-  const display=format?format(v):(typeof v==="number"?v.toFixed(dec):v);
   const dec_=()=>onChange(Math.max(min,+(v-stp).toFixed(4)));
   const inc_=()=>onChange(Math.min(max,+(v+stp).toFixed(4)));
   return(<div style={{display:"flex",alignItems:"center",gap:isMobile?6:4,marginTop:2}}>
@@ -367,16 +522,94 @@ function Watermark(){
   // Filigrane non-amovible : pas un calque, pointerEvents:none, hardcodé dans chaque canvas
   return <div aria-hidden="true" style={{position:"absolute",bottom:5,right:6,fontSize:9,color:"rgba(255,255,255,0.92)",background:"rgba(0,0,0,0.42)",padding:"2px 7px",borderRadius:3,fontFamily:"'DM Mono',ui-monospace,system-ui,monospace",letterSpacing:"0.04em",fontWeight:500,whiteSpace:"nowrap",pointerEvents:"none",userSelect:"none",zIndex:999}}>Powered by Viziona</div>;
 }
-function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScale}){
+// ─── TRACÉ DE L'AIRE DE JEU ───────────────────────────────────
+// Football, rugby, patinoire et parquet n'ont pas les mêmes lignes : la
+// composition doit être lisible comme une vraie feuille de match.
+function PitchLines({kind,stroke,dark}){
+  const wrap={position:"absolute",inset:0,width:"100%",height:"100%",opacity:dark?.12:.09,pointerEvents:"none"};
+  if(kind==="rugby") return(
+    <svg style={wrap} viewBox="0 0 270 480">
+      <rect x="18" y="6" width="234" height="375" fill="none" stroke={stroke} strokeWidth="1"/>
+      <line x1="18" y1="193" x2="252" y2="193" stroke={stroke} strokeWidth=".8"/>
+      {/* En-buts + lignes des 22 mètres */}
+      <line x1="18" y1="46" x2="252" y2="46" stroke={stroke} strokeWidth=".7"/>
+      <line x1="18" y1="341" x2="252" y2="341" stroke={stroke} strokeWidth=".7"/>
+      <line x1="18" y1="103" x2="252" y2="103" stroke={stroke} strokeWidth=".5" strokeDasharray="4 4" opacity=".7"/>
+      <line x1="18" y1="284" x2="252" y2="284" stroke={stroke} strokeWidth=".5" strokeDasharray="4 4" opacity=".7"/>
+      {/* Poteaux en H */}
+      <path d="M123 30 V52 M147 30 V52 M123 41 H147" fill="none" stroke={stroke} strokeWidth=".7" opacity=".8"/>
+      <path d="M123 335 V357 M147 335 V357 M123 346 H147" fill="none" stroke={stroke} strokeWidth=".7" opacity=".8"/>
+    </svg>
+  );
+  if(kind==="ice") return(
+    <svg style={wrap} viewBox="0 0 270 480">
+      <rect x="18" y="6" width="234" height="375" rx="46" fill="none" stroke={stroke} strokeWidth="1"/>
+      {/* Ligne rouge médiane et lignes bleues */}
+      <line x1="18" y1="193" x2="252" y2="193" stroke={stroke} strokeWidth="1"/>
+      <line x1="18" y1="132" x2="252" y2="132" stroke={stroke} strokeWidth=".8"/>
+      <line x1="18" y1="254" x2="252" y2="254" stroke={stroke} strokeWidth=".8"/>
+      <ellipse cx="135" cy="193" rx="26" ry="26" fill="none" stroke={stroke} strokeWidth=".8"/>
+      {/* Points d'engagement */}
+      {[[70,70],[200,70],[70,317],[200,317]].map(([cx,cy],i)=>(
+        <ellipse key={i} cx={cx} cy={cy} rx="17" ry="17" fill="none" stroke={stroke} strokeWidth=".5" opacity=".7"/>
+      ))}
+      {/* Buts */}
+      <rect x="117" y="24" width="36" height="9" fill="none" stroke={stroke} strokeWidth=".6" opacity=".8"/>
+      <rect x="117" y="348" width="36" height="9" fill="none" stroke={stroke} strokeWidth=".6" opacity=".8"/>
+    </svg>
+  );
+  if(kind==="handball") return(
+    <svg style={wrap} viewBox="0 0 270 480">
+      <rect x="18" y="6" width="234" height="375" fill="none" stroke={stroke} strokeWidth="1"/>
+      <line x1="18" y1="193" x2="252" y2="193" stroke={stroke} strokeWidth=".8"/>
+      {/* Zones des 6 m (trait plein) et des 9 m (pointillé) */}
+      <path d="M18 6 V52 A72 72 0 0 0 252 52 V6" fill="none" stroke={stroke} strokeWidth=".7"/>
+      <path d="M18 381 V335 A72 72 0 0 1 252 335 V381" fill="none" stroke={stroke} strokeWidth=".7"/>
+      <path d="M18 6 V78 A96 96 0 0 0 252 78 V6" fill="none" stroke={stroke} strokeWidth=".5" strokeDasharray="5 5" opacity=".75"/>
+      <path d="M18 381 V309 A96 96 0 0 1 252 309 V381" fill="none" stroke={stroke} strokeWidth=".5" strokeDasharray="5 5" opacity=".75"/>
+      {/* Buts */}
+      <rect x="117" y="6" width="36" height="7" fill="none" stroke={stroke} strokeWidth=".6" opacity=".85"/>
+      <rect x="117" y="374" width="36" height="7" fill="none" stroke={stroke} strokeWidth=".6" opacity=".85"/>
+    </svg>
+  );
+  if(kind==="court") return(
+    <svg style={wrap} viewBox="0 0 270 480">
+      <rect x="18" y="6" width="234" height="375" fill="none" stroke={stroke} strokeWidth="1"/>
+      <line x1="18" y1="193" x2="252" y2="193" stroke={stroke} strokeWidth=".8"/>
+      <ellipse cx="135" cy="193" rx="30" ry="30" fill="none" stroke={stroke} strokeWidth=".8"/>
+      {/* Raquettes et arcs */}
+      <rect x="97" y="6" width="76" height="66" fill="none" stroke={stroke} strokeWidth=".6"/>
+      <rect x="97" y="315" width="76" height="66" fill="none" stroke={stroke} strokeWidth=".6"/>
+      <path d="M97 72 A38 38 0 0 0 173 72" fill="none" stroke={stroke} strokeWidth=".6"/>
+      <path d="M97 315 A38 38 0 0 1 173 315" fill="none" stroke={stroke} strokeWidth=".6"/>
+      <path d="M42 6 V52 A93 93 0 0 0 228 52 V6" fill="none" stroke={stroke} strokeWidth=".5" opacity=".7"/>
+      <path d="M42 381 V335 A93 93 0 0 1 228 335 V381" fill="none" stroke={stroke} strokeWidth=".5" opacity=".7"/>
+    </svg>
+  );
+  // Football par défaut
+  return(
+    <svg style={wrap} viewBox="0 0 270 480">
+      <rect x="18" y="6" width="234" height="375" rx="3" fill="none" stroke={stroke} strokeWidth="1"/>
+      <line x1="18" y1="193" x2="252" y2="193" stroke={stroke} strokeWidth=".8"/>
+      <ellipse cx="135" cy="193" rx="36" ry="36" fill="none" stroke={stroke} strokeWidth=".8"/>
+      <rect x="18" y="6" width="234" height="50" fill="none" stroke={stroke} strokeWidth=".5" opacity=".7"/>
+      <rect x="18" y="331" width="234" height="50" fill="none" stroke={stroke} strokeWidth=".5" opacity=".7"/>
+      <ellipse cx="135" cy="6" rx="22" ry="11" fill="none" stroke={stroke} strokeWidth=".5" opacity=".6"/>
+      <ellipse cx="135" cy="381" rx="22" ry="11" fill="none" stroke={stroke} strokeWidth=".5" opacity=".6"/>
+    </svg>
+  );
+}
+function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScale,sport}){
   W=W||270; H=H||480; slotScale=slotScale||1;
-  const fm=ld&&ld.formation?ld.formation:"4-4-2";
+  const F0=formationsFor(sport);
+  const fm=(ld&&ld.formation&&F0[ld.formation])?ld.formation:(Object.keys(F0)[0]||"4-4-2");
   const starters=ld&&ld.starters?ld.starters:[];
   const subs=ld&&ld.subs?ld.subs.filter(Boolean):[];
-  const opponent=ld&&ld.opponent?ld.opponent:"Adversaire";
   const competition=ld&&ld.competition?ld.competition:"";
-  const fRows=FORMATIONS[fm]||FORMATIONS["4-4-2"];
+  const F=formationsFor(sport);
+  const fRows=F[fm]||F[Object.keys(F)[0]]||[{n:1},{n:4},{n:4},{n:2}];
   let li=0;
-  const rows=fRows.map(function(r,ri){const lbls=["GB","DEF","MIL","ATT"];const players=starters.slice(li,li+r.n);li+=r.n;return{n:r.n,label:lbls[Math.min(ri,3)],players:players};});
+  const rows=fRows.map(function(r){const players=starters.slice(li,li+r.n);li+=r.n;return{n:r.n,label:(r.l||"").slice(0,3).toUpperCase(),players:players};});
   const dark=tpl!=="ln5"&&tpl!=="ln6";
   const root={width:W,height:H,position:"relative",overflow:"hidden",borderRadius:W<160?6:14,flexShrink:0,display:"flex",flexDirection:"column",userSelect:"none"};
   function Logo(props){const sz=props.sz||W*.1;if(!props.url)return<div style={{width:sz,height:sz,borderRadius:4,background:rgba(accent,.25),display:"flex",alignItems:"center",justifyContent:"center",color:accent,fontSize:sz*.3}}>◈</div>;return<img src={props.url} style={{width:sz,height:sz,objectFit:"contain"}} alt=""/>;}
@@ -394,16 +627,8 @@ function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScal
     {/* ln3 "Minuit Doré" (renommé "Élite" en logique) : halo teinté couleur du club, plus de jaune hardcodé */}
     {isGold&&<div style={{position:"absolute",inset:0,background:"radial-gradient(circle at 78% 18%,"+rgba(accent,.22)+" 0%,transparent 55%),linear-gradient(160deg,"+rgba(accent,.08)+" 0%,transparent 45%,"+rgba(accent2,.25)+" 100%)"}}/>}
     {tpl==="ln4"&&<svg style={{position:"absolute",inset:0,width:"100%",height:"100%",opacity:.06}} viewBox="0 0 270 480"><polygon points="0,0 200,0 0,240" fill={rgba(accent,.2)}/><polygon points="270,480 70,480 270,240" fill={rgba(accent2,.2)}/></svg>}
-    {/* Field lines : sur TOUS les templates lineup, couleur adaptée */}
-    <svg style={{position:"absolute",inset:0,width:"100%",height:"100%",opacity:dark?.12:.09,pointerEvents:"none"}} viewBox="0 0 270 480">
-      <rect x="18" y="6" width="234" height="375" rx="3" fill="none" stroke={fieldStroke} strokeWidth="1"/>
-      <line x1="18" y1="193" x2="252" y2="193" stroke={fieldStroke} strokeWidth=".8"/>
-      <ellipse cx="135" cy="193" rx="36" ry="36" fill="none" stroke={fieldStroke} strokeWidth=".8"/>
-      <rect x="18" y="6" width="234" height="50" fill="none" stroke={fieldStroke} strokeWidth=".5" opacity=".7"/>
-      <rect x="18" y="331" width="234" height="50" fill="none" stroke={fieldStroke} strokeWidth=".5" opacity=".7"/>
-      <ellipse cx="135" cy="6" rx="22" ry="11" fill="none" stroke={fieldStroke} strokeWidth=".5" opacity=".6"/>
-      <ellipse cx="135" cy="381" rx="22" ry="11" fill="none" stroke={fieldStroke} strokeWidth=".5" opacity=".6"/>
-    </svg>
+    {/* Tracé de l'aire de jeu, dessiné selon le sport du club */}
+    <PitchLines kind={getSport(sport).pitch} stroke={fieldStroke} dark={dark}/>
     {tpl==="ln6"&&<div style={{position:"absolute",left:0,top:0,bottom:0,width:4,background:"linear-gradient(to bottom,"+accent+","+accent2+")",zIndex:3}}/>}
     {tpl==="ln5"&&<div style={{position:"absolute",top:0,left:0,right:0,height:"27%",background:"linear-gradient(135deg,"+accent+","+accent2+")",zIndex:1}}/>}
     {dark&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:isGold?"linear-gradient(90deg,transparent,"+accent+","+rgba(accent,.6)+","+accent+",transparent)":"linear-gradient(90deg,transparent,"+accent+","+accent2+","+accent+",transparent)",zIndex:4}}/>}
@@ -596,13 +821,35 @@ function PostCanvas({pd,tpl,logoUrl,accent,accent2,bgUrl,W,H}){
   if(tpl==="pt6")return(<div style={Object.assign({},root,{background:"#000"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.3}} alt=""/>}<div style={{position:"absolute",inset:0,background:"linear-gradient(to bottom,transparent 30%,rgba(0,0,0,.92) 65%)"}}/><div style={{position:"relative",zIndex:3,padding:(W*.035)+"px "+(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}><Logo sz={W*.09}/>{date&&<div style={{fontSize:W*.019,color:"rgba(255,255,255,.5)",letterSpacing:".08em"}}>{date}</div>}</div><div style={{position:"relative",zIndex:3,flex:1}}/><div style={{position:"relative",zIndex:3,padding:(W*.04)+"px "+(W*.04)+"px "+(W*.05)+"px"}}><div style={{fontSize:W*.019,color:accent,fontWeight:700,letterSpacing:".16em",textTransform:"uppercase",marginBottom:W*.015}}>{subtitle}</div><div style={{fontSize:W*.054,fontWeight:900,color:"#fff",fontFamily:"Impact,sans-serif",lineHeight:1.08,marginBottom:W*.018}}>{title}</div><div style={{width:W*.07,height:2,background:accent,marginBottom:W*.018,borderRadius:2}}/><div style={{fontSize:W*.026,color:"rgba(255,255,255,.6)",lineHeight:1.5}}>{body}</div>{hashtag&&<div style={{marginTop:W*.025,fontSize:W*.022,color:rgba(accent,.6)}}>{hashtag}</div>}</div><Watermark/></div>);
   return(<div style={Object.assign({},root,{background:"#030308"})}>{bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.18}} alt=""/>}<div style={{position:"absolute",inset:0,background:"linear-gradient(to bottom,rgba(0,0,0,.85),rgba(0,0,0,.5),rgba(0,0,0,.85))"}}/><div style={{position:"absolute",top:0,left:0,right:0,height:4,background:"linear-gradient(90deg,"+accent+","+accent2+")",zIndex:4}}/><div style={{position:"relative",zIndex:3,flex:1,display:"flex",flexDirection:"column",justifyContent:"center",padding:(W*.06)+"px"}}><div style={{width:W*.1,height:3,background:accent,marginBottom:W*.04,borderRadius:2}}/><div style={{fontSize:W*.065,fontWeight:900,color:"#fff",fontFamily:"Impact,sans-serif",lineHeight:1.05,textTransform:"uppercase",marginBottom:W*.03}}>{title}</div><div style={{fontSize:W*.036,color:accent,fontWeight:600,marginBottom:W*.04}}>{subtitle}</div><div style={{fontSize:W*.028,color:"rgba(255,255,255,.6)",lineHeight:1.55}}>{body}</div>{(date||hashtag)&&<div style={{marginTop:W*.05,fontSize:W*.022,color:"rgba(255,255,255,.3)",letterSpacing:".08em"}}>{date}{date&&hashtag?" · ":""}{hashtag}</div>}</div><div style={{position:"relative",zIndex:3,padding:(W*.04)+"px "+(W*.06)+"px",borderTop:"1px solid rgba(255,255,255,.06)",display:"flex",alignItems:"center",gap:W*.025}}><Logo sz={W*.09}/><div style={{fontSize:W*.022,color:"rgba(255,255,255,.35)",letterSpacing:".06em"}}>OFFICIEL</div></div><Watermark/></div>);
 }
+// ─── RENDU DIFFÉRÉ ────────────────────────────────────────────
+// Ne monte ses enfants qu'une fois la zone approchée du viewport. Sans ça, la
+// grille d'historique décode le fond, le logo et la photo de chaque visuel dès
+// l'ouverture de l'écran — de quoi faire tuer l'onglet sur mobile.
+function WhenVisible({children,minHeight,rootMargin}){
+  const ref=useRef(null);
+  // Sans IntersectionObserver (navigateurs anciens), on affiche tout de suite.
+  const[shown,setShown]=useState(()=>typeof IntersectionObserver==="undefined");
+  useEffect(()=>{
+    if(shown)return;
+    const el=ref.current;
+    if(!el)return;
+    const io=new IntersectionObserver(entries=>{
+      if(entries.some(e=>e.isIntersecting)){setShown(true);io.disconnect();}
+    },{rootMargin:rootMargin||"300px"});
+    io.observe(el);
+    return()=>io.disconnect();
+  },[shown,rootMargin]);
+  return <div ref={ref} style={{minHeight:minHeight||120}}>{shown?children:null}</div>;
+}
 // ─── HISTORY THUMB ────────────────────────────────────────────
 function HistoryThumb({h,c1,c2}){
-  const W=108,H=192;
+  // La vignette reprend le format du visuel (story, 4:5 ou carré).
+  const F=FORMAT_TYPES.includes(h.type)?fmt(h.format):FORMATS.story;
+  const W=108, H=Math.round(W*F.h/F.w);
   const wr={width:W,height:H,overflow:"hidden",borderRadius:8,flexShrink:0,position:"relative"};
-  const inn={width:270,height:480,transformOrigin:"top left",transform:"scale("+(W/270)+")",position:"absolute",top:0,left:0};
+  const inn={width:F.w,height:F.h,transformOrigin:"top left",transform:"scale("+(W/F.w)+")",position:"absolute",top:0,left:0};
   try{
-    if(h.type==="lineup")return<div style={wr}><div style={inn}><LineupCanvas ld={h.lineupData} tpl={h.lineupTpl||"ln1"} logoUrl={h.logoUrl} logo2Url={h.logo2Url} accent={h.accent||c1} accent2={h.accent2||c2} bgUrl={h.bgUrl}/></div></div>;
+    if(h.type==="lineup")return<div style={wr}><div style={inn}><LineupCanvas sport={h.sport} ld={h.lineupData} tpl={h.lineupTpl||"ln1"} logoUrl={h.logoUrl} logo2Url={h.logo2Url} accent={h.accent||c1} accent2={h.accent2||c2} bgUrl={h.bgUrl}/></div></div>;
     if(h.type==="group")return<div style={wr}><div style={inn}><GroupCanvas gd={h.groupData} tpl={h.groupTpl||"gr1"} logoUrl={h.logoUrl} logo2Url={h.logo2Url} accent={h.accent||c1} accent2={h.accent2||c2} bgUrl={h.bgUrl}/></div></div>;
     if(h.type==="post"){
       // Post nouveau format : layers présents → rendu standard. Sinon legacy PostCanvas via postData.
@@ -614,10 +861,14 @@ function HistoryThumb({h,c1,c2}){
     }
     const sorted=[...(h.layers||[])].sort((a,b)=>a.z-b.z);
     return(<div style={Object.assign({},wr,{background:"#111"})}><div style={inn}>{sorted.map(lay=><LayerView key={lay.id} lay={lay} bgUrl={h.bgUrl} playerUrl={h.playerUrl} logoUrl={h.logoUrl} logo2Url={h.logo2Url} accent={h.accent||c1} accent2={h.accent2||c2} isSel={false} onMD={()=>{}}/>)}</div></div>);
-  }catch(e){return<div style={Object.assign({},wr,{background:"#111",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20})}>{h.ct&&h.ct.icon?h.ct.icon:"📄"}</div>;}
+  }catch{return<div style={Object.assign({},wr,{background:"#111",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20})}>{h.ct&&h.ct.icon?h.ct.icon:"📄"}</div>;}
 }
 // ─── DRAG CANVAS ──────────────────────────────────────────────
-function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,t,isMobile,mobileSheet,setMobileSheet,canvasScale,clubName}){
+function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,t,isMobile,mobileSheet,setMobileSheet,canvasScale,clubName,cw,ch,onLogoChange}){
+  const CW=cw||270, CH=ch||480;
+  // Chaque snapshot est un clone profond des calques, sponsors compris — et
+  // ceux-ci portent leur image en data URL. Pile plus courte sur mobile.
+  const HIST_MAX=isMobile?8:20;
   const cvRef=useRef(null);const dragRef=useRef(null);const resizeRef=useRef(null);const historyRef=useRef([]);const[sel,setSel]=useState(null);const[historyDepth,setHistoryDepth]=useState(0);const[mobileToast,setMobileToast]=useState(false);const selL=sel?layers.find(l=>l.id===sel):null;
   useEffect(()=>{
     if(!isMobile||!sel||mobileSheet==="layers")return;
@@ -627,7 +878,7 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
   },[sel,isMobile,mobileSheet]);
   function pushHist(){
     historyRef.current.push(JSON.parse(JSON.stringify(layers)));
-    if(historyRef.current.length>20)historyRef.current.shift();
+    if(historyRef.current.length>HIST_MAX)historyRef.current.shift();
     setHistoryDepth(historyRef.current.length);
   }
   function undo(){
@@ -659,17 +910,17 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
     if(e.changedTouches&&e.changedTouches.length>0)return{x:e.changedTouches[0].clientX,y:e.changedTouches[0].clientY};
     return{x:e.clientX,y:e.clientY};
   }
-  const onMD=useCallback((e,id)=>{const l=layers.find(x=>x.id===id);if(!l||l.locked)return;e.preventDefault();e.stopPropagation();setSel(id);historyRef.current.push(JSON.parse(JSON.stringify(layers)));if(historyRef.current.length>20)historyRef.current.shift();setHistoryDepth(historyRef.current.length);const rect=cvRef.current.getBoundingClientRect();const p=pt(e);dragRef.current={id,ox:l.x,oy:l.y,mx0:(p.x-rect.left)/rect.width*100,my0:(p.y-rect.top)/rect.height*100};},[layers]);
+  const onMD=useCallback((e,id)=>{const l=layers.find(x=>x.id===id);if(!l||l.locked)return;e.preventDefault();e.stopPropagation();setSel(id);historyRef.current.push(JSON.parse(JSON.stringify(layers)));if(historyRef.current.length>HIST_MAX)historyRef.current.shift();setHistoryDepth(historyRef.current.length);const rect=cvRef.current.getBoundingClientRect();const p=pt(e);dragRef.current={id,ox:l.x,oy:l.y,mx0:(p.x-rect.left)/rect.width*100,my0:(p.y-rect.top)/rect.height*100};},[layers,HIST_MAX]);
   const onResize=useCallback((e,id,corner)=>{
     const l=layers.find(x=>x.id===id);if(!l||l.locked)return;
     setSel(id);
     historyRef.current.push(JSON.parse(JSON.stringify(layers)));
-    if(historyRef.current.length>20)historyRef.current.shift();
+    if(historyRef.current.length>HIST_MAX)historyRef.current.shift();
     setHistoryDepth(historyRef.current.length);
     const rect=cvRef.current.getBoundingClientRect();
     const p=pt(e);
     resizeRef.current={id,corner,ox:l.x,oy:l.y,ow:l.w,oh:l.h,startX:p.x,startY:p.y,canvasW:rect.width,canvasH:rect.height};
-  },[layers]);
+  },[layers,HIST_MAX]);
   const onMM=useCallback(e=>{
     if(resizeRef.current&&cvRef.current){
       const r=resizeRef.current;
@@ -723,34 +974,64 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
     setSel(newId);
   }
   const[removingBg,setRemovingBg]=useState(false);
-  function removeBgOnSelected(){
-    if(!selL||!selL.url)return;
+  const[bgTol,setBgTol]=useState("normal");
+  // Détourage adaptatif : la couleur de fond est détectée sur le pourtour de
+  // l'image, puis retirée par propagation depuis les bords. Fonctionne donc
+  // sur n'importe quel fond uni, pas seulement le blanc.
+  async function removeBgOnSelected(){
+    if(!selL)return;
+    const isLogoLayer=selL.type==="logo"||selL.type==="logo2";
+    const src=isLogoLayer?(selL.type==="logo"?logoUrl:logo2Url):selL.url;
+    if(!src)return;
     setRemovingBg(true);
-    const img=new Image();
-    img.crossOrigin="anonymous";
-    img.onload=()=>{
-      try{
-        const c=document.createElement("canvas");
-        c.width=img.naturalWidth||img.width;c.height=img.naturalHeight||img.height;
-        const ctx=c.getContext("2d");
-        ctx.drawImage(img,0,0);
-        const d=ctx.getImageData(0,0,c.width,c.height);
-        const data=d.data;
-        for(let i=0;i<data.length;i+=4){
-          const r=data[i],g=data[i+1],b=data[i+2];
-          const avg=(r+g+b)/3;
-          const variance=Math.max(r,g,b)-Math.min(r,g,b);
-          if(avg>220&&variance<30) data[i+3]=0;
-        }
-        ctx.putImageData(d,0,0);
-        const newUrl=c.toDataURL("image/png");
-        pushHist();
-        setLayers(p=>p.map(l=>l.id===sel?{...l,url:newUrl}:l));
-      }catch(e){console.error("removeBg sponsor failed:",e);}
-      setRemovingBg(false);
-    };
-    img.onerror=()=>setRemovingBg(false);
-    img.src=selL.url;
+    try{
+      const{url,removedRatio}=await removeBackground(src,{tolerance:TOLERANCE_PRESETS[bgTol],trim:true});
+      if(removedRatio<0.01){
+        alert("Aucun fond uni détecté sur cette image. Essayez une tolérance plus forte, ou partez d'une image au fond uni.");
+      }else{
+        if(isLogoLayer){ onLogoChange&&onLogoChange(selL.type,url); }
+        else{ pushHist(); setLayers(p=>p.map(l=>l.id===sel?{...l,url}:l)); }
+      }
+    }catch(err){
+      console.error("[removeBg] échec:",err);
+      alert(err&&err.message?err.message:"Détourage impossible sur cette image.");
+    }
+    setRemovingBg(false);
+  }
+  // Échantillonne le fond du logo pour colorer sa pastille / son bandeau :
+  // la jointure devient invisible même quand le logo traîne un carré blanc.
+  async function pickLogoBgColor(){
+    const src=selL&&selL.type==="logo2"?logo2Url:logoUrl;
+    if(!src)return;
+    try{
+      const color=await dominantBorderColor(src);
+      pushHist();
+      setLayers(p=>p.map(l=>l.id===sel?{...l,bgShape:l.bgShape&&l.bgShape!=="none"?l.bgShape:"square",bgColor:color}:l));
+    }catch(err){console.error("[pickLogoBgColor] échec:",err);}
+  }
+  // Bandeau : une marge unie pleine largeur dans laquelle le logo vient se
+  // poser. C'est la réponse aux logos sans forme nette, qu'on ne peut pas
+  // détourer proprement — on assume la bande plutôt que le carré blanc.
+  async function addBand(where){
+    let color=accent;
+    if(logoUrl){ try{ color=await dominantBorderColor(logoUrl); }catch(err){ console.warn("[addBand] couleur auto indisponible:",err); } }
+    pushHist();
+    const bandH=15;
+    const top=where==="bottom"?100-bandH:0;
+    const maxZ=layers.reduce((m,l)=>Math.max(m,l.z),0);
+    const bandId="bn_"+Date.now();
+    const band={id:bandId,z:maxZ+1,type:"colorblock",x:0,y:top,w:100,h:bandH,locked:false,label:"Bandeau "+(where==="bottom"?"bas":"haut"),color,opacity:100};
+    const logoH=bandH*0.72, logoW=logoH*(CH/CW);
+    setLayers(prev=>{
+      const withBand=[...prev,band];
+      const hasLogo=withBand.some(l=>l.type==="logo");
+      if(!hasLogo) return withBand;
+      // Le logo se recale au centre du bandeau, juste au-dessus de lui.
+      return withBand.map(l=>l.type==="logo"
+        ?{...l,z:maxZ+2,x:50-logoW/2,y:top+(bandH-logoH)/2,w:logoW,h:logoH,bgShape:"none"}
+        :l);
+    });
+    setSel(bandId);
   }
   function upd(f,v){pushHist();setLayers(p=>p.map(l=>l.id===sel?Object.assign({},l,{[f]:v}):l));}
   function moveZ(id,d){pushHist();setLayers(prev=>{const s=[...prev].sort((a,b)=>a.z-b.z);const i=s.findIndex(l=>l.id===id),j=i+d;if(j<0||j>=s.length)return prev;const za=s[i].z,zb=s[j].z;return prev.map(l=>l.id===s[i].id?{...l,z:zb}:l.id===s[j].id?{...l,z:za}:l);});}
@@ -771,16 +1052,16 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
           Calque sélectionné — appuyez sur ≡ Calques pour éditer
         </div>
       )}
-      <div style={isMobile?{width:270*cs,height:480*cs,position:"relative",flexShrink:0}:{display:"contents"}}>
-        <div style={isMobile?{position:"absolute",top:0,left:0,width:270,height:480,transform:"scale("+cs+")",transformOrigin:"top left"}:{display:"contents"}}>
-          <div ref={cvRef} className="visium-canvas" onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU} onTouchMove={onMM} onTouchEnd={onMU} onTouchCancel={onMU} onClick={layerHit} style={{width:270,height:480,position:"relative",overflow:"hidden",borderRadius:16,border:"1px solid "+t.border,background:"#111",cursor:"default",userSelect:"none",WebkitUserSelect:"none",touchAction:"none",flexShrink:0}}>
+      <div style={isMobile?{width:CW*cs,height:CH*cs,position:"relative",flexShrink:0}:{display:"contents"}}>
+        <div style={isMobile?{position:"absolute",top:0,left:0,width:CW,height:CH,transform:"scale("+cs+")",transformOrigin:"top left"}:{display:"contents"}}>
+          <div ref={cvRef} className="visium-canvas" onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU} onTouchMove={onMM} onTouchEnd={onMU} onTouchCancel={onMU} onClick={layerHit} style={{width:CW,height:CH,position:"relative",overflow:"hidden",borderRadius:16,border:"1px solid "+t.border,background:"#111",cursor:"default",userSelect:"none",WebkitUserSelect:"none",touchAction:"none",flexShrink:0}}>
             {sorted.map(lay=>(<LayerView key={lay.id} lay={lay} bgUrl={bgUrl} playerUrl={playerUrl} logoUrl={logoUrl} logo2Url={logo2Url} accent={accent} accent2={accent2} isSel={sel===lay.id} onMD={onMD} onResize={onResize} hideHandles={isMobile} clubName={clubName}/>))}
             <Watermark/>
           </div>
         </div>
       </div>
       {!isMobile&&<div style={{fontSize:11,color:"rgba(255,255,255,.2)"}}>Cliquer · Glisser pour déplacer</div>}
-      {isMobile&&selL&&!selL.locked&&(selL.type==="photo"||selL.type==="colorblock"||selL.type==="sponsor"||["text","watertext","heading","subtext"].includes(selL.type))&&(
+      {isMobile&&selL&&!selL.locked&&["photo","colorblock","sponsor","logo","logo2","text","watertext","heading","subtext"].includes(selL.type)&&(
         <div style={{display:"flex",alignItems:"center",gap:8,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,padding:"6px 10px"}}>
           <span style={{fontSize:10,color:"rgba(255,255,255,.6)",letterSpacing:".06em",textTransform:"uppercase"}}>{selL.label||"Calque"}</span>
           <button onClick={()=>{pushHist();setLayers(p=>p.map(l=>l.id===sel?{...l,w:Math.max(5,l.w*0.95),h:Math.max(5,l.h*0.95)}:l));}} className="viz-touch-btn" style={{background:t.bg4,border:"1px solid "+t.border2,color:t.text,borderRadius:8,padding:0,fontSize:18,cursor:"pointer",fontWeight:700,lineHeight:1,width:44,height:44,fontFamily:"inherit"}}>−</button>
@@ -798,6 +1079,8 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
           <button onClick={addText} style={{background:rgba(accent,.15),color:accent,border:"1px solid "+rgba(accent,.35),borderRadius:6,padding:"3px 7px",fontSize:10,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>+ Texte</button>
           <button onClick={addColorBlock} style={{background:rgba(accent,.15),color:accent,border:"1px solid "+rgba(accent,.35),borderRadius:6,padding:"3px 7px",fontSize:10,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>+ Couleur</button>
           <button onClick={addSponsor} style={{background:rgba(accent,.15),color:accent,border:"1px solid "+rgba(accent,.35),borderRadius:6,padding:"3px 7px",fontSize:10,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>+ Sponsor</button>
+          <button onClick={()=>addBand("top")} title="Marge unie en haut, logo intégré dedans" style={{background:rgba(accent,.15),color:accent,border:"1px solid "+rgba(accent,.35),borderRadius:6,padding:"3px 7px",fontSize:10,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>+ Bandeau ↑</button>
+          <button onClick={()=>addBand("bottom")} title="Marge unie en bas, logo intégré dedans" style={{background:rgba(accent,.15),color:accent,border:"1px solid "+rgba(accent,.35),borderRadius:6,padding:"3px 7px",fontSize:10,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>+ Bandeau ↓</button>
         </div>
       </div>
       <div style={{marginBottom:12}}>{[...sorted].reverse().map(lay=>(<div key={lay.id} onClick={()=>setSel(lay.id)} style={{display:"flex",alignItems:"center",gap:5,padding:"5px 7px",borderRadius:6,marginBottom:2,background:sel===lay.id?rgba(accent,.14):t.bg3,border:"1px solid "+(sel===lay.id?rgba(accent,.45):t.border),cursor:"pointer"}}><span style={{fontSize:10,color:t.text,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{lay.label||lay.type}</span>{!lay.locked&&<><button onClick={e=>{e.stopPropagation();moveZ(lay.id,1);}} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:11,padding:0}}>↑</button><button onClick={e=>{e.stopPropagation();moveZ(lay.id,-1);}} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:11,padding:0}}>↓</button></>}</div>))}</div>
@@ -839,11 +1122,28 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
               {selL.url&&<button onClick={()=>{pushHist();upd("url",null);}} style={{fontSize:10,color:t.text3,background:"none",border:"none",cursor:"pointer",padding:"4px 0",alignSelf:"center"}}>✕ Retirer</button>}
             </div>
           </div>
-          {selL.url&&(
-            <button onClick={removeBgOnSelected} disabled={removingBg} style={{width:"100%",background:rgba(accent,.12),color:accent,border:"1px solid "+rgba(accent,.3),borderRadius:7,padding:"7px",fontSize:11,fontWeight:600,cursor:removingBg?"wait":"pointer",marginBottom:8}}>
-              {removingBg?"Traitement…":"✂ Supprimer le fond blanc"}
-            </button>
-          )}
+          {selL.url&&<CutoutBox tol={bgTol} setTol={setBgTol} onRun={removeBgOnSelected} busy={removingBg} t={t} accent={accent}/>}
+        </>}
+        {(selL.type==="logo"||selL.type==="logo2")&&<>
+          <div style={{fontSize:9,color:t.text3,marginBottom:4}}>Fond derrière le logo</div>
+          <div style={{display:"flex",gap:4,marginBottom:8}}>
+            {[["none","Aucun"],["square","Carré"],["circle","Cercle"]].map(([v,lbl])=>{
+              const on=(selL.bgShape||"none")===v;
+              return <button key={v} onClick={()=>upd("bgShape",v)} style={{flex:1,background:on?accent:"transparent",border:"1px solid "+(on?accent:t.border2),borderRadius:6,padding:"5px 2px",color:on?contrastText(accent):t.text2,cursor:"pointer",fontSize:9,fontWeight:600}}>{lbl}</button>;
+            })}
+          </div>
+          {(selL.bgShape&&selL.bgShape!=="none")&&<>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:8}}>
+              <div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Couleur</div><input type="color" value={selL.bgColor||"#ffffff"} onChange={e=>upd("bgColor",e.target.value)} style={{width:"100%",height:30,borderRadius:6,border:"1px solid "+t.border2,background:t.bg4,cursor:"pointer",padding:2}}/></div>
+              <div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Marge ({selL.pad==null?12:selL.pad}%)</div><TouchSlider value={selL.pad==null?12:selL.pad} onChange={v=>upd("pad",v)} min={0} max={35} step={1} t={t} isMobile={isMobile}/></div>
+            </div>
+            {(selL.bgShape==="square")&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Arrondi ({selL.radius==null?12:selL.radius}%)</div><TouchSlider value={selL.radius==null?12:selL.radius} onChange={v=>upd("radius",v)} min={0} max={50} step={1} t={t} isMobile={isMobile}/></div>}
+          </>}
+          <button onClick={pickLogoBgColor} style={{width:"100%",background:t.bg4,color:t.text2,border:"1px solid "+t.border2,borderRadius:7,padding:"7px",fontSize:10,cursor:"pointer",marginBottom:8,fontFamily:"inherit"}}>
+            🎯 Reprendre la couleur de fond du logo
+          </button>
+          <CutoutBox tol={bgTol} setTol={setBgTol} onRun={removeBgOnSelected} busy={removingBg} t={t} accent={accent}
+            hint="Logos sans forme nette : préférez un bandeau ou une pastille."/>
         </>}
         {(selL.type==="scoreblock"||selL.type==="scorebig")&&<>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:6}}>
@@ -879,20 +1179,64 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
   </div>);
 }
 // ─── SMALL UI ATOMS ───────────────────────────────────────────
+const TOLERANCE_CHOICES=[["low","Douce"],["normal","Normale"],["high","Forte"]];
+function ToleranceRow({tol,setTol,t,accent,label}){
+  return(<>
+    <div style={{fontSize:9,color:t.text3,marginBottom:4}}>{label||"Détourage · intensité"}</div>
+    <div style={{display:"flex",gap:4}}>
+      {TOLERANCE_CHOICES.map(([v,lbl])=>{
+        const on=tol===v;
+        return <button key={v} onClick={()=>setTol(v)} style={{flex:1,background:on?accent:"transparent",border:"1px solid "+(on?accent:t.border2),borderRadius:6,padding:"5px 2px",color:on?contrastText(accent):t.text2,cursor:"pointer",fontSize:9,fontWeight:600}}>{lbl}</button>;
+      })}
+    </div>
+  </>);
+}
+function CutoutBox({tol,setTol,onRun,busy,t,accent,hint}){
+  return(<div style={{marginBottom:8}}>
+    <ToleranceRow tol={tol} setTol={setTol} t={t} accent={accent}/>
+    <button onClick={onRun} disabled={busy} style={{width:"100%",marginTop:6,background:rgba(accent,.12),color:accent,border:"1px solid "+rgba(accent,.3),borderRadius:7,padding:"7px",fontSize:11,fontWeight:600,cursor:busy?"wait":"pointer",fontFamily:"inherit"}}>
+      {busy?"Traitement…":"✂ Détourer le fond"}
+    </button>
+    <div style={{fontSize:9,color:t.text3,marginTop:4,lineHeight:1.4}}>{hint||"Retire le fond uni quelle que soit sa couleur (pas seulement le blanc)."}</div>
+  </div>);
+}
 function TIn({v,on,ph,type,t,st,min}){return<input value={v} type={type||"text"} placeholder={ph||""} min={min} onChange={e=>on(e.target.value)} style={Object.assign({},{background:t.bg3,border:"1px solid "+t.border2,borderRadius:7,padding:"8px 10px",color:t.text,fontSize:13,outline:"none",width:"100%",boxSizing:"border-box"},st||{})}/>;}
 function TSel({v,on,opts,t}){return<select value={v} onChange={e=>on(e.target.value)} style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:7,padding:"8px 10px",color:t.text,fontSize:13,outline:"none",width:"100%",boxSizing:"border-box"}}>{opts.map(o=>typeof o==="string"?<option key={o} value={o}>{o}</option>:<option key={o.v} value={o.v}>{o.l}</option>)}</select>;}
-function UpBtn({val,on,w,h,r,label,t}){w=w||52;h=h||44;r=r||8;const ref=useRef();const pick=e=>{const f=e.target.files[0];if(!validateImageFile(f)){e.target.value="";return;}const rd=new FileReader();rd.onload=ev=>on(ev.target.result);rd.readAsDataURL(f);};return(<div onClick={()=>ref.current.click()} style={{width:w,height:h,borderRadius:r,border:"2px dashed "+(val?t.accent:t.border2),background:t.bg3,cursor:"pointer",overflow:"hidden",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flexShrink:0,gap:2}}>{val?<img src={val} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>:<><span style={{color:t.text3,fontSize:20,lineHeight:1}}>+</span>{label&&<span style={{fontSize:9,color:t.text3,textAlign:"center",padding:"0 3px",lineHeight:1.2}}>{label}</span>}</>}<input ref={ref} type="file" accept="image/*" style={{display:"none"}} onChange={pick}/></div>);}
-function Av({photo,name,size}){size=size||40;const[err,setErr]=useState(false);const ini=(name||"?").trim().split(/\s+/).map(w=>w[0]).join("").slice(0,2).toUpperCase();return(<div style={{width:size,height:size,borderRadius:"50%",overflow:"hidden",background:"linear-gradient(135deg,#e63329,#1a1a2e)",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*.32,fontWeight:700,color:"#fff"}}>{photo&&!err?<img src={photo} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt="" onError={()=>setErr(true)}/>:ini}</div>);}
+function UpBtn({val,on,w,h,r,label,t,preset}){
+  w=w||52;h=h||44;r=r||8;
+  const ref=useRef();
+  const[busy,setBusy]=useState(false);
+  const pick=async e=>{
+    const f=e.target.files[0];
+    e.target.value="";
+    if(!f)return;
+    setBusy(true);
+    const url=await intakeImage(f,preset||"logo");
+    setBusy(false);
+    if(url)on(url);
+  };
+  return(<div onClick={()=>!busy&&ref.current.click()} style={{width:w,height:h,borderRadius:r,border:"2px dashed "+(val?t.accent:t.border2),background:t.bg3,cursor:busy?"wait":"pointer",overflow:"hidden",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flexShrink:0,gap:2,position:"relative"}}>
+    {val?<img src={val} loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>:<><span style={{color:t.text3,fontSize:20,lineHeight:1}}>+</span>{label&&<span style={{fontSize:9,color:t.text3,textAlign:"center",padding:"0 3px",lineHeight:1.2}}>{label}</span>}</>}
+    {busy&&<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,.55)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"#fff",letterSpacing:".04em"}}>…</div>}
+    <input ref={ref} type="file" accept="image/*" style={{display:"none"}} onChange={pick}/>
+  </div>);
+}
+function Av({photo,name,size}){size=size||40;const[err,setErr]=useState(false);const ini=(name||"?").trim().split(/\s+/).map(w=>w[0]).join("").slice(0,2).toUpperCase();return(<div style={{width:size,height:size,borderRadius:"50%",overflow:"hidden",background:"linear-gradient(135deg,#e63329,#1a1a2e)",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*.32,fontWeight:700,color:"#fff"}}>{photo&&!err?<img src={photo} loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt="" onError={()=>setErr(true)}/>:ini}</div>);}
 function PBox({children,t,mb}){return<div style={{background:t.bg3,borderRadius:10,padding:12,marginBottom:mb||10}}>{children}</div>;}
 function SHdr({label,t}){return<div style={{fontSize:10,color:t.text3,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",marginBottom:8,paddingBottom:6,borderBottom:"1px solid "+t.border}}>{label}</div>;}
 function TplGrid({tpls,sel,onSel,t,maxTemplates}){
   const cats=[...new Set(tpls.map(x=>x.cat))];
+  // Le quota porte sur le nombre total de gabarits accessibles, pas sur un
+  // décompte remis à zéro à chaque catégorie : les gabarits sont donc
+  // débloqués dans l'ordre d'affichage, toutes catégories confondues.
+  const rank=Object.fromEntries(tpls.map((x,i)=>[x.id,i]));
+  const limit=maxTemplates||999;
   return(<div>{cats.map(cat=>(
     <div key={cat} style={{marginBottom:8}}>
       <div style={{fontSize:9,color:t.text3,fontWeight:700,letterSpacing:".12em",marginBottom:5,textTransform:"uppercase"}}>{cat}</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
-        {tpls.filter(x=>x.cat===cat).map((tpl,idx)=>{
-          const locked=idx>=(maxTemplates||999);
+        {tpls.filter(x=>x.cat===cat).map(tpl=>{
+          const locked=rank[tpl.id]>=limit;
           return(
             <div key={tpl.id} onClick={()=>!locked&&onSel(tpl.id)}
               style={{
@@ -912,83 +1256,107 @@ function TplGrid({tpls,sel,onSel,t,maxTemplates}){
     </div>
   ))}</div>);
 }
-function PhotoPanel({players,selId,onSel,selUrl,onSelUrl,onAdd,onAddUrl,onFav,t}){
+function PhotoPanel({players,selId,onSel,selUrl,onSelUrl,onAdd,onAddUrl,onFav,onDelete,t,terms}){
+  const T=terms||termsFor(DEFAULT_SPORT);
   const ref=useRef();
   const[removing,setRemoving]=useState(null);
+  const[busy,setBusy]=useState(false);
+  const[tol,setTol]=useState("normal");
   const player=players.find(p=>p.id===selId);
-  const photos=player?[...(player.photos||[])].sort((a,b)=>((b.is_fav||b.fav)?1:0)-((a.is_fav||a.fav)?1:0)):[];
-  const pick=e=>{[...e.target.files].forEach(f=>{if(!validateImageFile(f))return;const r=new FileReader();r.onload=ev=>onAdd(selId,f);r.readAsDataURL(f);});e.target.value="";};
-  function handleRemoveBg(ph){
+  const photos=player?sortPhotos(player.photos):[];
+  // Les photos importées deux fois portent le même nom de fichier : on le
+  // signale pour que le doublon soit identifiable avant suppression.
+  const dupNames=new Set();
+  {
+    const seen=new Set();
+    photos.forEach(ph=>{const n=(ph.name||"").toLowerCase();if(!n)return;if(seen.has(n))dupNames.add(n);else seen.add(n);});
+  }
+  async function pick(e){
+    const files=[...e.target.files];
+    e.target.value="";
+    if(!files.length)return;
+    setBusy(true);
+    for(const f of files){ await onAdd(selId,f); }
+    setBusy(false);
+  }
+  async function handleRemoveBg(ph){
     setRemoving(ph.id);
-    const img=new Image();
-    // Pas de crossOrigin sur les data URLs : ça déclenche un faux "tainted canvas" sur iOS Safari < 16
-    const isDataUrl=typeof ph.url==="string"&&ph.url.startsWith("data:");
-    if(!isDataUrl)img.crossOrigin="anonymous";
-    img.onload=()=>{
-      try{
-        // iOS Safari limite la taille du canvas (~16 Mpx). On downscale si l'image dépasse 2048 sur le plus grand côté.
-        const MAX_DIM=2048;
-        const iw=img.naturalWidth||img.width, ih=img.naturalHeight||img.height;
-        const scale=Math.min(1,MAX_DIM/Math.max(iw,ih));
-        const cw=Math.max(1,Math.round(iw*scale)), ch=Math.max(1,Math.round(ih*scale));
-        const c=document.createElement("canvas");
-        c.width=cw; c.height=ch;
-        const ctx=c.getContext("2d");
-        if(!ctx){console.error("removeBg: canvas 2d context unavailable");setRemoving(null);return;}
-        ctx.drawImage(img,0,0,cw,ch);
-        let d;
-        try{d=ctx.getImageData(0,0,cw,ch);}
-        catch(secErr){console.error("removeBg: getImageData blocked (tainted canvas):",secErr&&secErr.message);setRemoving(null);return;}
-        const data=d.data;
-        for(let i=0;i<data.length;i+=4){
-          const r=data[i],g=data[i+1],b=data[i+2];
-          const avg=(r+g+b)/3;
-          const variance=Math.max(r,g,b)-Math.min(r,g,b);
-          if(avg>220&&variance<30) data[i+3]=0;
-        }
-        ctx.putImageData(d,0,0);
-        const newUrl=c.toDataURL("image/png");
-        Promise.resolve(onAddUrl&&onAddUrl(selId,newUrl,(ph.name||"photo")+"_nobg")).finally(()=>setRemoving(null));
-      }catch(e){
-        console.error("removeBg failed:",e&&e.message);
-        setRemoving(null);
+    try{
+      const{url,removedRatio}=await removeBackground(ph.url,{tolerance:TOLERANCE_PRESETS[tol]});
+      if(removedRatio<0.01){
+        alert("Aucun fond uni détecté sur cette photo. Essayez l'intensité « Forte », ou partez d'une photo sur fond uni.");
+      }else{
+        await(onAddUrl&&onAddUrl(selId,url,(ph.name||"photo")+"_detoure"));
       }
-    };
-    img.onerror=(e)=>{console.error("removeBg: img load failed",e);setRemoving(null);};
-    img.src=ph.url;
+    }catch(err){
+      console.error("[removeBg] échec:",err);
+      alert(err&&err.message?err.message:"Détourage impossible sur cette photo.");
+    }
+    setRemoving(null);
   }
   return(<div>
-    <div style={{fontSize:10,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:6}}>Joueur</div>
-    <TSel v={selId?String(selId):""} on={v=>onSel(v?v:null)} t={t} opts={[{v:"",l:"Sélectionner un joueur..."},...players.map(p=>({v:p.id,l:p.name+" · #"+p.number}))]}/>
+    <div style={{fontSize:10,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:6}}>{T.player}</div>
+    <TSel v={selId?String(selId):""} on={v=>onSel(v?v:null)} t={t} opts={[{v:"",l:"Sélectionner un "+T.playerLower+"..."},...players.map(p=>({v:p.id,l:p.name+" · #"+p.number}))]}/>
     {player&&(<div style={{marginTop:10}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}><span style={{fontSize:11,color:t.text2}}>{photos.length} photo{photos.length!==1?"s":""}</span><button onClick={()=>ref.current.click()} style={{fontSize:11,color:t.accent,background:rgba(t.accent,.12),border:"1px solid "+rgba(t.accent,.3),borderRadius:6,padding:"4px 10px",cursor:"pointer",fontWeight:600}}>+ Photo</button></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}><span style={{fontSize:11,color:t.text2}}>{busy?"Import en cours…":photos.length+" photo"+(photos.length!==1?"s":"")}</span><button onClick={()=>ref.current.click()} disabled={busy} style={{fontSize:11,color:t.accent,background:rgba(t.accent,.12),border:"1px solid "+rgba(t.accent,.3),borderRadius:6,padding:"4px 10px",cursor:busy?"wait":"pointer",fontWeight:600}}>+ Photo</button></div>
       <input ref={ref} type="file" accept="image/*" multiple style={{display:"none"}} onChange={pick}/>
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4}}>
-        {photos.map(ph=>(<div key={ph.id} style={{position:"relative"}}>
-          <div onClick={()=>onSelUrl(ph.url)} style={{borderRadius:7,overflow:"hidden",border:"2px solid "+(selUrl===ph.url?t.accent:t.border),cursor:"pointer",aspectRatio:"3/4"}}>
-            <img src={ph.url} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>
+        {photos.map(ph=>{
+          const isDup=dupNames.has((ph.name||"").toLowerCase());
+          return(<div key={ph.id} style={{position:"relative"}}>
+          <div onClick={()=>onSelUrl(ph.url)} style={{borderRadius:7,overflow:"hidden",border:"2px solid "+(selUrl===ph.url?t.accent:isDup?"rgba(245,158,11,.6)":t.border),cursor:"pointer",aspectRatio:"3/4"}}>
+            <img src={thumbOf(ph)} loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>
           </div>
           {(ph.is_fav||ph.fav)&&<div style={{position:"absolute",top:3,left:3,background:t.accent,borderRadius:3,fontSize:8,color:contrastText(t.accent),padding:"1px 4px",fontWeight:700}}>FAV</div>}
+          {isDup&&!(ph.is_fav||ph.fav)&&<div title="Même nom de fichier qu'une autre photo" style={{position:"absolute",top:3,left:3,background:"rgba(245,158,11,.9)",borderRadius:3,fontSize:8,color:"#1a1a1a",padding:"1px 4px",fontWeight:700}}>2×</div>}
           <div onClick={e=>{e.stopPropagation();onFav(selId,ph.id);}} style={{position:"absolute",top:3,right:3,fontSize:13,background:"rgba(0,0,0,.5)",borderRadius:3,padding:"1px 2px",cursor:"pointer"}}>{(ph.is_fav||ph.fav)?"★":"☆"}</div>
-          <button onClick={e=>{e.stopPropagation();handleRemoveBg(ph);}} onTouchEnd={e=>{e.stopPropagation();}} disabled={removing===ph.id} className="viz-touch-btn"
-            style={{position:"absolute",bottom:3,left:"50%",transform:"translateX(-50%)",background:rgba(t.accent,.85),border:"none",borderRadius:4,fontSize:10,color:contrastText(t.accent),cursor:removing===ph.id?"wait":"pointer",padding:"4px 9px",whiteSpace:"nowrap",fontWeight:600,fontFamily:"inherit"}}>
-            {removing===ph.id?"...":"✂ fond"}
-          </button>
-        </div>))}
+          <div style={{position:"absolute",bottom:3,left:0,right:0,display:"flex",justifyContent:"center",gap:3,padding:"0 3px"}}>
+            <button onClick={e=>{e.stopPropagation();handleRemoveBg(ph);}} disabled={removing===ph.id} className="viz-touch-btn"
+              style={{background:rgba(t.accent,.85),border:"none",borderRadius:4,fontSize:10,color:contrastText(t.accent),cursor:removing===ph.id?"wait":"pointer",padding:"4px 7px",whiteSpace:"nowrap",fontWeight:600,fontFamily:"inherit"}}>
+              {removing===ph.id?"…":"✂"}
+            </button>
+            <button onClick={e=>{e.stopPropagation();if(window.confirm("Supprimer cette photo de "+(player.name||"ce "+T.playerLower)+" ?"))onDelete&&onDelete(selId,ph.id,ph.url);}} className="viz-touch-btn"
+              title="Supprimer cette photo"
+              style={{background:"rgba(0,0,0,.7)",border:"1px solid rgba(239,68,68,.5)",borderRadius:4,fontSize:10,color:"#fca5a5",cursor:"pointer",padding:"4px 7px",whiteSpace:"nowrap",fontWeight:600,fontFamily:"inherit"}}>
+              🗑
+            </button>
+          </div>
+        </div>);})}
       </div>
+      {photos.length>0&&<div style={{marginTop:8}}>
+        <ToleranceRow tol={tol} setTol={setTol} t={t} accent={t.accent} label="Détourage · intensité (bouton ✂)"/>
+        <div style={{fontSize:9,color:t.text3,marginTop:4,lineHeight:1.4}}>Le détourage crée une nouvelle photo, l'originale est conservée.</div>
+      </div>}
     </div>)}
   </div>);
 }
-function LineupEditor({ld,setLd,players,t}){
-  const fm=ld.formation||"4-4-2";const starters=ld.starters||[];const subs=ld.subs||[];
-  const fRows=FORMATIONS[fm]||FORMATIONS["4-4-2"];const labels=["Gardien","Défenseur","Milieu","Attaquant"];
-  let gi=0;const rowDefs=fRows.map((r,ri)=>{const from=gi;gi+=r.n;return{label:labels[Math.min(ri,3)],from,count:r.n};});
+function LineupEditor({ld,setLd,players,t,sport}){
+  const F=formationsFor(sport);
+  // La formation enregistrée peut venir d'un autre sport : on retombe sur la
+  // première du sport courant plutôt que d'afficher une option inexistante.
+  const fm=(ld.formation&&F[ld.formation])?ld.formation:(Object.keys(F)[0]||"4-4-2");
+  const starters=ld.starters||[];const subs=ld.subs||[];
+  const fRows=F[fm]||[{n:1},{n:4},{n:4},{n:2}];
+  let gi=0;const rowDefs=fRows.map(r=>{const from=gi;gi+=r.n;return{label:r.l||"",from,count:r.n};});
   function setStarter(i,pid){const ns=[...starters];ns[i]=pid?players.find(p=>p.id===pid)||null:null;setLd(d=>Object.assign({},d,{starters:ns}));}
   function setSub(i,pid){const ns=[...subs];ns[i]=pid?players.find(p=>p.id===pid)||null:null;setLd(d=>Object.assign({},d,{subs:ns}));}
-  function autoFill(){const byPos={};POSITIONS.forEach(p=>{byPos[p]=players.filter(x=>x.position===p);});const lineup=[];fRows.forEach((r,ri)=>{const pos=labels[Math.min(ri,3)];(byPos[pos]||[]).slice(0,r.n).forEach(p=>lineup.push(p));const got=Math.min((byPos[pos]||[]).length,r.n);for(let i=got;i<r.n;i++)lineup.push(null);});const ids=lineup.filter(Boolean).map(p=>p.id);setLd(d=>Object.assign({},d,{starters:lineup,subs:players.filter(p=>!ids.includes(p.id)).slice(0,7)}));}
-  const inp={background:t.bg4,border:"1px solid "+t.border,borderRadius:5,padding:"4px 6px",color:t.text,fontSize:11,outline:"none",boxSizing:"border-box",width:"100%"};
+  function autoFill(){
+    const used=new Set();
+    const lineup=[];
+    fRows.forEach(r=>{
+      // Chaque rang puise dans les postes qu'il déclare, sans reprendre un
+      // joueur déjà placé sur un rang précédent.
+      const pool=players.filter(x=>(r.p||[r.l]).includes(x.position)&&!used.has(x.id));
+      for(let i=0;i<r.n;i++){
+        const pick=pool[i]||null;
+        if(pick)used.add(pick.id);
+        lineup.push(pick);
+      }
+    });
+    setLd(d=>Object.assign({},d,{starters:lineup,subs:players.filter(p=>!used.has(p.id)).slice(0,7)}));
+  }
   return(<div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Formation</div><TSel v={fm} on={v=>setLd(d=>Object.assign({},d,{formation:v,starters:[]}))} t={t} opts={Object.keys(FORMATIONS)}/></div><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Adversaire</div><TIn v={ld.opponent||""} on={v=>setLd(d=>Object.assign({},d,{opponent:v}))} ph="vs..." t={t}/></div></div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>{termsFor(sport).formationLabel}</div><TSel v={fm} on={v=>setLd(d=>Object.assign({},d,{formation:v,starters:[]}))} t={t} opts={Object.keys(F)}/></div><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>{termsFor(sport).opponent}</div><TIn v={ld.opponent||""} on={v=>setLd(d=>Object.assign({},d,{opponent:v}))} ph="vs..." t={t}/></div></div>
     <div style={{marginBottom:8}}><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Compétition</div><TIn v={ld.competition||""} on={v=>setLd(d=>Object.assign({},d,{competition:v}))} ph="Ligue 1..." t={t}/></div>
     <button onClick={autoFill} style={{width:"100%",background:rgba(t.accent,.15),color:t.accent,border:"1px solid "+rgba(t.accent,.3),borderRadius:7,padding:"7px",fontSize:11,cursor:"pointer",marginBottom:10,fontWeight:600}}>⚡ Remplissage auto</button>
     {rowDefs.map((row,ri)=>(<div key={ri} style={{marginBottom:7}}><div style={{fontSize:9,color:t.accent,letterSpacing:".1em",fontWeight:700,marginBottom:3,textTransform:"uppercase"}}>{row.label}</div>{Array.from({length:row.count}).map((_,pi)=>{const idx=row.from+pi;const cur=starters[idx];const ph=getPhoto(cur);return(<div key={pi} style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}><div style={{width:24,height:24,borderRadius:5,overflow:"hidden",background:t.bg4,flexShrink:0,border:"1px solid "+(cur?t.accent:t.border)}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:9,color:t.text3,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>{idx+1}</span>}</div><TSel v={cur?cur.id:""} on={v=>setStarter(idx,v)} t={t} opts={[{v:"",l:"— Poste libre —"},...players.map(p=>({v:p.id,l:"#"+p.number+" "+p.name}))]}/></div>);})}</div>))}
@@ -996,13 +1364,16 @@ function LineupEditor({ld,setLd,players,t}){
     {Array.from({length:7}).map((_,i)=>{const cur=subs[i];const ph=getPhoto(cur);return(<div key={i} style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}><div style={{width:24,height:24,borderRadius:5,overflow:"hidden",background:t.bg4,flexShrink:0,border:"1px solid "+(cur?t.accent:t.border)}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:9,color:t.text3,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>{i+12}</span>}</div><TSel v={cur?cur.id:""} on={v=>setSub(i,v)} t={t} opts={[{v:"",l:"— Remplaçant —"},...players.map(p=>({v:p.id,l:"#"+p.number+" "+p.name}))]}/></div>);})}
   </div>);
 }
-function GroupEditor({gd,setGd,players,t}){
+function GroupEditor({gd,setGd,players,t,sport}){
   // FIX Lucas : ne PAS faire `gd.title||"GROUPE A"` sur l'input.
   // Sinon dès que l'utilisateur efface le champ, la valeur retourne à "GROUPE A" et
   // il ne peut plus rien saisir. On garde le fallback uniquement pour le RENDU du visuel
   // (voir GroupCanvas). Ici on utilise le placeholder pour montrer la valeur par défaut.
   const title=gd.title??"";const competition=gd.competition??"";
-  const cats=[{k:"gk",l:"🧤 Gardiens",pos:"Gardien"},{k:"def",l:"🛡 Défenseurs",pos:"Défenseur"},{k:"mid",l:"⚙️ Milieux",pos:"Milieu"},{k:"fwd",l:"⚡ Attaquants",pos:"Attaquant"},{k:"coaches",l:"👔 Staff",pos:null}];
+  // Les clés (gk/def/mid/fwd/coaches) restent identiques d'un sport à l'autre :
+  // seuls les libellés et les postes regroupés changent, pour que les visuels
+  // déjà enregistrés continuent de s'afficher.
+  const cats=getSport(sport).groupCats;
   const[impSel,setImpSel]=useState({});
   function add(k){setGd(d=>Object.assign({},d,{[k]:[...(d[k]||[]),{id:Date.now(),name:"",number:"",photo:null,captain:false}]}));}
   function rem(k,id){setGd(d=>Object.assign({},d,{[k]:(d[k]||[]).filter(p=>p.id!==id)}));}
@@ -1033,7 +1404,7 @@ function GroupEditor({gd,setGd,players,t}){
         {(gd.titleColor||gd.titleSize||gd.titleFont)&&<button onClick={()=>setGd(d=>{const n=Object.assign({},d);delete n.titleFont;delete n.titleSize;delete n.titleColor;return n;})} style={{background:"none",border:"none",color:t.accent,cursor:"pointer",fontSize:9,padding:"4px 0",textDecoration:"underline",whiteSpace:"nowrap",alignSelf:"flex-end"}}>Reset défauts</button>}
       </div>
     </div>
-    {cats.map(cat=>{const list=gd[cat.k]||[];const avail=players.filter(p=>(cat.pos?p.position===cat.pos:true)&&!list.some(x=>x.id===p.id));return(<div key={cat.k} style={{marginBottom:7,background:t.bg3,borderRadius:8,padding:"9px 10px"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:11,color:t.text,fontWeight:600}}>{cat.l} <span style={{color:t.text3,fontWeight:400}}>({list.length})</span></span><button onClick={()=>add(cat.k)} style={{fontSize:10,color:t.accent,background:rgba(t.accent,.12),border:"1px solid "+rgba(t.accent,.3),borderRadius:5,padding:"3px 7px",cursor:"pointer"}}>+ Manuel</button></div>{avail.length>0&&(<div style={{display:"flex",gap:5,marginBottom:7}}><select value={impSel[cat.k]||""} onChange={e=>setImpSel(s=>Object.assign({},s,{[cat.k]:e.target.value}))} style={{flex:1,background:t.bg4,border:"1px solid "+t.border,borderRadius:5,padding:"5px 7px",color:t.text,fontSize:11,outline:"none"}}><option value="">— Ajouter depuis l'effectif —</option>{avail.map(p=><option key={p.id} value={p.id}>{"#"+p.number+" "+p.name}</option>)}</select><button onClick={()=>importOne(cat.k)} style={{background:impSel[cat.k]?t.accent:"#2a2a2a",color:"#fff",border:"none",borderRadius:5,padding:"5px 11px",fontSize:12,cursor:"pointer",fontWeight:600}}>↓</button></div>)}{list.length===0&&<div style={{fontSize:10,color:t.text3,textAlign:"center",padding:"3px 0",fontStyle:"italic"}}>Aucun joueur</div>}{list.map(p=>(<div key={p.id} style={{display:"flex",alignItems:"center",gap:5,marginBottom:4,background:t.bg4,borderRadius:6,padding:"4px 6px"}}><div style={{width:24,height:24,borderRadius:4,overflow:"hidden",background:t.bg2,flexShrink:0,cursor:"pointer",border:"1px solid "+(p.photo?t.accent:t.border)}} onClick={()=>{const i=document.createElement("input");i.type="file";i.accept="image/*";i.onchange=e=>{const f=e.target.files[0];if(!validateImageFile(f))return;const r=new FileReader();r.onload=ev=>upd(cat.k,p.id,"photo",ev.target.result);r.readAsDataURL(f);};i.click();}}>{p.photo?<img src={p.photo} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:12,color:t.text3,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>+</span>}</div><input value={p.number||""} onChange={e=>upd(cat.k,p.id,"number",e.target.value)} placeholder="#" style={Object.assign({},inp,{width:25})}/><input value={p.name||""} onChange={e=>upd(cat.k,p.id,"name",e.target.value)} placeholder="Nom" style={Object.assign({},inp,{flex:1})}/><span onClick={()=>upd(cat.k,p.id,"captain",!p.captain)} style={{cursor:"pointer",fontSize:14,opacity:p.captain?1:.2,color:t.accent}}>©</span><button onClick={()=>rem(cat.k,p.id)} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:12,padding:0}}>✕</button></div>))}</div>);})}
+    {cats.map(cat=>{const list=gd[cat.k]||[];const avail=players.filter(p=>(cat.pos?cat.pos.includes(p.position):true)&&!list.some(x=>x.id===p.id));return(<div key={cat.k} style={{marginBottom:7,background:t.bg3,borderRadius:8,padding:"9px 10px"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:11,color:t.text,fontWeight:600}}>{cat.l} <span style={{color:t.text3,fontWeight:400}}>({list.length})</span></span><button onClick={()=>add(cat.k)} style={{fontSize:10,color:t.accent,background:rgba(t.accent,.12),border:"1px solid "+rgba(t.accent,.3),borderRadius:5,padding:"3px 7px",cursor:"pointer"}}>+ Manuel</button></div>{avail.length>0&&(<div style={{display:"flex",gap:5,marginBottom:7}}><select value={impSel[cat.k]||""} onChange={e=>setImpSel(s=>Object.assign({},s,{[cat.k]:e.target.value}))} style={{flex:1,background:t.bg4,border:"1px solid "+t.border,borderRadius:5,padding:"5px 7px",color:t.text,fontSize:11,outline:"none"}}><option value="">— Ajouter depuis l'effectif —</option>{avail.map(p=><option key={p.id} value={p.id}>{"#"+p.number+" "+p.name}</option>)}</select><button onClick={()=>importOne(cat.k)} style={{background:impSel[cat.k]?t.accent:"#2a2a2a",color:"#fff",border:"none",borderRadius:5,padding:"5px 11px",fontSize:12,cursor:"pointer",fontWeight:600}}>↓</button></div>)}{list.length===0&&<div style={{fontSize:10,color:t.text3,textAlign:"center",padding:"3px 0",fontStyle:"italic"}}>Aucun joueur</div>}{list.map(p=>(<div key={p.id} style={{display:"flex",alignItems:"center",gap:5,marginBottom:4,background:t.bg4,borderRadius:6,padding:"4px 6px"}}><div style={{width:24,height:24,borderRadius:4,overflow:"hidden",background:t.bg2,flexShrink:0,cursor:"pointer",border:"1px solid "+(p.photo?t.accent:t.border)}} onClick={()=>{const i=document.createElement("input");i.type="file";i.accept="image/*";i.onchange=e=>{const f=e.target.files[0];if(!validateImageFile(f))return;const r=new FileReader();r.onload=ev=>upd(cat.k,p.id,"photo",ev.target.result);r.readAsDataURL(f);};i.click();}}>{p.photo?<img src={p.photo} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:12,color:t.text3,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>+</span>}</div><input value={p.number||""} onChange={e=>upd(cat.k,p.id,"number",e.target.value)} placeholder="#" style={Object.assign({},inp,{width:25})}/><input value={p.name||""} onChange={e=>upd(cat.k,p.id,"name",e.target.value)} placeholder="Nom" style={Object.assign({},inp,{flex:1})}/><span onClick={()=>upd(cat.k,p.id,"captain",!p.captain)} style={{cursor:"pointer",fontSize:14,opacity:p.captain?1:.2,color:t.accent}}>©</span><button onClick={()=>rem(cat.k,p.id)} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:12,padding:0}}>✕</button></div>))}</div>);})}
   </div>);
 }
 function PostEditor({pd,setPd,t}){
@@ -1043,6 +1414,100 @@ function PostEditor({pd,setPd,t}){
     <div style={{marginBottom:8}}><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Corps du texte</div><textarea value={pd.body||""} onChange={e=>setPd(d=>Object.assign({},d,{body:e.target.value}))} placeholder="Message principal..." rows={3} style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:7,padding:"8px 10px",color:t.text,fontSize:13,outline:"none",width:"100%",boxSizing:"border-box",resize:"vertical",fontFamily:"inherit"}}/></div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Date</div><TIn v={pd.date||""} on={v=>setPd(d=>Object.assign({},d,{date:v}))} ph="12 avril 2025" t={t}/></div><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Hashtag</div><TIn v={pd.hashtag||""} on={v=>setPd(d=>Object.assign({},d,{hashtag:v}))} ph="#monclub" t={t}/></div></div>
   </div>);
+}
+// ─── INSERT TOLÉRANT ──────────────────────────────────────────
+// Certaines colonnes sont ajoutées par des migrations qui peuvent ne pas être
+// encore appliquées (thumb_url, migration 0003). Plutôt que de faire échouer
+// l'import, on réessaie sans elles.
+function isMissingColumn(error){
+  return !!error && (error.code==="42703" || /column .* does not exist/i.test(error.message||""));
+}
+async function insertTolerant(table,payload,optionalCols){
+  let res=await supabase.from(table).insert(payload).select().single();
+  if(isMissingColumn(res.error)){
+    console.warn("["+table+"] colonne optionnelle absente ("+optionalCols.join(", ")+") — migration non appliquée.");
+    const rest=Object.assign({},payload);
+    optionalCols.forEach(c=>delete rest[c]);
+    res=await supabase.from(table).insert(rest).select().single();
+  }
+  return res;
+}
+// ─── PROJECTION D'UN VISUEL ───────────────────────────────────
+// Ligne Supabase → objet manipulé par l'UI. Une seule définition : les trois
+// copies précédentes divergeaient au moindre ajout de champ.
+function mapVisual(v,sport){
+  if(!v) return null;
+  return{
+    ...v,
+    layers:v.layers||[],
+    lineupData:v.lineup_data||{},
+    groupData:v.group_data||{},
+    postData:v.post_data||{},
+    lineupTpl:v.lineup_tpl,
+    groupTpl:v.group_tpl,
+    postTpl:v.post_tpl,
+    bgUrl:v.bg_url,
+    logoUrl:v.logo_url,
+    logo2Url:v.logo2_url,
+    playerUrl:v.player_url,
+    format:v.format||DEFAULT_FORMAT,
+    // Le sport n'est pas stocké par visuel : la vignette d'historique utilise
+    // celui du club, ce qui reste cohérent même après un changement de sport.
+    sport,
+    ct:ctypeInfo(sport,v.type),
+  };
+}
+// ─── ÉCRITURE D'UN VISUEL ─────────────────────────────────────
+// La colonne `format` est ajoutée par la migration
+// supabase/migrations/0001_visuals_format.sql. Tant qu'elle n'est pas passée
+// en base, on réécrit sans elle plutôt que de faire échouer la sauvegarde :
+// l'app reste utilisable, seul le format retombe sur Story au rechargement.
+function isMissingFormatColumn(error){
+  if(!error)return false;
+  return error.code==="42703"||/column .*format.* does not exist/i.test(error.message||"");
+}
+async function writeVisual(mode,payload,id){
+  const run=(body)=>mode==="update"
+    ? supabase.from("visuals").update(body).eq("id",id).select().single()
+    : supabase.from("visuals").insert(body).select().single();
+  let res=await run(payload);
+  if(isMissingFormatColumn(res.error)){
+    console.warn("[writeVisual] colonne `format` absente — migration 0001 non appliquée.");
+    const rest=Object.assign({},payload);
+    delete rest.format;
+    res=await run(rest);
+  }
+  return res;
+}
+// ─── CHOIX DU SPORT ───────────────────────────────────────────
+// Affiché une seule fois, à la première connexion : le sport détermine le
+// vocabulaire, les postes, les formations et les types de visuels proposés.
+function SportPicker({onPick,busy,t,clubName}){
+  return(
+    <div className="viz-minvh" style={{display:"flex",alignItems:"center",justifyContent:"center",background:t.bg,color:t.text,padding:"32px 20px",fontFamily:"'DM Sans','Helvetica Neue',sans-serif"}}>
+      <div style={{width:"100%",maxWidth:640}}>
+        <div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".18em",textTransform:"uppercase",marginBottom:10}}>Première étape</div>
+        <h1 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:44,fontWeight:400,letterSpacing:".02em",lineHeight:1,margin:"0 0 10px"}}>
+          {clubName?"Quel sport pratique "+clubName+" ?":"Quel sport pratique votre club ?"}
+        </h1>
+        <p style={{color:t.text3,fontSize:13,lineHeight:1.6,margin:"0 0 26px"}}>
+          Le vocabulaire, les postes et les types de visuels s'adaptent au sport choisi. Vous pourrez en changer plus tard dans « Mon Club ».
+        </p>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
+          {SPORT_LIST.map(sp=>(
+            <button key={sp.id} onClick={()=>!busy&&onPick(sp.id)} disabled={busy}
+              style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,padding:"20px 16px",cursor:busy?"wait":"pointer",color:t.text,fontFamily:"inherit",textAlign:"left",display:"flex",flexDirection:"column",gap:6,transition:"border-color .15s,transform .15s"}}
+              onMouseEnter={e=>{if(busy)return;e.currentTarget.style.borderColor=t.accent;e.currentTarget.style.transform="translateY(-2px)";}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}>
+              <span style={{fontSize:28,lineHeight:1}}>{sp.icon}</span>
+              <span style={{fontWeight:700,fontSize:14}}>{sp.label}</span>
+              <span style={{fontSize:11,color:t.text3}}>{sp.kind==="team"?"Sport collectif":"Sport individuel"}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 // ─── APP ──────────────────────────────────────────────────────
 export default function App({session}){
@@ -1071,7 +1536,7 @@ export default function App({session}){
   },[]);
   const[selType,setSelType]=useState(null);
   const[editId,setEditId]=useState(null);
-  const[pName,setPName]=useState("");const[pNum,setPNum]=useState("");const[pPos,setPPos]=useState("Attaquant");
+  const[pName,setPName]=useState("");const[pNum,setPNum]=useState("");const[pPos,setPPos]=useState("");
   const[layers,setLayers]=useState([]);
   const[bgUrl,setBgUrl]=useState(null);const[logoUrl,setLogoUrl]=useState(null);const[logo2Url,setLogo2Url]=useState(null);
   const[selPid,setSelPid]=useState(null);const[selPhoto,setSelPhoto]=useState(null);
@@ -1083,14 +1548,28 @@ export default function App({session}){
   const[lineupTpl,setLineupTpl]=useState("ln1");
   const[groupTpl,setGroupTpl]=useState("gr1");
   const[postTpl,setPostTpl]=useState("pt1");
+  const[format,setFormat]=useState(DEFAULT_FORMAT);
+  // Sport du club : un seul par club, choisi à la première connexion.
+  // `null` en base = pas encore choisi → on affiche le sélecteur.
+  const sport=club&&club.sport?club.sport:DEFAULT_SPORT;
+  const T=termsFor(sport);
+  const CT=useMemo(()=>ctypesFor(sport),[sport]);
+  const NAVL=useMemo(()=>navFor(termsFor(sport)),[sport]);
+  const[savingSport,setSavingSport]=useState(false);
   const[saveFlash,setSaveFlash]=useState(false);
   const[weeklyCount,setWeeklyCount]=useState(0);
   const[limitError,setLimitError]=useState("");
-  const[onboardingSkipped,setOnboardingSkipped]=useState(()=>localStorage.getItem("onboarding_skipped")==="1");
+  const[onboardingSkipped,setOnboardingSkipped]=useState(()=>lsGet("onboarding_skipped")==="1");
   const[slotScale,setSlotScale]=useState(1);
-  const[exportOverlay,setExportOverlay]=useState(null);  // {dataUrl, filename, blob} pour overlay iOS
+  const[exportOverlay,setExportOverlay]=useState(null);  // {previewUrl, filename, blob} pour overlay iOS
+  const[exporting,setExporting]=useState(false);
   const isMobile=useIsMobile();
-  const canvasScale=useCanvasScale();
+  const F=fmt(format);
+  const supportsFormat=FORMAT_TYPES.includes(selType);
+  // Composition XI / Groupe restent en 9:16 (gabarits dessinés pour ce ratio).
+  const canvasW=supportsFormat?F.w:FORMATS.story.w;
+  const canvasH=supportsFormat?F.h:FORMATS.story.h;
+  const canvasScale=useCanvasScale(canvasW,canvasH);
   const[mobileSheet,setMobileSheet]=useState(null);
   useEffect(()=>{
     if(!document.getElementById("viziona-landing-fonts")){
@@ -1114,18 +1593,26 @@ export default function App({session}){
   const mRef=useRef();
   const t=useMemo(()=>buildTheme(club?.color1,club?.color2,club?.theme_mode||"light"),[club]);
   // ── LOAD DATA ───────────────────────────────────────────────
+  // Deux protections contre les données qui « disparaissent puis reviennent » :
+  //  - l'effet est indexé sur l'id utilisateur, pas sur l'objet session (que
+  //    Supabase remplace à chaque rafraîchissement de token) ;
+  //  - un jeton de requête ignore le résultat d'un chargement périmé, pour
+  //    qu'une réponse lente n'écrase pas un ajout fait entre-temps.
+  const uid=session&&session.user?session.user.id:null;
+  const loadTokenRef=useRef(0);
   useEffect(()=>{
-    if(!session)return;
+    if(!uid)return;
+    const token=++loadTokenRef.current;
+    const stale=()=>loadTokenRef.current!==token;
     async function load(){
       setLoading(true);
-      const uid=session.user.id;
       let{data:clubData}=await supabase.from("clubs").select("*").eq("user_id",uid).single();
       if(!clubData){
         // Première connexion via magic link : créer la ligne clubs avec le nom de club passé en user_metadata au signup.
         const meta=session.user.user_metadata||{};
         const newName=meta.club_name||"Mon Club";
         const newEmail=session.user.email||null;
-        const{data:newClub,error:cErr}=await supabase.from("clubs").insert({user_id:uid,email:newEmail,name:newName,approved:false}).select().single();
+        const{data:newClub,error:cErr}=await supabase.from("clubs").insert({user_id:uid,email:newEmail,name:newName}).select().single();
         if(cErr)console.error("[load] insert clubs failed:",cErr);
         clubData=newClub;
         // Notifier l'admin uniquement à la création initiale (pas à chaque login).
@@ -1138,6 +1625,11 @@ export default function App({session}){
         }
       }
       if(!clubData?.approved){await supabase.auth.signOut();return;}
+      if(stale())return;
+      if(!clubData.sport){
+        const local=lsGet("sport_"+clubData.id);
+        if(local)clubData={...clubData,sport:local};
+      }
       setClub(clubData);
       // Compter les visuels des 7 derniers jours
       const since=new Date(Date.now()-7*24*60*60*1000).toISOString();
@@ -1146,38 +1638,81 @@ export default function App({session}){
         .select("*",{count:"exact",head:true})
         .eq("club_id",clubData.id)
         .gte("created_at",since);
+      if(stale())return;
       setWeeklyCount(count||0);
       const{data:playersData}=await supabase.from("players").select("*, photos:player_photos(*)").eq("club_id",clubData.id);
-      setPlayers(playersData||[]);
+      if(stale())return;
+      setPlayers(sortPlayers(playersData));
       const{data:mediaData}=await supabase.from("media").select("*").eq("club_id",clubData.id);
+      if(stale())return;
       setMedia(mediaData||[]);
-      const{data:visualsData}=await supabase.from("visuals").select("*").eq("club_id",clubData.id).order("created_at",{ascending:false});
-      setHistory((visualsData||[]).map(v=>({...v,layers:v.layers||[],lineupData:v.lineup_data||{},groupData:v.group_data||{},postData:v.post_data||{},lineupTpl:v.lineup_tpl,groupTpl:v.group_tpl,postTpl:v.post_tpl,bgUrl:v.bg_url,logoUrl:v.logo_url,logo2Url:v.logo2_url,playerUrl:v.player_url,ct:CTYPES.find(c=>c.id===v.type)})));
+      // Les visuels embarquent leurs images en base64 : sans limite, un club
+      // actif téléchargerait des dizaines de Mo à chaque ouverture.
+      const{data:visualsData}=await supabase.from("visuals").select("*").eq("club_id",clubData.id).order("created_at",{ascending:false}).limit(HISTORY_PAGE_SIZE);
+      if(stale())return;
+      const loadedSport=clubData.sport||DEFAULT_SPORT;
+      setHistory((visualsData||[]).map(v=>mapVisual(v,loadedSport)));
       setLoading(false);
     }
     load();
-  },[session]);
+    // Volontairement indexé sur `uid` seul : dépendre de `session` ferait
+    // recharger toutes les données à chaque rafraîchissement de token.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[uid]);
   async function updateClub(patch){const updated={...club,...patch};setClub(updated);await supabase.from("clubs").update(patch).eq("id",club.id);}
+  // Le sport est stocké dans clubs.sport (migration 0004). Si la colonne
+  // n'existe pas encore, on garde le choix en local pour ne pas bloquer le
+  // club derrière un écran qu'il ne peut pas valider.
+  async function chooseSport(next){
+    setSavingSport(true);
+    const{error}=await supabase.from("clubs").update({sport:next}).eq("id",club.id);
+    if(error){
+      console.warn("[chooseSport] colonne `sport` indisponible (migration 0004 non appliquée ?) :",error.message);
+      lsSet("sport_"+club.id,next);
+    }
+    setClub(c=>({...c,sport:next}));
+    setSavingSport(false);
+  }
   async function addPlayer(){
     if(!pName.trim())return;
-    const{data}=await supabase.from("players").insert({club_id:club.id,name:pName.trim(),number:pNum,position:pPos}).select("*, photos:player_photos(*)").single();
-    if(data)setPlayers(p=>[...p,data]);
+    const{data}=await supabase.from("players").insert({club_id:club.id,name:pName.trim(),number:pNum,position:pPos||getSport(sport).defaultPosition}).select("*, photos:player_photos(*)").single();
+    if(data)setPlayers(p=>sortPlayers([...p,data]));
     setPName("");setPNum("");
   }
-  async function deletePlayer(id){await supabase.from("players").delete().eq("id",id);setPlayers(p=>p.filter(x=>x.id!==id));}
-  const addPhoto=useCallback((playerId,file)=>{
-    if(!validateImageFile(file))return;
-    const reader=new FileReader();
-    reader.onload=async(e)=>{
-      const url=e.target.result;
-      const{data}=await supabase.from("player_photos").insert({player_id:playerId,url,name:file.name,is_fav:false}).select().single();
-      if(data)setPlayers(prev=>prev.map(p=>p.id===playerId?{...p,photos:[...(p.photos||[]),data]}:p));
-    };
-    reader.readAsDataURL(file);
+  async function deletePlayer(id){
+    const p=players.find(x=>x.id===id);
+    const n=p&&p.photos?p.photos.length:0;
+    if(!window.confirm("Retirer "+((p&&p.name)||"ce joueur")+" de l'effectif"+(n?" ainsi que ses "+n+" photo"+(n>1?"s":""):"")+" ?"))return;
+    await supabase.from("players").delete().eq("id",id);
+    setPlayers(prev=>prev.filter(x=>x.id!==id));
+    if(selPid===id){setSelPid(null);setSelPhoto(null);}
+  }
+  // Les photos sont redimensionnées et recompressées ici : un fichier de 25 Mo
+  // passe sans que l'utilisateur ait à préparer ses images en amont.
+  const addPhoto=useCallback(async(playerId,file)=>{
+    const img=await intakeImageWithThumb(file,"photo");
+    if(!img)return;
+    const{data,error}=await insertTolerant("player_photos",
+      {player_id:playerId,url:img.url,thumb_url:img.thumbUrl,name:file.name,is_fav:false},["thumb_url"]);
+    if(error){console.error("[addPhoto] échec:",error);alert("Enregistrement de la photo impossible : "+error.message);return;}
+    if(data)setPlayers(prev=>prev.map(p=>p.id===playerId?{...p,photos:sortPhotos([...(p.photos||[]),data])}:p));
   },[]);
   const addPhotoUrl=useCallback(async(playerId,url,name)=>{
-    const{data}=await supabase.from("player_photos").insert({player_id:playerId,url,name:name||"photo_nobg",is_fav:false}).select().single();
-    if(data)setPlayers(prev=>prev.map(p=>p.id===playerId?{...p,photos:[...(p.photos||[]),data]}:p));
+    let thumbUrl=null;
+    try{ thumbUrl=await makeThumbnail(url); }catch(e){ console.warn("[addPhotoUrl] vignette non générée:",e); }
+    const{data,error}=await insertTolerant("player_photos",
+      {player_id:playerId,url,thumb_url:thumbUrl,name:name||"photo_nobg",is_fav:false},["thumb_url"]);
+    if(error){console.error("[addPhotoUrl] échec:",error);alert("Enregistrement de la photo impossible : "+error.message);return;}
+    if(data)setPlayers(prev=>prev.map(p=>p.id===playerId?{...p,photos:sortPhotos([...(p.photos||[]),data])}:p));
+  },[]);
+  const deletePhoto=useCallback(async(playerId,photoId,photoUrl)=>{
+    const{error}=await supabase.from("player_photos").delete().eq("id",photoId);
+    if(error){console.error("[deletePhoto] échec:",error);alert("Suppression impossible : "+error.message);return;}
+    setPlayers(prev=>prev.map(p=>p.id===playerId
+      ?{...p,photos:(p.photos||[]).filter(ph=>ph.id!==photoId)}
+      :p));
+    // Si la photo supprimée était posée sur le visuel en cours, on la retire du canvas.
+    setSelPhoto(cur=>(photoUrl&&cur===photoUrl)?null:cur);
   },[]);
   const toggleFav=useCallback(async(playerId,photoId)=>{
     const player=players.find(p=>p.id===playerId);
@@ -1187,25 +1722,38 @@ export default function App({session}){
     setPlayers(prev=>prev.map(p=>p.id===playerId?{...p,photos:p.photos.map(ph=>ph.id===photoId?{...ph,is_fav:!ph.is_fav}:ph)}:p));
   },[players]);
   async function pickMedia(e){
-    [...e.target.files].forEach(file=>{
-      if(!validateImageFile(file))return;
-      const reader=new FileReader();
-      reader.onload=async(ev)=>{
-        const url=ev.target.result;
-        const{data}=await supabase.from("media").insert({club_id:club.id,url,name:file.name}).select().single();
-        if(data)setMedia(m=>[...m,data]);
-      };
-      reader.readAsDataURL(file);
-    });
+    const files=[...e.target.files];
     e.target.value="";
+    for(const file of files){
+      const img=await intakeImageWithThumb(file,"media");
+      if(!img)continue;
+      const{data,error}=await insertTolerant("media",
+        {club_id:club.id,url:img.url,thumb_url:img.thumbUrl,name:file.name},["thumb_url"]);
+      if(error){console.error("[pickMedia] échec:",error);alert("Enregistrement du média impossible : "+error.message);continue;}
+      if(data)setMedia(m=>[...m,data]);
+    }
   }
   async function deleteMedia(id){await supabase.from("media").delete().eq("id",id);setMedia(m=>m.filter(x=>x.id!==id));}
+  // Changer de format ne recrée pas le visuel : les calques sont positionnés
+  // en %, seules les tailles de texte suivent la hauteur du canvas.
+  function changeFormat(next){
+    if(next===format)return;
+    setLayers(cur=>scaleLayersToFormat(cur,format,next));
+    setFormat(next);
+  }
   function selPlayer(id){
+    const prev=players.find(x=>x.id===selPid)||null;
     setSelPid(id||null);
-    if(id){const p=players.find(x=>x.id===id);setSelPhoto(p?getPhoto(p)||null:null);}
+    if(id){
+      const p=players.find(x=>x.id===id);
+      setSelPhoto(p?getPhoto(p)||null:null);
+      // Le nom et le poste du joueur se posent tout seuls sur le visuel, tant
+      // que ces textes n'ont pas été personnalisés à la main.
+      if(p)setLayers(cur=>applyPlayerToLayers(cur,p,prev,sport));
+    }
     else setSelPhoto(null);
   }
-  function postDataToLayers(pd,c1,c2){
+  function postDataToLayers(pd,c1){
     // Conversion rétrocompatible : postData legacy → layers libres
     const layers=[
       {id:"bg",z:0,type:"bg",x:0,y:0,w:100,h:100,locked:true,label:"Fond",fillColor:"#000000"},
@@ -1219,12 +1767,13 @@ export default function App({session}){
   }
   function openCreate(type,fromH){
     setSelType(type);setNav("create");
+    setFormat(fromH&&fromH.format?fromH.format:DEFAULT_FORMAT);
     if(fromH){
       setEditId(fromH.id);setBgUrl(fromH.bgUrl||null);setLogoUrl(fromH.logoUrl||null);setLogo2Url(fromH.logo2Url||null);
       setSelPhoto(fromH.playerUrl||null);setSelPid(null);
       // Rétrocompat post : si layers absents/vides ET postData présent → conversion automatique
       if(type==="post"&&(!fromH.layers||fromH.layers.length===0)&&fromH.postData){
-        setLayers(postDataToLayers(fromH.postData,club?.color1||"#e63329",club?.color2||"#1a1a2e"));
+        setLayers(postDataToLayers(fromH.postData,club?.color1||"#e63329"));
       }else if(fromH.layers){
         setLayers(fromH.layers);
       }
@@ -1237,8 +1786,8 @@ export default function App({session}){
     } else {
       setEditId(null);setBgUrl(null);setLogoUrl(club?.logo_url||null);setLogo2Url(null);setSelPid(null);setSelPhoto(null);
       // Post est désormais un éditeur libre : utilise makeLayers comme goal/result/match/recruit
-      if(type!=="lineup"&&type!=="group")setLayers(makeLayers(type,club?.color1||"#e63329",club?.color2||"#1a1a2e"));
-      if(type==="lineup")setLineupData({formation:"4-4-2",starters:[],subs:[],opponent:"",competition:""});
+      if(type!=="lineup"&&type!=="group")setLayers(makeLayers(type,club?.color1||"#e63329",club?.color2||"#1a1a2e",sport));
+      if(type==="lineup")setLineupData({formation:firstFormation(sport),starters:[],subs:[],opponent:"",competition:""});
       if(type==="group")setGroupData({title:"",competition:"",gk:[],def:[],mid:[],fwd:[],coaches:[]});
     }
   }
@@ -1250,19 +1799,19 @@ export default function App({session}){
         return;
       }
     }
-    const ct=CTYPES.find(c=>c.id===selType);
-    const payload={club_id:club.id,type:selType,label:ct?.label||"",icon:ct?.icon||"",layers,lineup_data:lineupData,group_data:groupData,post_data:postData,lineup_tpl:lineupTpl,group_tpl:groupTpl,post_tpl:postTpl,bg_url:bgUrl,logo_url:logoUrl,logo2_url:logo2Url,player_url:selPhoto,updated_at:new Date().toISOString()};
+    const ct=ctypeInfo(sport,selType);
+    const payload={club_id:club.id,type:selType,label:ct?.label||"",icon:ct?.icon||"",layers,lineup_data:lineupData,group_data:groupData,post_data:postData,lineup_tpl:lineupTpl,group_tpl:groupTpl,post_tpl:postTpl,bg_url:bgUrl,logo_url:logoUrl,logo2_url:logo2Url,player_url:selPhoto,format:supportsFormat?format:DEFAULT_FORMAT,updated_at:new Date().toISOString()};
     let saved;
     if(editId){
-      const{data,error}=await supabase.from("visuals").update(payload).eq("id",editId).select().single();
+      const{data,error}=await writeVisual("update",payload,editId);
       if(error){console.error("[save] update failed:",error.message);setLimitError("Erreur lors de la sauvegarde : "+error.message);setTimeout(()=>setLimitError(""),4000);return;}
       saved=data;
-      if(saved)setHistory(h=>h.map(x=>x.id===editId?{...saved,layers:saved.layers||[],lineupData:saved.lineup_data||{},groupData:saved.group_data||{},postData:saved.post_data||{},lineupTpl:saved.lineup_tpl,groupTpl:saved.group_tpl,postTpl:saved.post_tpl,bgUrl:saved.bg_url,logoUrl:saved.logo_url,logo2Url:saved.logo2_url,playerUrl:saved.player_url,ct}:x));
+      if(saved)setHistory(h=>h.map(x=>x.id===editId?mapVisual(saved,sport):x));
     } else {
-      const{data,error}=await supabase.from("visuals").insert(payload).select().single();
+      const{data,error}=await writeVisual("insert",payload);
       if(error){console.error("[save] insert failed:",error.message);setLimitError("Erreur lors de la sauvegarde : "+error.message);setTimeout(()=>setLimitError(""),4000);return;}
       saved=data;
-      if(saved)setHistory(h=>[{...saved,layers:saved.layers||[],lineupData:saved.lineup_data||{},groupData:saved.group_data||{},postData:saved.post_data||{},lineupTpl:saved.lineup_tpl,groupTpl:saved.group_tpl,postTpl:saved.post_tpl,bgUrl:saved.bg_url,logoUrl:saved.logo_url,logo2Url:saved.logo2_url,playerUrl:saved.player_url,ct},...h]);
+      if(saved)setHistory(h=>[mapVisual(saved,sport),...h]);
     }
     if(saved&&!editId)setWeeklyCount(w=>w+1);
     if(saved)setEditId(saved.id);
@@ -1279,21 +1828,53 @@ export default function App({session}){
     if(!editId){
       try{ await save(); }catch(e){ console.warn("[downloadPng] auto-save a échoué:",e); }
     }
+    setExporting(true);
     try{
-      const memGB=navigator.deviceMemory||4;
-      const scale=memGB<4?2.5:4;
-      const canvas=await html2canvas(el,{backgroundColor:null,scale:scale,useCORS:true,allowTaint:true,logging:false});
+      // Chargé à la demande : html2canvas pèse ~200 Ko et ne sert qu'à l'export.
+      const html2canvas=(await import("html2canvas")).default;
       const filename="viziona-"+(selType||"visuel")+"-"+Date.now()+".png";
       const ua=navigator.userAgent;
       const isIOS=/iPad|iPhone|iPod/.test(ua)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
       const isSafari=/Safari/.test(ua)&&!/CriOS|FxiOS|Chrome|Edg/.test(ua);
-      // Convertit canvas → blob de manière promisifiée
-      const blob=await new Promise(res=>canvas.toBlob(res,"image/png"));
-      if(!blob){console.error("[downloadPng] toBlob a renvoyé null");setLimitError("Erreur génération du PNG.");setTimeout(()=>setLimitError(""),3000);return;}
-      // iOS Safari : afficher overlay React pour préserver le user gesture context (clic "Enregistrer")
+
+      // Échelle d'export : 4 vise 1080 px de large (le canvas fait 270).
+      // `navigator.deviceMemory` n'existe pas sur Safari, donc l'ancien
+      // `||4` retenait justement l'échelle la plus lourde sur l'appareil le
+      // plus contraint. On part plus bas sur mobile et on redescend encore si
+      // le rendu échoue, plutôt que de laisser l'onglet se faire tuer.
+      const memGB=navigator.deviceMemory;
+      const ladder = memGB&&memGB<4 ? [2.5,2,1.5]
+                   : isMobile       ? [3,2,1.5]
+                   :                  [4,3,2];
+
+      let blob=null, usedScale=null;
+      for(const scale of ladder){
+        let canvas=null;
+        try{
+          canvas=await html2canvas(el,{backgroundColor:null,scale,useCORS:true,allowTaint:true,logging:false,imageTimeout:15000});
+          blob=await new Promise(res=>canvas.toBlob(res,"image/png"));
+        }catch(err){
+          console.warn("[downloadPng] échec à l'échelle "+scale+" :",err&&err.message);
+        }finally{
+          // Libère explicitement le backing store : Safari ne le rend pas
+          // avant longtemps si on se contente de perdre la référence.
+          if(canvas){canvas.width=0;canvas.height=0;}
+        }
+        if(blob){usedScale=scale;break;}
+      }
+      if(!blob){
+        setLimitError("Export impossible sur cet appareil. Fermez les autres onglets et réessayez.");
+        setTimeout(()=>setLimitError(""),5000);
+        return;
+      }
+      if(usedScale!==ladder[0])console.info("[downloadPng] export réalisé à l'échelle réduite "+usedScale);
+
+      // iOS Safari : overlay React pour conserver le contexte de geste
+      // utilisateur (le clic sur « Enregistrer »). On passe un blob URL et non
+      // une data URL : le base64 d'un PNG 1080×1920 pèse plusieurs Mo en
+      // mémoire, et il finissait stocké dans le state React en plus du blob.
       if(isIOS&&isSafari){
-        const dataUrl=canvas.toDataURL("image/png");
-        setExportOverlay({dataUrl,filename,blob});
+        setExportOverlay({previewUrl:URL.createObjectURL(blob),filename,blob});
         return;
       }
       // Tous les autres navigateurs : <a download> standard
@@ -1306,43 +1887,60 @@ export default function App({session}){
       console.error("[downloadPng] échec:",e);
       setLimitError("Erreur lors de l'export PNG.");
       setTimeout(()=>setLimitError(""),3000);
+    }finally{
+      setExporting(false);
     }
+  }
+  // Ferme l'overlay en libérant le blob URL de l'aperçu.
+  function closeExportOverlay(){
+    setExportOverlay(cur=>{
+      if(cur&&cur.previewUrl)URL.revokeObjectURL(cur.previewUrl);
+      return null;
+    });
   }
   async function handleOverlayShare(){
     if(!exportOverlay)return;
-    const{blob,filename,dataUrl}=exportOverlay;
+    const{blob,filename}=exportOverlay;
     try{
       const file=new File([blob],filename,{type:"image/png"});
       if(navigator.canShare&&navigator.canShare({files:[file]})){
         await navigator.share({files:[file],title:"Visuel Viziona"});
-        setExportOverlay(null);
+        closeExportOverlay();
         return;
       }
     }catch(e){
       if(e&&e.name==="AbortError"){return;}
       console.warn("[overlay share] fallback:",e);
     }
-    const w=window.open();
-    if(w&&w.document){
-      w.document.write('<html><head><title>'+filename+'</title><meta name="viewport" content="width=device-width, initial-scale=1"/></head><body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:100dvh;flex-direction:column;font-family:system-ui;"><img src="'+dataUrl+'" style="max-width:100%;height:auto;display:block"/><p style="color:#fff;text-align:center;font-size:14px;padding:16px;">Appuyez longuement sur l\'image puis « Ajouter aux Photos ».</p></body></html>');
-      w.document.close();
-      setExportOverlay(null);return;
+    // Repli : on ouvre l'image seule dans un onglet (appui long → Ajouter aux
+    // Photos). Un blob URL plutôt que document.write, déprécié et bloqué par
+    // certaines CSP.
+    const viewUrl=URL.createObjectURL(blob);
+    const w=window.open(viewUrl,"_blank","noopener");
+    if(w){
+      setTimeout(()=>URL.revokeObjectURL(viewUrl),60000);
+      closeExportOverlay();return;
     }
+    URL.revokeObjectURL(viewUrl);
     const url=URL.createObjectURL(blob);
     const a=document.createElement("a");
     a.href=url;a.download=filename;a.target="_blank";a.rel="noopener";
     document.body.appendChild(a);a.click();document.body.removeChild(a);
     setTimeout(()=>URL.revokeObjectURL(url),2000);
-    setExportOverlay(null);
+    closeExportOverlay();
   }
+  // Sport pas encore choisi → on le demande avant tout le reste.
+  if(!loading&&club&&!club.sport)return <SportPicker onPick={chooseSport} busy={savingSport} t={t} clubName={club.name}/>;
   if(loading)return(<div className="viz-fullvh" style={{display:"flex",alignItems:"center",justifyContent:"center",background:"#080810",color:"rgba(240,240,248,.4)",fontFamily:"system-ui",flexDirection:"column",gap:12}}><div style={{fontSize:28}}>⚡</div><div>Chargement de vos données...</div></div>);
   const card={background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:20};
-  function SaveBtn(){return(<>
+  // Fragments rendus par appel, pas des composants : les redéfinir à chaque
+  // rendu créerait un nouveau type de composant et remonterait le sous-arbre.
+  function saveBtn(){return(<>
     {limitError&&<div style={{background:"#450a0a",border:"1px solid #7f1d1d",borderRadius:8,padding:"10px 14px",color:"#fca5a5",fontSize:12,marginBottom:10}}>{limitError}</div>}
     <button onClick={save} style={{background:saveFlash?"#22c55e":"#0a0a0a",color:"#fff",border:"none",borderRadius:2,padding:"13px 16px",fontSize:11,fontWeight:700,cursor:"pointer",width:"100%",letterSpacing:".12em",textTransform:"uppercase",transition:"background .3s,transform .15s",fontFamily:"inherit"}}>{saveFlash?"Sauvegardé ✓":"Sauvegarder"}</button>
-    <button onClick={downloadPng} style={{marginTop:8,background:"transparent",color:t.text,border:"1px solid "+t.text,borderRadius:2,padding:"12px 16px",fontSize:11,fontWeight:600,cursor:"pointer",width:"100%",letterSpacing:".12em",textTransform:"uppercase",fontFamily:"inherit"}}>Télécharger PNG</button>
+    <button onClick={downloadPng} disabled={exporting} style={{marginTop:8,background:"transparent",color:t.text,border:"1px solid "+t.text,borderRadius:2,padding:"12px 16px",fontSize:11,fontWeight:600,cursor:exporting?"wait":"pointer",width:"100%",letterSpacing:".12em",textTransform:"uppercase",fontFamily:"inherit",opacity:exporting?.6:1}}>{exporting?"Génération…":"Télécharger PNG"}</button>
   </>);}
-  function BackBtn(){return<button onClick={()=>setSelType(null)} style={{display:"inline-flex",alignItems:"center",gap:7,background:t.bg3,border:"1px solid "+t.border2,borderRadius:8,padding:"7px 13px",color:t.text2,cursor:"pointer",fontSize:12,marginBottom:14,fontWeight:500}}>↩ Retour</button>;}
+  function backBtn(){return<button onClick={()=>setSelType(null)} style={{display:"inline-flex",alignItems:"center",gap:7,background:t.bg3,border:"1px solid "+t.border2,borderRadius:8,padding:"7px 13px",color:t.text2,cursor:"pointer",fontSize:12,marginBottom:14,fontWeight:500}}>↩ Retour</button>;}
   function renderSpecial(){
     const isL=selType==="lineup",isP=selType==="post",isG=selType==="group";
     const tpls=isL?LINEUP_TPLS:isP?POST_TPLS:GROUP_TPLS;
@@ -1353,12 +1951,12 @@ export default function App({session}){
       {isMobile&&mobileSheet==="options"&&<div onClick={()=>setMobileSheet(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:150}}/>}
       <div data-bottom-sheet="options" style={panelStyle}>
         {isMobile&&<div {...makeSwipeClose(()=>setMobileSheet(null))} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingBottom:8,borderBottom:"1px solid "+t.border,touchAction:"none",cursor:"grab",userSelect:"none"}}><div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:34,height:4,background:"rgba(255,255,255,.2)",borderRadius:3}}/><div style={{fontSize:13,fontWeight:700,color:t.text}}>Options</div></div><button onClick={()=>setMobileSheet(null)} style={{background:"none",border:"none",color:t.text3,fontSize:18,cursor:"pointer",padding:4}}>✕</button></div>}
-        {!isMobile&&<BackBtn/>}
+        {!isMobile&&backBtn()}
         <PBox t={t}><SHdr label="Template" t={t}/><TplGrid tpls={tpls} sel={tpl} onSel={setTpl} t={t} maxTemplates={club?.max_templates}/></PBox>
         <PBox t={t}>
           <SHdr label="Image de fond" t={t}/>
-          {media.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4,marginBottom:8}}>{media.slice(0,6).map((m,i)=>(<div key={i} onClick={()=>setBgUrl(m.url)} style={{aspectRatio:"16/9",borderRadius:5,overflow:"hidden",border:"2px solid "+(bgUrl===m.url?t.accent:t.border),cursor:"pointer"}}><img src={m.url} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div>))}</div>}
-          <div style={{display:"flex",gap:8,alignItems:"center"}}><UpBtn val={null} on={v=>setBgUrl(v)} w={48} h={34} r={6} label="Uploader" t={t}/>{bgUrl&&<button onClick={()=>setBgUrl(null)} style={{fontSize:11,color:t.text3,background:"none",border:"none",cursor:"pointer"}}>✕ Retirer</button>}</div>
+          {media.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4,marginBottom:8}}>{media.slice(0,6).map((m,i)=>(<div key={i} onClick={()=>setBgUrl(m.url)} style={{aspectRatio:"16/9",borderRadius:5,overflow:"hidden",border:"2px solid "+(bgUrl===m.url?t.accent:t.border),cursor:"pointer"}}><img src={thumbOf(m)} loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div>))}</div>}
+          <div style={{display:"flex",gap:8,alignItems:"center"}}><UpBtn val={null} on={v=>setBgUrl(v)} w={48} h={34} r={6} label="Uploader" t={t} preset="media"/>{bgUrl&&<button onClick={()=>setBgUrl(null)} style={{fontSize:11,color:t.text3,background:"none",border:"none",cursor:"pointer"}}>✕ Retirer</button>}</div>
         </PBox>
         <PBox t={t}>
           <SHdr label="Logo club" t={t}/>
@@ -1374,18 +1972,18 @@ export default function App({session}){
           </PBox>
         )}
         <PBox t={t} mb={12}>
-          <SHdr label={isL?"Composition XI":isP?"Contenu":"Joueurs & groupe"} t={t}/>
-          {isL&&<LineupEditor ld={lineupData} setLd={setLineupData} players={players} t={t}/>}
-          {isG&&<GroupEditor gd={groupData} setGd={setGroupData} players={players} t={t}/>}
+          <SHdr label={isL?T.lineupTitle:isP?"Contenu":T.squadSection} t={t}/>
+          {isL&&<LineupEditor ld={lineupData} setLd={setLineupData} players={players} t={t} sport={sport}/>}
+          {isG&&<GroupEditor gd={groupData} setGd={setGroupData} players={players} t={t} sport={sport}/>}
           {isP&&<PostEditor pd={postData} setPd={setPostData} t={t}/>}
         </PBox>
-        <SaveBtn/>
+        {saveBtn()}
       </div>
       <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",background:"#030306",flexDirection:"column",gap:14,padding:isMobile?"12px 8px 70px":0,overflow:"auto"}}>
         <div style={isMobile?{width:270*canvasScale,height:480*canvasScale,position:"relative",overflow:"visible",flexShrink:0}:{display:"inline-block"}}>
           <div style={isMobile?{position:"absolute",top:0,left:0,width:270,height:480,transform:"scale("+canvasScale+")",transformOrigin:"top left"}:{display:"contents"}}>
             <div className="visium-canvas" style={{display:"inline-block"}}>
-              {isL&&<LineupCanvas ld={lineupData} tpl={lineupTpl} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl} slotScale={slotScale}/>}
+              {isL&&<LineupCanvas ld={lineupData} tpl={lineupTpl} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl} slotScale={slotScale} sport={sport}/>}
               {isG&&<GroupCanvas gd={groupData} tpl={groupTpl} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl}/>}
               {isP&&<PostCanvas pd={postData} tpl={postTpl} logoUrl={logoUrl||club?.logo_url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl}/>}
             </div>
@@ -1408,13 +2006,30 @@ export default function App({session}){
       {isMobile&&mobileSheet==="options"&&<div onClick={()=>setMobileSheet(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:150}}/>}
       <div data-bottom-sheet="options" style={stdPanelStyle}>
         {isMobile&&<div {...makeSwipeClose(()=>setMobileSheet(null))} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingBottom:8,borderBottom:"1px solid "+t.border,touchAction:"none",cursor:"grab",userSelect:"none"}}><div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:34,height:4,background:"rgba(255,255,255,.2)",borderRadius:3}}/><div style={{fontSize:13,fontWeight:700,color:t.text}}>Options</div></div><button onClick={()=>setMobileSheet(null)} style={{background:"none",border:"none",color:t.text3,fontSize:18,cursor:"pointer",padding:4}}>✕</button></div>}
-        {!isMobile&&<BackBtn/>}
-        <PBox t={t}><SHdr label="Joueur & photo" t={t}/><PhotoPanel players={players} selId={selPid} onSel={selPlayer} selUrl={selPhoto} onSelUrl={setSelPhoto} onAdd={addPhoto} onAddUrl={addPhotoUrl} onFav={toggleFav} t={t}/></PBox>
+        {!isMobile&&backBtn()}
+        <PBox t={t}>
+          <SHdr label="Format de publication" t={t}/>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:5}}>
+            {Object.values(FORMATS).map(f=>{
+              const on=format===f.id;
+              return(
+                <button key={f.id} onClick={()=>changeFormat(f.id)} title={f.desc}
+                  style={{background:on?rgba(t.accent,.18):t.bg3,border:"2px solid "+(on?t.accent:t.border),borderRadius:8,padding:"9px 4px",cursor:"pointer",color:t.text,fontFamily:"inherit",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+                  <span style={{display:"block",width:f.id==="story"?13:f.id==="post"?17:20,height:f.id==="story"?23:f.id==="post"?21:20,border:"1.5px solid "+(on?t.accent:t.text3),borderRadius:2}}/>
+                  <span style={{fontSize:11,fontWeight:on?700:500,color:on?t.accent:t.text}}>{f.label}</span>
+                  <span style={{fontSize:9,color:t.text3}}>{f.sub}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div style={{fontSize:9,color:t.text3,marginTop:6,lineHeight:1.4}}>{fmt(format).desc}</div>
+        </PBox>
+        <PBox t={t}><SHdr label={T.player+" & photo"} t={t}/><PhotoPanel players={players} selId={selPid} onSel={selPlayer} selUrl={selPhoto} onSelUrl={setSelPhoto} onAdd={addPhoto} onAddUrl={addPhotoUrl} onFav={toggleFav} onDelete={deletePhoto} t={t} terms={T}/></PBox>
         <PBox t={t}>
           <SHdr label="Image de fond" t={t}/>
-          {media.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4,marginBottom:8}}>{media.map((m,i)=>(<div key={i} onClick={()=>setBgUrl(m.url)} style={{aspectRatio:"16/9",borderRadius:5,overflow:"hidden",border:"2px solid "+(bgUrl===m.url?t.accent:t.border),cursor:"pointer"}}><img src={m.url} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div>))}</div>}
+          {media.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4,marginBottom:8}}>{media.map((m,i)=>(<div key={i} onClick={()=>setBgUrl(m.url)} style={{aspectRatio:"16/9",borderRadius:5,overflow:"hidden",border:"2px solid "+(bgUrl===m.url?t.accent:t.border),cursor:"pointer"}}><img src={thumbOf(m)} loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div>))}</div>}
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-            <UpBtn val={null} on={v=>setBgUrl(v)} w={52} h={36} r={6} label="Uploader" t={t}/>
+            <UpBtn val={null} on={v=>setBgUrl(v)} w={52} h={36} r={6} label="Uploader" t={t} preset="media"/>
             {bgUrl&&<button onClick={()=>setBgUrl(null)} style={{fontSize:11,color:t.text3,background:"none",border:"none",cursor:"pointer"}}>✕ Retirer</button>}
           </div>
         </PBox>
@@ -1438,9 +2053,9 @@ export default function App({session}){
             {(selType==="result"||selType==="match")&&<div><div style={{fontSize:10,color:t.text3,marginBottom:5}}>Adversaire</div><UpBtn val={logo2Url} on={setLogo2Url} w={52} h={52} r={8} label="Upload" t={t}/>{logo2Url&&<button onClick={()=>setLogo2Url(null)} style={{fontSize:10,color:t.text3,background:"none",border:"none",cursor:"pointer",marginTop:4,display:"block"}}>✕</button>}</div>}
           </div>
         </PBox>
-        <SaveBtn/>
+        {saveBtn()}
       </div>
-      <DragCanvas key={editId||("new_"+selType)} layers={layers} setLayers={setLayers} bgUrl={bgUrl} playerUrl={selPhoto} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={t.accent} accent2={t.accent2} t={t} isMobile={isMobile} mobileSheet={mobileSheet} setMobileSheet={setMobileSheet} canvasScale={canvasScale} clubName={club?.name}/>
+      <DragCanvas key={editId||("new_"+selType)} layers={layers} setLayers={setLayers} bgUrl={bgUrl} playerUrl={selPhoto} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={t.accent} accent2={t.accent2} t={t} isMobile={isMobile} mobileSheet={mobileSheet} setMobileSheet={setMobileSheet} canvasScale={canvasScale} clubName={club?.name} cw={canvasW} ch={canvasH} onLogoChange={(kind,url)=>{if(kind==="logo2")setLogo2Url(url);else setLogoUrl(url);}}/>
       {isMobile&&(
         <div style={{position:"fixed",bottom:0,left:0,right:0,height:60,background:t.bg2,borderTop:"1px solid "+t.border,display:"flex",gap:6,alignItems:"center",padding:"0 10px",zIndex:90}}>
           <button onClick={()=>setSelType(null)} className="viz-touch-btn" style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:8,padding:"10px 12px",color:t.text2,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>↩</button>
@@ -1459,7 +2074,7 @@ export default function App({session}){
           <div style={{overflow:"hidden",flex:1}}><div style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:18,fontWeight:400,letterSpacing:".06em",color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{club?.name||"Viziona"}</div><div style={{fontFamily:"'DM Mono',ui-monospace,monospace",fontSize:9,color:t.text3,marginTop:2,letterSpacing:".1em",textTransform:"uppercase"}}>Studio visuel</div></div>
         </div>
         <nav style={{padding:"10px 8px",flex:1}}>
-          {NAV.map(n=>(<button key={n.id} onClick={()=>{setNav(n.id);if(n.id!=="create")setSelType(null);}} style={{display:"flex",alignItems:"center",gap:10,width:"100%",background:nav===n.id?rgba(t.accent,.15):"transparent",border:"none",borderRadius:9,padding:"9px 11px",color:nav===n.id?t.accent:t.text2,cursor:"pointer",fontSize:13,marginBottom:1,textAlign:"left",fontWeight:nav===n.id?600:400}}><span style={{fontSize:15,lineHeight:1}}>{n.icon}</span><span>{n.label}</span>{n.id==="history"&&history.length>0&&<span style={{marginLeft:"auto",background:rgba(t.accent,.2),color:t.accent,fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{history.length}</span>}</button>))}
+          {NAVL.map(n=>(<button key={n.id} onClick={()=>{setNav(n.id);if(n.id!=="create")setSelType(null);}} style={{display:"flex",alignItems:"center",gap:10,width:"100%",background:nav===n.id?rgba(t.accent,.15):"transparent",border:"none",borderRadius:9,padding:"9px 11px",color:nav===n.id?t.accent:t.text2,cursor:"pointer",fontSize:13,marginBottom:1,textAlign:"left",fontWeight:nav===n.id?600:400}}><span style={{fontSize:15,lineHeight:1}}>{n.icon}</span><span>{n.label}</span>{n.id==="history"&&history.length>0&&<span style={{marginLeft:"auto",background:rgba(t.accent,.2),color:t.accent,fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{history.length}</span>}</button>))}
         </nav>
         <div style={{padding:12,borderTop:"1px solid "+t.border,display:"flex",flexDirection:"column",gap:8}}>
           <button onClick={()=>openCreate("goal")} style={{background:"#0a0a0a",color:"#fff",border:"2px solid "+(club?.color1||"#e63329"),borderRadius:2,padding:"10px 10px",fontSize:11,fontWeight:700,cursor:"pointer",width:"100%",letterSpacing:".12em",textTransform:"uppercase",fontFamily:"inherit"}}>Créer un visuel</button>
@@ -1477,7 +2092,7 @@ export default function App({session}){
             if(clubDone&&playersDone&&visualsDone)return null;
             const steps=[
               {done:clubDone,label:"Configurer mon club",icon:"🎨",onClick:()=>setNav("club")},
-              {done:playersDone,label:"Ajouter mes joueurs",icon:"👥",onClick:()=>setNav("players")},
+              {done:playersDone,label:"Ajouter mes "+T.playersLower,icon:"👥",onClick:()=>setNav("players")},
               {done:visualsDone,label:"Créer mon premier visuel",icon:"✨",onClick:()=>setNav("create")},
             ];
             return(
@@ -1502,7 +2117,7 @@ export default function App({session}){
                     ))}
                   </div>
                   <div style={{textAlign:"center",marginTop:12}}>
-                    <button onClick={()=>{localStorage.setItem("onboarding_skipped","1");setOnboardingSkipped(true);}}
+                    <button onClick={()=>{lsSet("onboarding_skipped","1");setOnboardingSkipped(true);}}
                       style={{background:"none",border:"none",color:t.text3,fontSize:11,cursor:"pointer",textDecoration:"underline",padding:0}}>
                       Passer
                     </button>
@@ -1511,27 +2126,45 @@ export default function App({session}){
               </div>
             );
           })()}
-          <div style={{padding:"0 28px",display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:12,marginBottom:28}}>{CTYPES.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,padding:"20px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(club?.color1||"#e63329",.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}><div style={{fontSize:26,marginBottom:8}}>{c.icon}</div><div style={{fontWeight:700,color:t.text,fontSize:13,marginBottom:3}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.4}}>{c.desc}</div></div>))}</div>
-          <div style={{padding:"0 28px 28px",display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10}}>{[[history.length,"Visuels"],[players.length,"Joueurs"],[media.length,"Médias"],[LINEUP_TPLS.length+GROUP_TPLS.length+POST_TPLS.length,"Templates"]].map(([v,l])=>(<div key={l} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:22,fontWeight:700,color:t.accent,lineHeight:1}}>{v}</div><div style={{fontSize:11,color:t.text3,marginTop:4}}>{l}</div></div>))}</div>
+          <div style={{padding:"0 28px",display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:12,marginBottom:28}}>{CT.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,padding:"20px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(club?.color1||"#e63329",.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}><div style={{fontSize:26,marginBottom:8}}>{c.icon}</div><div style={{fontWeight:700,color:t.text,fontSize:13,marginBottom:3}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.4}}>{c.desc}</div></div>))}</div>
+          <div style={{padding:"0 28px 28px",display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10}}>{[[history.length,"Visuels"],[players.length,T.players],[media.length,"Médias"],[LINEUP_TPLS.length+GROUP_TPLS.length+POST_TPLS.length,"Templates"]].map(([v,l])=>(<div key={l} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:22,fontWeight:700,color:t.accent,lineHeight:1}}>{v}</div><div style={{fontSize:11,color:t.text3,marginTop:4}}>{l}</div></div>))}</div>
         </div>)}
         {nav==="club"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Mon Club</h2>
           <p style={{color:t.text3,marginBottom:24,fontSize:13}}>Appliqué automatiquement à tous vos visuels.</p>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,maxWidth:650}}>
+          <div style={Object.assign({},card,{maxWidth:650,marginBottom:16})}>
+            <div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:6}}>Sport du club</div>
+            <div style={{fontSize:12,color:t.text3,marginBottom:12,lineHeight:1.5}}>
+              Détermine le vocabulaire, les postes, les formations et les types de visuels proposés. Changer de sport ne supprime rien : vos {T.playersLower} et vos visuels sont conservés.
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8}}>
+              {SPORT_LIST.map(sp=>{
+                const on=sport===sp.id;
+                return(
+                  <button key={sp.id} onClick={()=>{if(on)return;if(window.confirm("Passer le club en « "+sp.label+" » ? Les postes et types de visuels changeront."))chooseSport(sp.id);}}
+                    style={{background:on?rgba(t.accent,.14):t.bg3,border:"2px solid "+(on?t.accent:t.border),borderRadius:9,padding:"11px 8px",cursor:on?"default":"pointer",color:t.text,fontFamily:"inherit",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                    <span style={{fontSize:20,lineHeight:1}}>{sp.icon}</span>
+                    <span style={{fontSize:11,fontWeight:on?700:500,color:on?t.accent:t.text2,textAlign:"center",lineHeight:1.25}}>{sp.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16,maxWidth:650}}>
             <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Identité</div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Nom du club</label><TIn v={club?.name||""} on={v=>updateClub({name:v,is_configured:true})} ph="FC Mon Club" t={t}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,margin:"14px 0 10px"}}><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Couleur principale</label><input type="color" value={club?.color1||"#e63329"} onChange={e=>updateClub({color1:e.target.value,is_configured:true})} style={{width:"100%",height:40,borderRadius:8,border:"1px solid "+t.border2,background:t.bg3,cursor:"pointer",padding:3}}/></div><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Couleur secondaire</label><input type="color" value={club?.color2||"#1a1a2e"} onChange={e=>updateClub({color2:e.target.value,is_configured:true})} style={{width:"100%",height:40,borderRadius:8,border:"1px solid "+t.border2,background:t.bg3,cursor:"pointer",padding:3}}/></div></div><div style={{height:24,borderRadius:8,background:"linear-gradient(90deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",marginBottom:4}}/><div style={{fontSize:10,color:t.text3,textAlign:"center"}}>Sauvegardé en temps réel ✓</div></div>
             <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Logo du club</div><UpBtn val={club?.logo_url} on={v=>updateClub({logo_url:v,is_configured:true})} w={110} h={110} r={14} label="Cliquer pour uploader" t={t}/>{club?.logo_url&&<><div style={{marginTop:12,display:"flex",alignItems:"center",gap:8}}><div style={{width:36,height:36,borderRadius:7,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center"}}><img src={club.logo_url} style={{width:28,height:28,objectFit:"contain"}} alt=""/></div><div style={{fontSize:11,color:t.text2}}>Logo configuré ✓</div></div><button onClick={()=>updateClub({logo_url:null,is_configured:true})} style={{marginTop:8,fontSize:10,color:t.text3,background:"none",border:"none",cursor:"pointer"}}>✕ Supprimer</button></>}</div>
           </div>
         </div>)}
         {nav==="players"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
-          <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Effectif & Photos</h2>
-          <p style={{color:t.text3,marginBottom:22,fontSize:13}}>Vos joueurs avec leurs photos.</p>
-          <div style={{display:"grid",gridTemplateColumns:"275px 1fr",gap:18}}>
+          <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>{T.squadTitle}</h2>
+          <p style={{color:t.text3,marginBottom:22,fontSize:13}}>{T.squadDesc}</p>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"275px 1fr",gap:18}}>
             <div>
-              <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Nouveau joueur</div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Nom complet</label><TIn v={pName} on={setPName} ph="Prénom Nom" t={t}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,margin:"10px 0"}}><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Numéro</label><TIn v={pNum} on={v=>setPNum(v===""?"":String(Math.max(0,parseInt(v)||0)))} ph="9" type="number" min={0} t={t}/></div><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Poste</label><TSel v={pPos} on={setPPos} t={t} opts={POSITIONS}/></div></div><button onClick={addPlayer} style={{background:t.accent,color:contrastText(t.accent),border:"none",borderRadius:8,padding:9,fontSize:13,fontWeight:600,cursor:"pointer",width:"100%"}}>+ Ajouter à l'effectif</button></div>
-              {players.length>0&&<div style={Object.assign({},card,{marginTop:14})}><PhotoPanel players={players} selId={selPid} onSel={id=>{setSelPid(id||null);setSelPhoto(null);}} selUrl={selPhoto} onSelUrl={setSelPhoto} onAdd={addPhoto} onAddUrl={addPhotoUrl} onFav={toggleFav} t={t}/></div>}
+              <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>{T.newPlayer}</div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Nom complet</label><TIn v={pName} on={setPName} ph="Prénom Nom" t={t}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,margin:"10px 0"}}><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>{T.numberLabel}</label><TIn v={pNum} on={v=>setPNum(v===""?"":String(Math.max(0,parseInt(v)||0)))} ph={T.numberPlaceholder} type="number" min={0} t={t}/></div><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>{T.positionLabel}</label><TSel v={pPos||getSport(sport).defaultPosition} on={setPPos} t={t} opts={positionsFor(sport)}/></div></div><button onClick={addPlayer} style={{background:t.accent,color:contrastText(t.accent),border:"none",borderRadius:8,padding:9,fontSize:13,fontWeight:600,cursor:"pointer",width:"100%"}}>{T.addToSquad}</button></div>
+              {players.length>0&&<div style={Object.assign({},card,{marginTop:14})}><PhotoPanel players={players} selId={selPid} onSel={id=>{setSelPid(id||null);setSelPhoto(null);}} selUrl={selPhoto} onSelUrl={setSelPhoto} onAdd={addPhoto} onAddUrl={addPhotoUrl} onFav={toggleFav} onDelete={deletePhoto} t={t} terms={T}/></div>}
             </div>
-            <div><div style={{fontSize:13,fontWeight:600,color:t.text2,marginBottom:12}}>{players.length+" joueur"+(players.length!==1?"s":"")+" dans l'effectif"}</div>
-              {players.length===0?<div style={Object.assign({},card,{padding:"40px 20px",textAlign:"center",color:t.text3})}><div style={{fontSize:32,marginBottom:10}}>👥</div><div>Aucun joueur</div></div>:(
+            <div><div style={{fontSize:13,fontWeight:600,color:t.text2,marginBottom:12}}>{players.length+" "+T.playerLower+(players.length!==1?"s":"")+" · "+T.squad}</div>
+              {players.length===0?<div style={Object.assign({},card,{padding:"40px 20px",textAlign:"center",color:t.text3})}><div style={{fontSize:32,marginBottom:10}}>👥</div><div>{T.emptySquad}</div></div>:(
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>{players.map(p=>{const fv=getPhoto(p);return(<div key={p.id} onClick={()=>{setSelPid(p.id);setSelPhoto(null);}} style={Object.assign({},card,{padding:"12px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12})}><Av photo={fv} name={p.name} size={44}/><div style={{flex:1}}><div style={{fontWeight:600,color:t.text,fontSize:14}}>{p.name}</div><div style={{fontSize:11,color:t.text3,marginTop:2}}>{p.position+" · #"+p.number+" · "+(p.photos||[]).length+" photo"+(p.photos&&p.photos.length!==1?"s":"")}</div></div><button onClick={e=>{e.stopPropagation();deletePlayer(p.id);}} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:16,padding:4}}>✕</button></div>);})}</div>)}
             </div>
           </div>
@@ -1539,23 +2172,23 @@ export default function App({session}){
         {nav==="media"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Médiathèque</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>Fonds, stades et ambiances.</p>
-          <div style={{display:"grid",gridTemplateColumns:"220px 1fr",gap:18}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"220px 1fr",gap:18}}>
             <div style={card}><div onClick={()=>mRef.current.click()} style={{border:"2px dashed "+t.border2,borderRadius:10,padding:"28px 16px",textAlign:"center",cursor:"pointer",background:t.bg3}} onMouseEnter={e=>e.currentTarget.style.borderColor=t.accent} onMouseLeave={e=>e.currentTarget.style.borderColor=t.border2}><div style={{fontSize:28,marginBottom:8}}>🖼️</div><div style={{fontSize:13,color:t.text2,fontWeight:600}}>Uploader des images</div><div style={{fontSize:11,color:t.text3,marginTop:4}}>JPG, PNG · Multiple</div></div><input ref={mRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={pickMedia}/></div>
-            <div>{media.length===0?<div style={Object.assign({},card,{padding:"40px 20px",textAlign:"center",color:t.text3})}><div style={{fontSize:32,marginBottom:10}}>🖼️</div><div>Médiathèque vide</div></div>:(<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>{media.map(m=>(<div key={m.id} style={{borderRadius:11,overflow:"hidden",border:"1px solid "+t.border}}><div style={{aspectRatio:"16/9",overflow:"hidden"}}><img src={m.url} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div><div style={{padding:"6px 10px",fontSize:11,color:t.text2,background:t.bg2,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"80%"}}>{m.name||"Image"}</span><button onClick={()=>deleteMedia(m.id)} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:14}}>✕</button></div></div>))}</div>)}</div>
+            <div>{media.length===0?<div style={Object.assign({},card,{padding:"40px 20px",textAlign:"center",color:t.text3})}><div style={{fontSize:32,marginBottom:10}}>🖼️</div><div>Médiathèque vide</div></div>:(<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>{media.map(m=>(<div key={m.id} style={{borderRadius:11,overflow:"hidden",border:"1px solid "+t.border}}><div style={{aspectRatio:"16/9",overflow:"hidden"}}><img src={thumbOf(m)} loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div><div style={{padding:"6px 10px",fontSize:11,color:t.text2,background:t.bg2,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"80%"}}>{m.name||"Image"}</span><button onClick={()=>deleteMedia(m.id)} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:14}}>✕</button></div></div>))}</div>)}</div>
           </div>
         </div>)}
-        {nav==="create"&&(!selType?(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}><h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Choisir un type</h2><p style={{color:t.text3,marginBottom:22,fontSize:13}}>Sélectionnez ce que vous souhaitez créer.</p><div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:14,maxWidth:680}}>{CTYPES.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:"22px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(t.accent,.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}>  <div style={{fontSize:28,marginBottom:10}}>{c.icon}</div><div style={{fontWeight:700,color:t.text,fontSize:14,marginBottom:4}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.5}}>{c.desc}</div></div>))}</div></div>):(selType==="lineup"||selType==="group")?renderSpecial():renderStandard())}
+        {nav==="create"&&(!selType?(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}><h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Choisir un type</h2><p style={{color:t.text3,marginBottom:22,fontSize:13}}>Sélectionnez ce que vous souhaitez créer.</p><div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:14,maxWidth:680}}>{CT.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:"22px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(t.accent,.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}>  <div style={{fontSize:28,marginBottom:10}}>{c.icon}</div><div style={{fontWeight:700,color:t.text,fontSize:14,marginBottom:4}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.5}}>{c.desc}</div></div>))}</div></div>):(selType==="lineup"||selType==="group")?renderSpecial():renderStandard())}
         {nav==="history"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Historique</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>{history.length+" visuel"+(history.length!==1?"s":"")+" · Cloud ☁️"}</p>
-          {history.length===0?<div style={Object.assign({},card,{padding:"60px 20px",textAlign:"center",color:t.text3})}><div style={{fontSize:36,marginBottom:12}}>📁</div><div style={{fontSize:14}}>Aucun visuel sauvegardé</div></div>:(<div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14}}>{history.map(h=>(<div key={h.id} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,overflow:"hidden"}}><div style={{background:"#030306",display:"flex",alignItems:"center",justifyContent:"center",padding:10}}><HistoryThumb h={h} c1={club?.color1||"#e63329"} c2={club?.color2||"#1a1a2e"}/></div><div style={{padding:"10px 12px",borderTop:"1px solid "+t.border}}><div style={{fontSize:12,fontWeight:600,color:t.text,marginBottom:6}}>{(h.ct&&h.ct.icon?h.ct.icon:"📄")+" "+(h.ct&&h.ct.label?h.ct.label:"Visuel")}</div><div style={{display:"flex",gap:6}}><button onClick={()=>{openCreate(h.type,h);setNav("create");}} style={{flex:1,background:rgba(t.accent,.15),color:t.accent,border:"1px solid "+rgba(t.accent,.3),borderRadius:7,padding:"6px 8px",fontSize:11,cursor:"pointer",fontWeight:600}}>↩ Modifier</button><button onClick={()=>deleteVisual(h.id)} style={{background:"rgba(239,68,68,.1)",color:"#fca5a5",border:"1px solid rgba(239,68,68,.25)",borderRadius:7,padding:"6px 8px",fontSize:11,cursor:"pointer"}}>✕</button></div></div></div>))}</div>)}
+          {history.length===0?<div style={Object.assign({},card,{padding:"60px 20px",textAlign:"center",color:t.text3})}><div style={{fontSize:36,marginBottom:12}}>📁</div><div style={{fontSize:14}}>Aucun visuel sauvegardé</div></div>:(<div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:14}}>{history.map(h=>(<div key={h.id} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,overflow:"hidden"}}><div style={{background:"#030306",display:"flex",alignItems:"center",justifyContent:"center",padding:10}}><WhenVisible minHeight={140}><HistoryThumb h={h} c1={club?.color1||"#e63329"} c2={club?.color2||"#1a1a2e"}/></WhenVisible></div><div style={{padding:"10px 12px",borderTop:"1px solid "+t.border}}><div style={{fontSize:12,fontWeight:600,color:t.text,marginBottom:6}}>{(h.ct&&h.ct.icon?h.ct.icon:"📄")+" "+(h.ct&&h.ct.label?h.ct.label:"Visuel")}</div><div style={{display:"flex",gap:6}}><button onClick={()=>{openCreate(h.type,h);setNav("create");}} style={{flex:1,background:rgba(t.accent,.15),color:t.accent,border:"1px solid "+rgba(t.accent,.3),borderRadius:7,padding:"6px 8px",fontSize:11,cursor:"pointer",fontWeight:600}}>↩ Modifier</button><button onClick={()=>deleteVisual(h.id)} style={{background:"rgba(239,68,68,.1)",color:"#fca5a5",border:"1px solid rgba(239,68,68,.25)",borderRadius:7,padding:"6px 8px",fontSize:11,cursor:"pointer"}}>✕</button></div></div></div>))}</div>)}
         </div>)}
         {nav==="settings"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Paramètres</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>Interface et données.</p>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,maxWidth:650}}>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16,maxWidth:650}}>
             <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Thème</div>{[["dark","🌑 Sombre","Interface noire premium"],["light","☀️ Clair","Interface blanche minimaliste"],["club","🎨 Couleurs du club","Adapté à vos couleurs"]].map(([mode,label,desc])=>(<div key={mode} onClick={()=>updateClub({theme_mode:mode})} style={{display:"flex",alignItems:"center",gap:12,padding:"13px 14px",borderRadius:10,border:"2px solid "+((club?.theme_mode||"dark")===mode?t.accent:t.border),background:(club?.theme_mode||"dark")===mode?rgba(t.accent,.12):t.bg3,cursor:"pointer",marginBottom:8}}><div style={{width:20,height:20,borderRadius:"50%",border:"2px solid "+t.accent,background:(club?.theme_mode||"dark")===mode?t.accent:"transparent",flexShrink:0}}/><div><div style={{fontSize:13,fontWeight:600,color:t.text}}>{label}</div><div style={{fontSize:11,color:t.text3,marginTop:2}}>{desc}</div></div></div>))}</div>
-            <div style={Object.assign({},card,{display:"flex",flexDirection:"column",gap:14})}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase"}}>Votre club</div><div style={{display:"flex",alignItems:"center",gap:12}}>{club?.logo_url?<img src={club.logo_url} style={{width:52,height:52,objectFit:"contain",borderRadius:8}} alt=""/>:<div style={{width:52,height:52,borderRadius:8,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:700,color:contrastText(mixC(club?.color1||"#e63329",club?.color2||"#1a1a2e",.5))}}>{(club?.name||"?")[0].toUpperCase()}</div>}<div><div style={{fontSize:16,fontWeight:700,color:t.text}}>{club?.name||"Club non configuré"}</div><div style={{fontSize:12,color:t.text3,marginTop:3}}>{session.user.email}</div><div style={{fontSize:12,color:t.text3}}>{players.length+" joueurs · "+media.length+" médias · "+history.length+" visuels"}</div></div></div><button onClick={()=>setNav("club")} style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:9,padding:"9px 16px",color:t.text2,cursor:"pointer",fontSize:12,fontWeight:500,textAlign:"left"}}>Modifier les infos du club →</button><button onClick={signOut} style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.2)",borderRadius:9,padding:"9px 16px",color:"#fca5a5",cursor:"pointer",fontSize:12,textAlign:"left"}}>Se déconnecter</button></div>
+            <div style={Object.assign({},card,{display:"flex",flexDirection:"column",gap:14})}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase"}}>Votre club</div><div style={{display:"flex",alignItems:"center",gap:12}}>{club?.logo_url?<img src={club.logo_url} style={{width:52,height:52,objectFit:"contain",borderRadius:8}} alt=""/>:<div style={{width:52,height:52,borderRadius:8,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:700,color:contrastText(mixC(club?.color1||"#e63329",club?.color2||"#1a1a2e",.5))}}>{(club?.name||"?")[0].toUpperCase()}</div>}<div><div style={{fontSize:16,fontWeight:700,color:t.text}}>{club?.name||"Club non configuré"}</div><div style={{fontSize:12,color:t.text3,marginTop:3}}>{session.user.email}</div><div style={{fontSize:12,color:t.text3}}>{players.length+" "+T.playersLower+" · "+media.length+" médias · "+history.length+" visuels"}</div></div></div><button onClick={()=>setNav("club")} style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:9,padding:"9px 16px",color:t.text2,cursor:"pointer",fontSize:12,fontWeight:500,textAlign:"left"}}>Modifier les infos du club →</button><button onClick={signOut} style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.2)",borderRadius:9,padding:"9px 16px",color:"#fca5a5",cursor:"pointer",fontSize:12,textAlign:"left"}}>Se déconnecter</button></div>
           </div>
           <div style={{marginTop:28,paddingTop:18,borderTop:"1px solid "+t.border,maxWidth:650}}>
             <a href="/#cgu" target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:t.text3,textDecoration:"underline",letterSpacing:".02em"}}>Conditions générales d'utilisation</a>
@@ -1564,8 +2197,8 @@ export default function App({session}){
       </div>
       {isMobile&&!(nav==="create"&&selType)&&(()=>{
         // Mobile nav : on garde 6 onglets (Médias retiré, faute de place). Historique réintégré.
-        const MOBILE_LABELS={home:"Accueil",club:"Club",players:"Joueurs",create:"Créer",history:"Visuels",settings:"Réglages"};
-        const mobileNav=NAV.filter(n=>n.id!=="media").map(n=>({...n,label:MOBILE_LABELS[n.id]||n.label}));
+        const MOBILE_LABELS={home:"Accueil",club:"Club",players:T.players,create:"Créer",history:"Visuels",settings:"Réglages"};
+        const mobileNav=NAVL.filter(n=>n.id!=="media").map(n=>({...n,label:MOBILE_LABELS[n.id]||n.label}));
         return(
         <div style={{position:"fixed",bottom:0,left:0,right:0,height:60,background:t.bg2,borderTop:"1px solid "+t.border,display:"flex",alignItems:"stretch",zIndex:100,paddingBottom:"env(safe-area-inset-bottom,0)"}}>
           {mobileNav.map(n=>{
@@ -1585,10 +2218,10 @@ export default function App({session}){
       {exportOverlay&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'DM Sans','Helvetica Neue',sans-serif"}}>
           <div style={{fontSize:11,letterSpacing:".18em",textTransform:"uppercase",color:"rgba(255,255,255,.5)",marginBottom:14}}>Visuel prêt</div>
-          <img src={exportOverlay.dataUrl} alt="Aperçu" style={{maxWidth:"min(420px,86vw)",maxHeight:"55vh",borderRadius:8,boxShadow:"0 20px 50px rgba(0,0,0,.6)",marginBottom:24}}/>
+          <img src={exportOverlay.previewUrl} alt="Aperçu" style={{maxWidth:"min(420px,86vw)",maxHeight:"55vh",borderRadius:8,boxShadow:"0 20px 50px rgba(0,0,0,.6)",marginBottom:24}}/>
           <p style={{fontSize:13,color:"rgba(255,255,255,.7)",textAlign:"center",maxWidth:340,marginBottom:18,lineHeight:1.5}}>Appuyez sur « Enregistrer » puis « Enregistrer dans Photos » pour le sauvegarder sur votre appareil.</p>
           <button onClick={handleOverlayShare} style={{background:"#fff",color:"#000",border:"none",borderRadius:2,padding:"15px 38px",fontSize:12,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",cursor:"pointer",fontFamily:"inherit",minHeight:48,marginBottom:12}}>Enregistrer dans les photos</button>
-          <button onClick={()=>setExportOverlay(null)} style={{background:"none",color:"rgba(255,255,255,.5)",border:"none",fontSize:11,cursor:"pointer",padding:10,fontFamily:"inherit",letterSpacing:".06em",textTransform:"uppercase"}}>Annuler</button>
+          <button onClick={closeExportOverlay} style={{background:"none",color:"rgba(255,255,255,.5)",border:"none",fontSize:11,cursor:"pointer",padding:10,fontFamily:"inherit",letterSpacing:".06em",textTransform:"uppercase"}}>Annuler</button>
         </div>
       )}
     </div>);

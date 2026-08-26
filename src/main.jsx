@@ -1,10 +1,27 @@
-import { StrictMode, useState, useEffect, Component } from "react"
+/* eslint-disable react-refresh/only-export-components --
+   Point d'entrée de l'application : ce fichier n'exporte rien par nature, la
+   règle Fast Refresh n'a pas de sens ici. */
+import { StrictMode, useState, useEffect, Component, lazy, Suspense } from "react"
 import { createRoot } from "react-dom/client"
 import { supabase } from "./supabase"
-import App from "./App"
 import Auth from "./Auth"
 import Landing from "./Landing"
-import Admin from "./Admin"
+
+// L'éditeur et l'écran admin ne servent qu'une fois connecté. Les charger à la
+// demande évite à un visiteur de la page publique de télécharger tout le
+// studio (éditeur, traitement d'image, registre des sports) pour rien.
+const App = lazy(() => import("./App"))
+const Admin = lazy(() => import("./Admin"))
+
+function Splash({ label }) {
+  return (
+    <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#fff", flexDirection: "column", gap: 14, fontFamily: "'DM Sans',system-ui,sans-serif" }}>
+      <div style={{ width: 28, height: 28, border: "2px solid rgba(0,0,0,0.12)", borderTopColor: "#0a0a0a", borderRadius: "50%", animation: "viz-spin 0.8s linear infinite" }}/>
+      <div style={{ fontSize: 12, color: "#666", letterSpacing: ".08em" }}>{label || ""}</div>
+      <style>{`@keyframes viz-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
+    </div>
+  )
+}
 
 // ─── ERROR BOUNDARY GLOBAL ─────────────────────────────────────
 // Capture toutes les erreurs React enfants et affiche un fallback propre au lieu d'un écran blanc.
@@ -67,6 +84,16 @@ function detectMagicLinkInUrl() {
   return h.includes("access_token=") || h.includes("refresh_token=") || h.includes("error=") || h.includes("error_description=");
 }
 
+// Supabase émet un TOKEN_REFRESHED toutes les ~50 min (et au retour d'onglet).
+// Remplacer l'objet session à chaque fois faisait re-tourner tous les effets qui
+// en dépendent côté App → rechargement complet des données, d'où les joueurs qui
+// "disparaissent puis réapparaissent". Le client Supabase garde lui-même le token
+// à jour : côté React on ne change la référence que si l'utilisateur change.
+function mergeSession(prev, next) {
+  if (prev && next && prev.user && next.user && prev.user.id === next.user.id) return prev
+  return next
+}
+
 function Root() {
   const [session, setSession] = useState(undefined)
   const [showLanding, setShowLanding] = useState(true)
@@ -81,7 +108,7 @@ function Root() {
     // L'event auth est la source canonique : SIGNED_IN/SIGNED_OUT/TOKEN_REFRESHED/INITIAL_SESSION.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!alive) return;
-      setSession(session)
+      setSession(prev => mergeSession(prev, session))
       if (session) setShowLanding(false)
       // Tout event auth = fin du processing magic link
       if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION" || event === "USER_UPDATED") {
@@ -107,7 +134,7 @@ function Root() {
       // Ne court-circuite PAS le splash si un magic link est en cours et que la session n'est pas encore là —
       // on attend l'event onAuthStateChange.
       if (session) {
-        setSession(session)
+        setSession(prev => mergeSession(prev, session))
         setShowLanding(false)
         setMagicLinkPending(false)
         clearTimeout(fallbackTimer)
@@ -140,13 +167,7 @@ function Root() {
   }
 
   // Splash tant que la session n'est pas définie OU qu'un magic link est en cours de traitement.
-  if (session === undefined || magicLinkPending) return (
-    <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#fff", flexDirection: "column", gap: 14, fontFamily: "'DM Sans',system-ui,sans-serif" }}>
-      <div style={{ width: 28, height: 28, border: "2px solid rgba(0,0,0,0.12)", borderTopColor: "#0a0a0a", borderRadius: "50%", animation: "viz-spin 0.8s linear infinite" }}/>
-      <div style={{ fontSize: 12, color: "#666", letterSpacing: ".08em" }}>{magicLinkPending ? "Connexion en cours…" : ""}</div>
-      <style>{`@keyframes viz-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
-    </div>
-  )
+  if (session === undefined || magicLinkPending) return <Splash label={magicLinkPending ? "Connexion en cours…" : ""}/>
 
   function enterAuth(mode) {
     if (mode === "login" || mode === "signup") setAuthMode(mode)
@@ -156,7 +177,7 @@ function Root() {
   // Admin : prioritaire sur tout le reste si activé
   if (showAdmin) {
     if (!session) return <Auth onBack={closeAdmin} initialMode={authMode}/>
-    return <Admin session={session} onClose={closeAdmin} />
+    return <Suspense fallback={<Splash label="Chargement…"/>}><Admin session={session} onClose={closeAdmin} /></Suspense>
   }
 
   // Permettre l'accès à la landing (CGU notamment) même quand authentifié
@@ -164,7 +185,7 @@ function Root() {
 
   if (showLanding && !session) return <Landing onEnter={enterAuth} />
   if (!session) return <Auth onBack={() => setShowLanding(true)} initialMode={authMode}/>
-  return <App session={session} />
+  return <Suspense fallback={<Splash label="Chargement du studio…"/>}><App session={session} /></Suspense>
 }
 
 createRoot(document.getElementById("root")).render(
