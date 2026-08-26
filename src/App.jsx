@@ -1635,10 +1635,24 @@ export default function App({session}){
         const{data:newClub,error:cErr}=await supabase.from("clubs").insert({user_id:uid,email:newEmail,name:newName}).select().single();
         if(stale())return;
         if(cErr){
-          console.error("[load] insert clubs failed:",cErr);
-          setAccessState("error");setLoading(false);return;
+          // 23505 = violation d'unicité sur clubs.user_id : une autre exécution
+          // du même chargement a créé la ligne entre notre lecture et notre
+          // insertion (constaté : deux insertions à 5 ms d'intervalle). Ce n'est
+          // pas une erreur, c'est la course qu'on voulait empêcher — on relit.
+          if(cErr.code==="23505"){
+            const{data:again}=await supabase
+              .from("clubs").select("*").eq("user_id",uid)
+              .order("created_at",{ascending:true}).limit(1);
+            if(stale())return;
+            clubData=(again&&again.length)?again[0]:null;
+          }
+          if(!clubData){
+            console.error("[load] insert clubs failed:",cErr);
+            setAccessState("error");setLoading(false);return;
+          }
+        } else {
+          clubData=newClub;
         }
-        clubData=newClub;
         // Notifier l'admin uniquement à la création initiale (pas à chaque login).
         if(newClub){
           fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/notify-signup`,{
