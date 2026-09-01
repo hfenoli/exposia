@@ -1928,6 +1928,22 @@ export default function App({session}){
   const[slotScale,setSlotScale]=useState(1);
   const[exportOverlay,setExportOverlay]=useState(null);  // {previewUrl, filename, blob} pour overlay iOS
   const[exporting,setExporting]=useState(false);
+  // Libelle de la phase en cours. « Génération… » couvrait jusqu'a six
+  // secondes sur mobile sans rien dire de ce qui se passe : enregistrement,
+  // telechargement du moteur de rendu, puis rendu lui-meme. Nommer les etapes
+  // rend l'attente lisible.
+  const[exportStep,setExportStep]=useState("");
+  // Le moteur de rendu PNG pese ~200 Ko et n'etait telecharge qu'au clic sur
+  // « Telecharger », soit une a trois secondes d'attente sur mobile au moment
+  // le plus sensible du parcours. On le precharge des l'ouverture de
+  // l'editeur : il arrive pendant que le club compose son visuel, et le clic
+  // devient immediat. Le delai evite de concurrencer le premier rendu de
+  // l'editeur, et l'echec est ignore — l'import au clic reste le filet.
+  useEffect(()=>{
+    if(!selType)return;
+    const id=setTimeout(()=>{ import("html2canvas").catch(()=>{}); },1200);
+    return ()=>clearTimeout(id);
+  },[selType]);
   const isMobile=useIsMobile();
   const F=fmt(format);
   const supportsFormat=FORMAT_TYPES.includes(selType);
@@ -2333,13 +2349,18 @@ export default function App({session}){
     // FIX Lucas Test 27 : télécharger doit aussi sauvegarder dans l'historique.
     // Si le visuel n'a jamais été enregistré (editId null), on save AVANT le PNG
     // pour qu'il apparaisse dans "Visuels" côté user. Une erreur de save ne bloque pas l'export.
+    setExporting(true);
     if(!editId){
+      setExportStep("Enregistrement…");
       try{ await save(); }catch(e){ console.warn("[downloadPng] auto-save a échoué:",e); }
     }
-    setExporting(true);
     try{
-      // Chargé à la demande : html2canvas pèse ~200 Ko et ne sert qu'à l'export.
+      // Precharge des l'ouverture de l'editeur (voir l'effet plus bas) : a ce
+      // stade le module est deja en cache, l'attente est donc nulle. Le
+      // libelle reste utile si le prechargement n'a pas eu le temps d'aboutir.
+      setExportStep("Préparation…");
       const html2canvas=(await import("html2canvas")).default;
+      setExportStep("Rendu de l'image…");
       const filename="viziona-"+(selType||"visuel")+"-"+Date.now()+".png";
       const ua=navigator.userAgent;
       const isIOS=/iPad|iPhone|iPod/.test(ua)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
@@ -2396,7 +2417,7 @@ export default function App({session}){
       setLimitError("Erreur lors de l'export PNG.");
       setTimeout(()=>setLimitError(""),3000);
     }finally{
-      setExporting(false);
+      setExporting(false);setExportStep("");
     }
   }
   // Ferme l'overlay en libérant le blob URL de l'aperçu.
@@ -2464,7 +2485,7 @@ export default function App({session}){
   function saveBtn(){return(<>
     {limitError&&<div style={{background:"#450a0a",border:"1px solid #7f1d1d",borderRadius:8,padding:"10px 14px",color:"#fca5a5",fontSize:12,marginBottom:10}}>{limitError}</div>}
     <button onClick={save} style={{background:saveFlash?"#22c55e":"#0a0a0a",color:"#fff",border:"none",borderRadius:2,padding:"13px 16px",fontSize:11,fontWeight:700,cursor:"pointer",width:"100%",letterSpacing:".12em",textTransform:"uppercase",transition:"background .3s,transform .15s",fontFamily:"inherit"}}>{saveFlash?"Sauvegardé ✓":"Sauvegarder"}</button>
-    <button onClick={downloadPng} disabled={exporting} style={{marginTop:8,background:"transparent",color:t.text,border:"1px solid "+t.text,borderRadius:2,padding:"12px 16px",fontSize:11,fontWeight:600,cursor:exporting?"wait":"pointer",width:"100%",letterSpacing:".12em",textTransform:"uppercase",fontFamily:"inherit",opacity:exporting?.6:1}}>{exporting?"Génération…":"Télécharger PNG"}</button>
+    <button onClick={downloadPng} disabled={exporting} style={{marginTop:8,background:"transparent",color:t.text,border:"1px solid "+t.text,borderRadius:2,padding:"12px 16px",fontSize:11,fontWeight:600,cursor:exporting?"wait":"pointer",width:"100%",letterSpacing:".12em",textTransform:"uppercase",fontFamily:"inherit",opacity:exporting?.6:1}}>{exporting?(exportStep||"Génération…"):"Télécharger PNG"}</button>
   </>);}
   function backBtn(){return<button onClick={()=>setSelType(null)} style={{display:"inline-flex",alignItems:"center",gap:7,background:t.bg3,border:"1px solid "+t.border2,borderRadius:8,padding:"7px 13px",color:t.text2,cursor:"pointer",fontSize:12,marginBottom:14,fontWeight:500}}>↩ Retour</button>;}
   function renderSpecial(){
