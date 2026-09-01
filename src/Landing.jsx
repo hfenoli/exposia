@@ -375,12 +375,17 @@ function injectFontsAndStyles() {
 }
 
 // ─── LOGO ─────────────────────────────────────────────────────
+// Tracé officiel Viziona (public/logo.svg), intégré en ligne plutôt que via
+// <img> : c'est le seul moyen de le recolorer selon le fond, clair ou sombre.
+// Le logo source fait 178.5 × 125.125 ; `size` désigne la HAUTEUR, la largeur
+// suit le rapport d'origine pour ne jamais le déformer.
+const VLOGO_D = "M 0.000 1.625 L 70.750 123.875 L 72.250 125.000 L 74.750 124.000 L 81.625 112.500 L 81.750 111.375 L 76.375 103.125 L 74.875 104.500 L 73.250 107.375 L 72.125 106.625 L 16.000 9.750 L 35.375 9.375 L 36.250 9.875 L 55.750 43.750 L 104.125 124.500 L 106.000 124.875 L 107.875 123.125 L 178.375 1.750 L 178.125 0.875 L 176.625 0.000 L 137.000 0.250 L 135.000 2.500 L 96.750 68.125 L 96.875 69.250 L 102.125 76.875 L 104.875 73.750 L 142.000 10.125 L 143.250 9.375 L 161.875 9.500 L 162.250 10.125 L 106.500 106.125 L 105.250 107.250 L 77.125 60.625 L 42.750 1.625 L 40.375 0.000 L 0.875 0.250 Z";
+const VLOGO_RATIO = 178.5 / 125.125;
 function VLogo({ size = 26, color }) {
-  const c = color || C.tx;
   return (
-    <svg width={size} height={size} viewBox="0 0 26 26" fill="none">
-      <path d="M2 4L13 22L24 4" stroke={c} strokeWidth="2.5" strokeLinecap="square"/>
-      <path d="M7.5 4L13 15L18.5 4" stroke={c} strokeWidth="1.5" strokeLinecap="square" opacity="0.32"/>
+    <svg height={size} width={Math.round(size * VLOGO_RATIO)} viewBox="0 0 178.5 125.125"
+      fill={color || C.tx} aria-hidden="true" style={{ display: "block", flexShrink: 0 }}>
+      <path d={VLOGO_D}/>
     </svg>
   );
 }

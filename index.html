@@ -1,16 +1,32 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Viziona · Le studio visuel de votre club</title>
+    <meta name="description" content="Créez les visuels de votre club en 30 secondes : compositions, résultats, convocations, annonces. Football, rugby, hockey, basket, handball, natation, triathlon." />
+
+    <!-- Onglet du navigateur. Le SVG s'adapte au thème clair ou sombre ;
+         le PNG sert de repli aux navigateurs qui ne gèrent pas le SVG. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate icon" type="image/png" href="/icon-192.png" />
+
+    <!-- iOS n'accepte pas le SVG ici et n'applique aucune transparence :
+         PNG carré, logo blanc sur fond noir. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
     <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#e63329">
+    <meta name="theme-color" content="#0a0a0a">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Viziona">
-    <link rel="icon" type="image/jpeg" href="/team/logo.jpg" />
-    <link rel="apple-touch-icon" href="/team/logo.jpg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Viziona</title>
+
+    <!-- Aperçu au partage (WhatsApp, Slack, réseaux sociaux). -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Viziona · Le studio visuel de votre club" />
+    <meta property="og:description" content="Du terrain au feed, en 30 secondes. Les visuels de votre club, à vos couleurs." />
+    <meta property="og:image" content="/icon-512.png" />
+    <meta name="twitter:card" content="summary" />
   </head>
   <body>
     <div id="root"></div>

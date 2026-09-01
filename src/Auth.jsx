@@ -123,7 +123,9 @@ export default function Auth({ onBack, initialMode }) {
           </button>
         ) : <span />}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <img src="/team/logo.jpg" alt="Viziona" style={{ width: 28, height: 28, display: "block" }} />
+          {/* Logo vectoriel : net à toute taille, et la hauteur pilote la
+              largeur pour respecter le rapport d'origine (178.5 × 125.125). */}
+          <img src="/logo.svg" alt="Viziona" style={{ height: 20, width: "auto", display: "block" }} />
           <span style={{ fontFamily: FONT_H, fontSize: 19, fontWeight: 400, letterSpacing: "0.16em" }}>Viziona</span>
         </div>
       </nav>
