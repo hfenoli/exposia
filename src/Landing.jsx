@@ -55,10 +55,10 @@ const PRICING = [
     inclus: [
       "1 équipe",
       "5 visuels par semaine",
-      "1 template sur 22",
+      "1 template par type de visuel",
       "Support par e-mail",
     ],
-    absent: ["Plusieurs équipes", "Les 22 templates", "Accompagnement au démarrage"],
+    absent: ["Plusieurs équipes", "Les 22 templates, sans restriction", "Accompagnement au démarrage"],
   },
   {
     id: "STANDARD",
@@ -71,10 +71,10 @@ const PRICING = [
     inclus: [
       "3 équipes",
       "15 visuels par semaine",
-      "5 templates sur 22",
+      "5 templates par type de visuel",
       "Support par e-mail sous 48 h",
     ],
-    absent: ["Les 22 templates", "Accompagnement au démarrage"],
+    absent: ["Les 22 templates, sans restriction", "Accompagnement au démarrage"],
   },
   {
     id: "PREMIUM",
@@ -86,7 +86,7 @@ const PRICING = [
     inclus: [
       "Équipes illimitées",
       "Visuels illimités",
-      "Les 22 templates",
+      "Les 22 templates, sans restriction",
       "Accompagnement au démarrage (1 h en visio)",
       "Support prioritaire sous 24 h",
       "Vos retours priorisés dans la feuille de route",
@@ -201,7 +201,7 @@ const FAQ_ITEMS = [
   { q: "On pratique plusieurs sports dans le club.", a: "Un compte correspond à un sport. Vous pouvez y gérer plusieurs équipes, mais toutes dans la même discipline. Pour une structure omnisports, le plus simple est un accès par section — écrivez-nous, on vous arrange ça sur l'offre Institution." },
   { q: "Faut-il des compétences en design ?",       a: "Non. Vous configurez votre club une fois (logo, couleurs, joueurs), l'app fait le reste. Aucune connaissance graphique requise." },
   { q: "Ça marche sur téléphone ?",                 a: "Oui, l'app est pensée mobile. Installez-la sur votre écran d'accueil pour un accès en un tap, comme une vraie application." },
-  { q: "Combien ça coûte ?",                        a: "Trois offres selon la taille du club, de 44.99 à 189.99 CHF par mois. Au paiement annuel, un mois est offert sur les offres Équipe et Club, deux mois sur Institution. Elles diffèrent par le volume de visuels par semaine, le nombre de templates et le niveau d'accompagnement — toutes les fonctionnalités de l'éditeur sont incluses partout. Le détail est dans la section Tarifs. Pas de frais d'installation, résiliable à tout moment." },
+  { q: "Combien ça coûte ?",                        a: "Trois offres selon la taille du club, de 44.99 à 189.99 CHF par mois. Au paiement annuel, un mois est offert sur les offres Équipe et Club, deux mois sur Institution. Elles diffèrent par le volume de visuels par semaine, le nombre de templates disponibles pour chaque type de visuel, et le niveau d'accompagnement — toutes les fonctionnalités de l'éditeur sont incluses partout. Le détail est dans la section Tarifs. Pas de frais d'installation, résiliable à tout moment." },
   { q: "Comment accéder ?",                         a: "L'accès est sur invitation. Envoyez-nous un message à contact@viziona-sport.com, on revient sous 24h." },
   { q: "Comment configurer mon club ?",             a: "Allez dans « Mon Club », uploadez votre logo, choisissez vos deux couleurs. Tout se met à jour automatiquement dans vos visuels." },
   { q: "Comment créer mon premier visuel ?",        a: "Cliquez sur « Créer », choisissez un type (ex : But), sélectionnez un joueur si besoin, puis cliquez sur Télécharger." },
