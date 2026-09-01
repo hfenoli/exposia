@@ -278,13 +278,20 @@ function navFromUrl(){
 function pathFromNav(navId){
   return NAV_PATHS[navId]||"/";
 }
+// Les six premiers partagent la mise en page « terrain » et ne diffèrent que
+// par les couleurs. Les quatre suivants changent de STRUCTURE — c'est ce qui
+// les rend réellement distincts, d'où leur catégorie à part.
 const LINEUP_TPLS = [
-  {id:"ln1",label:"Noir Absolu",  cat:"Sombre"},
-  {id:"ln2",label:"Feu & Braise", cat:"Sombre"},
-  {id:"ln3",label:"Élite Serif",  cat:"Sombre"},
-  {id:"ln4",label:"Élite Diag",   cat:"Moderne"},
-  {id:"ln5",label:"Chrome",       cat:"Clair"},
-  {id:"ln6",label:"Minimal",      cat:"Clair"},
+  {id:"ln1", label:"Noir Absolu",     cat:"Terrain"},
+  {id:"ln2", label:"Feu & Braise",    cat:"Terrain"},
+  {id:"ln3", label:"Élite Serif",     cat:"Terrain"},
+  {id:"ln4", label:"Élite Diag",      cat:"Terrain"},
+  {id:"ln5", label:"Chrome",          cat:"Terrain"},
+  {id:"ln6", label:"Minimal",         cat:"Terrain"},
+  {id:"ln7", label:"Feuille de match",cat:"Sans terrain"},
+  {id:"ln8", label:"Mosaïque",        cat:"Sans terrain"},
+  {id:"ln9", label:"Papier",          cat:"Sans terrain"},
+  {id:"ln10",label:"Tableau",         cat:"Sans terrain"},
 ];
 const GROUP_TPLS = [
   {id:"gr1",label:"Convocation Pro", cat:"Officiel"},
@@ -702,10 +709,156 @@ function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScal
   const fRows=F[fm]||F[Object.keys(F)[0]]||[{n:1},{n:4},{n:4},{n:2}];
   let li=0;
   const rows=fRows.map(function(r){const players=starters.slice(li,li+r.n);li+=r.n;return{n:r.n,label:(r.l||"").slice(0,3).toUpperCase(),players:players};});
-  const dark=tpl!=="ln5"&&tpl!=="ln6";
+  const dark=tpl!=="ln5"&&tpl!=="ln6"&&tpl!=="ln9";
   const root={width:W,height:H,position:"relative",overflow:"hidden",borderRadius:W<160?6:14,flexShrink:0,display:"flex",flexDirection:"column",userSelect:"none"};
   function Logo(props){const sz=props.sz||W*.1;if(!props.url)return<div style={{width:sz,height:sz,borderRadius:4,background:rgba(accent,.25),display:"flex",alignItems:"center",justifyContent:"center",color:accent,fontSize:sz*.3}}><Icon name="club" size={Math.round(sz*.55)} strokeWidth={1.8}/></div>;return<img src={props.url} style={{width:sz,height:sz,objectFit:"contain"}} alt=""/>;}
   function Slot(props){const p=props.p;const sz=props.sz||W*.09;const square=props.square;const ph=getPhoto(p);return(<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,flex:"1 1 0",minWidth:0,padding:"0 2px",boxSizing:"border-box"}}><div style={{width:sz,height:sz,borderRadius:square?6:"50%",overflow:"hidden",border:"2px solid "+accent,background:dark?"rgba(0,0,0,.5)":"#e0e0e8",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:sz*.34,fontWeight:900,color:accent,fontFamily:"Impact,sans-serif"}}>{p&&p.number?p.number:"?"}</span>}</div><span style={{fontSize:W*.024,color:dark?"#fff":"#111",fontWeight:700,textAlign:"center",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textShadow:dark?"0 1px 5px #000":"none"}}>{p&&p.name?p.name.split(" ").pop():"—"}</span></div>);}
+  // ── Gabarits à mise en page propre ────────────────────────────────────────
+  // Les six premiers partagent la même structure (en-tête, rangs sur l'aire de
+  // jeu, bandeau remplaçants) et ne diffèrent que par les couleurs : c'est ce
+  // qui les faisait tous se ressembler. Ceux qui suivent changent la STRUCTURE.
+  const opp=ld&&ld.opponent?ld.opponent:"";
+  const MONO="'DM Mono',ui-monospace,monospace";
+  const HEAD="Impact,'Haettenschweiler','Arial Narrow Bold',sans-serif";
+  const flat=starters.filter(Boolean);
+
+  // ln7 · Feuille de match — pas d'aire de jeu, une liste par ligne, numéros
+  // dominants. Registre document officiel, à l'opposé du rendu « terrain ».
+  if(tpl==="ln7"){
+    return(<div style={Object.assign({},root,{background:"#0b0b0c"})}>
+      {bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.13}} alt=""/>}
+      <div style={{position:"absolute",left:0,top:0,bottom:0,width:W*.014,background:accent}}/>
+      <div style={{position:"relative",zIndex:2,padding:(W*.055)+"px "+(W*.05)+"px "+(W*.03)+"px "+(W*.075)+"px",display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:W*.03}}>
+        <div style={{minWidth:0}}>
+          {competition&&<div style={{fontFamily:MONO,fontSize:W*.021,color:rgba("#fff",.42),letterSpacing:".2em",textTransform:"uppercase",marginBottom:W*.018,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{competition}</div>}
+          <div style={{fontFamily:HEAD,fontSize:W*.105,color:"#fff",lineHeight:.9,letterSpacing:".01em",textTransform:"uppercase"}}>{fm}</div>
+          {opp&&<div style={{fontFamily:MONO,fontSize:W*.023,color:accent,letterSpacing:".12em",marginTop:W*.02,textTransform:"uppercase",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>vs {opp}</div>}
+        </div>
+        <Logo url={logoUrl} sz={W*.115}/>
+      </div>
+      <div style={{position:"relative",zIndex:2,flex:1,minHeight:0,padding:"0 "+(W*.05)+"px 0 "+(W*.075)+"px",display:"flex",flexDirection:"column",justifyContent:"center",gap:W*.012}}>
+        {rows.map(function(row,ri){return(
+          <div key={ri}>
+            <div style={{fontFamily:MONO,fontSize:W*.019,color:rgba("#fff",.3),letterSpacing:".22em",marginBottom:W*.008}}>{row.label||("L"+(ri+1))}</div>
+            {row.players.map(function(p,pi){return(
+              <div key={pi} style={{display:"flex",alignItems:"baseline",gap:W*.028,padding:(W*.007)+"px 0",borderBottom:"1px solid "+rgba("#fff",.07)}}>
+                <span style={{fontFamily:HEAD,fontSize:W*.05,color:accent,minWidth:W*.07,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{p&&p.number?p.number:"—"}</span>
+                <span style={{flex:1,fontSize:W*.032,color:"#fff",fontWeight:600,letterSpacing:".01em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p&&p.name?p.name:"—"}</span>
+              </div>);})}
+          </div>);})}
+      </div>
+      {subs.length>0&&<div style={{position:"relative",zIndex:2,padding:(W*.02)+"px "+(W*.30)+"px "+(W*.035)+"px "+(W*.075)+"px",borderTop:"1px solid "+rgba("#fff",.1)}}>
+        <div style={{fontFamily:MONO,fontSize:W*.018,color:rgba("#fff",.3),letterSpacing:".22em",marginBottom:W*.01}}>REMPLAÇANTS</div>
+        <div style={{fontSize:W*.024,color:rgba("#fff",.62),lineHeight:1.6}}>{subs.map(s=>(s.number?s.number+" ":"")+(s.name||"")).join("   ")}</div>
+      </div>}
+      <Watermark/>
+    </div>);
+  }
+
+  // ln8 · Mosaïque — la photo devient le sujet : grille plein cadre, identité
+  // en incrustation. Aucun tracé d'aire de jeu.
+  if(tpl==="ln8"){
+    const cols=flat.length>12?4:3;
+    return(<div style={Object.assign({},root,{background:"#050506"})}>
+      <div style={{position:"relative",zIndex:2,padding:(W*.045)+"px "+(W*.05)+"px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:W*.03}}>
+        <div style={{minWidth:0}}>
+          <div style={{fontFamily:HEAD,fontSize:W*.075,color:"#fff",lineHeight:.95,textTransform:"uppercase",letterSpacing:".01em"}}>{(termsFor(sport).lineupShort||"Composition")}</div>
+          <div style={{fontFamily:MONO,fontSize:W*.02,color:accent,letterSpacing:".18em",marginTop:2,textTransform:"uppercase",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{fm}{opp?" · vs "+opp:""}</div>
+        </div>
+        <Logo url={logoUrl} sz={W*.1}/>
+      </div>
+      <div style={{position:"relative",zIndex:2,flex:1,minHeight:0,display:"grid",gridTemplateColumns:"repeat("+cols+",1fr)",gap:2,padding:"0 "+(W*.02)+"px"}}>
+        {flat.slice(0,cols*4).map(function(p,i){const ph=getPhoto(p);return(
+          <div key={i} style={{position:"relative",overflow:"hidden",background:"#121214",minHeight:0}}>
+            {ph
+              ? <img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>
+              : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:HEAD,fontSize:W*.07,color:rgba(accent,.5)}}>{p&&p.number?p.number:"?"}</div>}
+            <div style={{position:"absolute",left:0,right:0,bottom:0,padding:(W*.012)+"px "+(W*.016)+"px",background:"linear-gradient(to top,rgba(0,0,0,.88),transparent)"}}>
+              <div style={{fontSize:W*.021,color:"#fff",fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.2}}>{p&&p.name?p.name.split(" ").pop():"—"}</div>
+              {p&&p.number&&<div style={{fontFamily:MONO,fontSize:W*.017,color:accent,letterSpacing:".1em"}}>{p.number}</div>}
+            </div>
+          </div>);})}
+      </div>
+      <div style={{position:"relative",zIndex:2,height:W*.055,background:accent,display:"flex",alignItems:"center",paddingLeft:W*.05,paddingRight:W*.30}}>
+        <span style={{fontFamily:MONO,fontSize:W*.019,color:contrastText(accent),letterSpacing:".2em",textTransform:"uppercase",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{competition||fm}</span>
+      </div>
+      <Watermark/>
+    </div>);
+  }
+
+  // ln9 · Papier — fond clair, très typographique, un seul filet de couleur.
+  // Le contrepoint aux gabarits sombres, sans être fade.
+  if(tpl==="ln9"){
+    return(<div style={Object.assign({},root,{background:"#f4f2ee"})}>
+      <div style={{position:"relative",zIndex:2,padding:(W*.055)+"px "+(W*.055)+"px "+(W*.025)+"px",borderBottom:"3px solid #111"}}>
+        <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:W*.03}}>
+          <div style={{minWidth:0}}>
+            {competition&&<div style={{fontFamily:MONO,fontSize:W*.02,color:"#8a8580",letterSpacing:".2em",textTransform:"uppercase",marginBottom:W*.012,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{competition}</div>}
+            <div style={{fontFamily:HEAD,fontSize:W*.115,color:"#111",lineHeight:.86,textTransform:"uppercase",letterSpacing:"-.005em"}}>{(termsFor(sport).lineupShort||"Composition")}</div>
+          </div>
+          <Logo url={logoUrl} sz={W*.115}/>
+        </div>
+        <div style={{display:"flex",gap:W*.03,marginTop:W*.022,alignItems:"center"}}>
+          <span style={{background:accent,color:contrastText(accent),fontFamily:MONO,fontSize:W*.021,letterSpacing:".14em",padding:(W*.008)+"px "+(W*.022)+"px"}}>{fm}</span>
+          {opp&&<span style={{fontFamily:MONO,fontSize:W*.021,color:"#55504b",letterSpacing:".1em",textTransform:"uppercase",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>vs {opp}</span>}
+        </div>
+      </div>
+      <div style={{position:"relative",zIndex:2,flex:1,minHeight:0,padding:(W*.03)+"px "+(W*.055)+"px",display:"flex",flexDirection:"column",justifyContent:"space-evenly"}}>
+        {rows.map(function(row,ri){return(
+          <div key={ri} style={{display:"flex",alignItems:"center",gap:W*.02}}>
+            <span style={{fontFamily:MONO,fontSize:W*.018,color:"#a09a94",letterSpacing:".16em",width:W*.075,flexShrink:0}}>{row.label||("L"+(ri+1))}</span>
+            <div style={{flex:1,display:"flex",gap:W*.018,flexWrap:"wrap",minWidth:0}}>
+              {row.players.map(function(p,pi){return(
+                <span key={pi} style={{display:"inline-flex",alignItems:"baseline",gap:W*.012,minWidth:0}}>
+                  <span style={{fontFamily:HEAD,fontSize:W*.035,color:accent,fontVariantNumeric:"tabular-nums"}}>{p&&p.number?p.number:"—"}</span>
+                  <span style={{fontSize:W*.027,color:"#1a1a1a",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p&&p.name?p.name.split(" ").pop():"—"}</span>
+                </span>);})}
+            </div>
+          </div>);})}
+      </div>
+      {subs.length>0&&<div style={{position:"relative",zIndex:2,borderTop:"1px solid #d8d3cc",padding:(W*.022)+"px "+(W*.30)+"px "+(W*.035)+"px "+(W*.055)+"px"}}>
+        <div style={{fontFamily:MONO,fontSize:W*.017,color:"#a09a94",letterSpacing:".2em",marginBottom:W*.008}}>BANC</div>
+        <div style={{fontSize:W*.022,color:"#55504b",lineHeight:1.6}}>{subs.map(s=>(s.number?s.number+" ":"")+(s.name||"")).join("   ")}</div>
+      </div>}
+      <Watermark/>
+    </div>);
+  }
+
+  // ln10 · Tableau — registre tableau d'affichage : monospace, gros chiffres,
+  // deux colonnes, aucune photo. Lisible même en très petit.
+  if(tpl==="ln10"){
+    const half=Math.ceil(flat.length/2);
+    const colA=flat.slice(0,half), colB=flat.slice(half);
+    const Col=function(props){return(
+      <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:W*.004}}>
+        {props.list.map(function(p,i){return(
+          <div key={i} style={{display:"flex",alignItems:"center",gap:W*.02,background:i%2?rgba("#fff",.035):"transparent",padding:(W*.009)+"px "+(W*.014)+"px"}}>
+            <span style={{fontFamily:MONO,fontSize:W*.03,color:accent,fontWeight:500,minWidth:W*.055,fontVariantNumeric:"tabular-nums"}}>{p&&p.number?String(p.number).padStart(2,"0"):"--"}</span>
+            <span style={{flex:1,fontFamily:MONO,fontSize:W*.023,color:rgba("#fff",.88),letterSpacing:".04em",textTransform:"uppercase",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p&&p.name?p.name.split(" ").pop():"—"}</span>
+          </div>);})}
+      </div>);};
+    return(<div style={Object.assign({},root,{background:"#08090b"})}>
+      <div style={{position:"absolute",inset:0,background:"repeating-linear-gradient(0deg,rgba(255,255,255,.022) 0px,rgba(255,255,255,.022) 1px,transparent 1px,transparent 3px)"}}/>
+      <div style={{position:"relative",zIndex:2,padding:(W*.05)+"px "+(W*.045)+"px "+(W*.025)+"px",display:"flex",alignItems:"center",gap:W*.028}}>
+        <Logo url={logoUrl} sz={W*.1}/>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontFamily:MONO,fontSize:W*.035,color:"#fff",letterSpacing:".16em",textTransform:"uppercase",lineHeight:1.1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{fm}</div>
+          <div style={{fontFamily:MONO,fontSize:W*.018,color:rgba("#fff",.4),letterSpacing:".2em",textTransform:"uppercase",marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{competition||(opp?"vs "+opp:"")}</div>
+        </div>
+        <div style={{fontFamily:HEAD,fontSize:W*.08,color:rgba(accent,.9),lineHeight:1}}>{flat.length||"—"}</div>
+      </div>
+      <div style={{position:"relative",zIndex:2,height:2,background:accent,margin:"0 "+(W*.045)+"px"}}/>
+      <div style={{position:"relative",zIndex:2,flex:1,minHeight:0,display:"flex",gap:W*.02,padding:(W*.025)+"px "+(W*.045)+"px",alignItems:"flex-start"}}>
+        <Col list={colA}/><Col list={colB}/>
+      </div>
+      {subs.length>0&&<div style={{position:"relative",zIndex:2,borderTop:"1px solid "+rgba("#fff",.12),padding:(W*.02)+"px "+(W*.30)+"px "+(W*.035)+"px "+(W*.045)+"px"}}>
+        <div style={{fontFamily:MONO,fontSize:W*.017,color:rgba("#fff",.32),letterSpacing:".22em",marginBottom:W*.008}}>BANC</div>
+        <div style={{fontFamily:MONO,fontSize:W*.02,color:rgba("#fff",.6),letterSpacing:".05em",textTransform:"uppercase",lineHeight:1.6}}>{subs.map(s=>(s.number?String(s.number).padStart(2,"0")+" ":"")+(s.name?s.name.split(" ").pop():"")).join("  ·  ")}</div>
+      </div>}
+      <Watermark/>
+    </div>);
+  }
+
   const bg={ln1:"#030305",ln2:"#0a0000",ln3:"#0a0805",ln4:"#060408",ln5:"#f2f2f4",ln6:"#fafafa"}[tpl]||"#030305";
   // FIX Lucas Test 26 : le template "Minuit Doré" (ln3) forçait un jaune #FFD700 aléatoire.
   // On l'adapte à la couleur du club : "Minuit Doré" devient un template élégant basé sur accent1.

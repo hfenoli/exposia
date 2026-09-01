@@ -21,7 +21,7 @@ const FONT_M    = "'DM Mono', ui-monospace, monospace";
 // ─── CONTENT ──────────────────────────────────────────────────
 const STATS = [
   { n: "7",   l: "Sports" },
-  { n: "18",  l: "Templates" },
+  { n: "22",  l: "Templates" },
   { n: "30s", l: "Par visuel" },
 ];
 
@@ -55,10 +55,10 @@ const PRICING = [
     inclus: [
       "1 équipe",
       "5 visuels par semaine",
-      "1 template sur 18",
+      "1 template sur 22",
       "Support par e-mail",
     ],
-    absent: ["Plusieurs équipes", "Les 18 templates", "Accompagnement au démarrage"],
+    absent: ["Plusieurs équipes", "Les 22 templates", "Accompagnement au démarrage"],
   },
   {
     id: "STANDARD",
@@ -71,10 +71,10 @@ const PRICING = [
     inclus: [
       "3 équipes",
       "15 visuels par semaine",
-      "5 templates sur 18",
+      "5 templates sur 22",
       "Support par e-mail sous 48 h",
     ],
-    absent: ["Les 18 templates", "Accompagnement au démarrage"],
+    absent: ["Les 22 templates", "Accompagnement au démarrage"],
   },
   {
     id: "PREMIUM",
@@ -86,7 +86,7 @@ const PRICING = [
     inclus: [
       "Équipes illimitées",
       "Visuels illimités",
-      "Les 18 templates",
+      "Les 22 templates",
       "Accompagnement au démarrage (1 h en visio)",
       "Support prioritaire sous 24 h",
       "Vos retours priorisés dans la feuille de route",
@@ -178,7 +178,7 @@ function cardLabel(sportId, type) {
 }
 const TICKER = ["Football", "Rugby", "Hockey sur glace", "Basketball", "Handball", "Natation", "Triathlon", "But", "Essai", "Chrono", "Podium", "Composition", "Convocation", "Story 9:16", "Post 4:5", "Carré 1:1"];
 const FEATURES = [
-  { n: "01", t: "Templates Pro", d: "18 templates conçus pour le sport. Pas de compétences graphiques requises. Résultat professionnel garanti à chaque fois." },
+  { n: "01", t: "Templates Pro", d: "22 templates conçus pour le sport. Pas de compétences graphiques requises. Résultat professionnel garanti à chaque fois." },
   { n: "02", t: "30 Secondes",  d: "Depuis le bord du terrain. Ouvrez l'app, choisissez le type, exportez. Publié avant le coup de sifflet final." },
   { n: "03", t: "Votre Sport", d: "Sept disciplines. Un club de rugby marque des essais, un club de hockey aligne ses lignes sur une patinoire, un club de natation publie des chronos. Pas un habillage : des gabarits différents." },
 ];

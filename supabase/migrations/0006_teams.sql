@@ -114,7 +114,7 @@ as $$
       else 5                        -- BASIC et toute valeur inconnue
     end,
     case upper(coalesce(p_plan, 'BASIC'))
-      when 'PREMIUM'  then 18       -- « illimité » = les 18 templates
+      when 'PREMIUM'  then 22       -- « illimité » = la totalité des gabarits
       when 'STANDARD' then 5
       else 1
     end,
