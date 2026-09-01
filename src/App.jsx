@@ -117,7 +117,10 @@ const HISTORY_PAGE_SIZE = 60;
 function fmt(id){ return FORMATS[id]||FORMATS[DEFAULT_FORMAT]; }
 // Les formats ne concernent que l'éditeur libre (but, score, affiche, recrue,
 // annonce). Composition XI et Groupe ont des gabarits dessinés en 9:16.
-const FORMAT_TYPES = ["goal","result","match","recruit","post","perf","podium"];
+// Compositions et groupes acceptent aussi les trois formats. Leurs gabarits
+// sont dessinés pour le 9:16 : ils se compriment verticalement sur les formats
+// plus courts (voir le facteur de hauteur dans LineupCanvas et GroupCanvas).
+const FORMAT_TYPES = ["goal","result","match","recruit","post","perf","podium","lineup","group"];
 // Au changement de format, les tailles de texte suivent la hauteur du canvas
 // pour que rien ne déborde de son cadre.
 function scaleLayersToFormat(layers,fromId,toId){
@@ -627,7 +630,7 @@ function Watermark(){
 function PitchLines({kind,stroke,dark}){
   const wrap={position:"absolute",inset:0,width:"100%",height:"100%",opacity:dark?.12:.09,pointerEvents:"none"};
   if(kind==="rugby") return(
-    <svg style={wrap} viewBox="0 0 270 480">
+    <svg style={wrap} viewBox="0 0 270 480" preserveAspectRatio="none">
       <rect x="18" y="6" width="234" height="375" fill="none" stroke={stroke} strokeWidth="1"/>
       <line x1="18" y1="193" x2="252" y2="193" stroke={stroke} strokeWidth=".8"/>
       {/* En-buts + lignes des 22 mètres */}
@@ -641,7 +644,7 @@ function PitchLines({kind,stroke,dark}){
     </svg>
   );
   if(kind==="ice") return(
-    <svg style={wrap} viewBox="0 0 270 480">
+    <svg style={wrap} viewBox="0 0 270 480" preserveAspectRatio="none">
       <rect x="18" y="6" width="234" height="375" rx="46" fill="none" stroke={stroke} strokeWidth="1"/>
       {/* Ligne rouge médiane et lignes bleues */}
       <line x1="18" y1="193" x2="252" y2="193" stroke={stroke} strokeWidth="1"/>
@@ -658,7 +661,7 @@ function PitchLines({kind,stroke,dark}){
     </svg>
   );
   if(kind==="handball") return(
-    <svg style={wrap} viewBox="0 0 270 480">
+    <svg style={wrap} viewBox="0 0 270 480" preserveAspectRatio="none">
       <rect x="18" y="6" width="234" height="375" fill="none" stroke={stroke} strokeWidth="1"/>
       <line x1="18" y1="193" x2="252" y2="193" stroke={stroke} strokeWidth=".8"/>
       {/* Zones des 6 m (trait plein) et des 9 m (pointillé) */}
@@ -672,7 +675,7 @@ function PitchLines({kind,stroke,dark}){
     </svg>
   );
   if(kind==="court") return(
-    <svg style={wrap} viewBox="0 0 270 480">
+    <svg style={wrap} viewBox="0 0 270 480" preserveAspectRatio="none">
       <rect x="18" y="6" width="234" height="375" fill="none" stroke={stroke} strokeWidth="1"/>
       <line x1="18" y1="193" x2="252" y2="193" stroke={stroke} strokeWidth=".8"/>
       <ellipse cx="135" cy="193" rx="30" ry="30" fill="none" stroke={stroke} strokeWidth=".8"/>
@@ -687,7 +690,7 @@ function PitchLines({kind,stroke,dark}){
   );
   // Football par défaut
   return(
-    <svg style={wrap} viewBox="0 0 270 480">
+    <svg style={wrap} viewBox="0 0 270 480" preserveAspectRatio="none">
       <rect x="18" y="6" width="234" height="375" rx="3" fill="none" stroke={stroke} strokeWidth="1"/>
       <line x1="18" y1="193" x2="252" y2="193" stroke={stroke} strokeWidth=".8"/>
       <ellipse cx="135" cy="193" rx="36" ry="36" fill="none" stroke={stroke} strokeWidth=".8"/>
@@ -885,7 +888,7 @@ function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScal
       <Logo url={logo2Url} sz={W*.08}/>
     </div>
     <div style={{position:"relative",zIndex:3,flex:1,display:"flex",flexDirection:"column",justifyContent:"space-around",padding:"0 "+(W*.018)+"px"}}>
-      {[].concat(rows).reverse().map(function(row,ri){const rowSz=Math.min(W*0.088,W*0.75/row.n)*slotScale;const denseRow=row.n>=5;return(<div key={ri} style={{display:"flex",justifyContent:denseRow?"space-evenly":"space-around",alignItems:"center",overflow:"hidden",gap:W*(row.n>4?0.005:0.01)}}>{Array.from({length:row.n}).map(function(_,pi){return<Slot key={pi} p={row.players[pi]} sz={rowSz} square={tpl==="ln4"}/>})}</div>);})}
+      {[].concat(rows).reverse().map(function(row,ri){const rowSz=Math.min(W*0.088,W*0.75/row.n,H*0.42/rows.length)*slotScale;const denseRow=row.n>=5;return(<div key={ri} style={{display:"flex",justifyContent:denseRow?"space-evenly":"space-around",alignItems:"center",overflow:"hidden",gap:W*(row.n>4?0.005:0.01)}}>{Array.from({length:row.n}).map(function(_,pi){return<Slot key={pi} p={row.players[pi]} sz={rowSz} square={tpl==="ln4"}/>})}</div>);})}
     </div>
     {/* FIX Lucas Test 21 : le "Powered by Viziona" (Watermark) chevauchait les remplaçants
         quand il y en avait beaucoup. On réserve un paddingRight en bas suffisant pour la watermark
@@ -904,6 +907,20 @@ function GroupCanvas({gd,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H}){
   const mid=gd&&gd.mid?gd.mid:[];
   const fwd=gd&&gd.fwd?gd.fwd:[];
   const coaches=gd&&gd.coaches?gd.coaches:[];
+  // ── Unité verticale ─────────────────────────────────────────────────────
+  // Toutes les tailles du gabarit dérivent de W, qui ne dit rien de la hauteur
+  // disponible. Deux conséquences, la seconde antérieure aux formats :
+  //   · sur un format plus court que le 9:16, la liste dépasserait le cadre ;
+  //   · même en 9:16, une convocation de 14 joueurs ou plus débordait déjà,
+  //     et root étant en overflow hidden, les derniers noms disparaissaient
+  //     sans prévenir.
+  // `U` remplace W pour tout ce qui consomme de la hauteur : elle tient compte
+  // du format ET de l'effectif convoqué, et ne dépasse jamais W.
+  const rosterCount = gk.length+def.length+mid.length+fwd.length+coaches.length;
+  // Hauteur utile ≈ 80 % du cadre ; une ligne coûte ≈ 0.093·U, un intitulé de
+  // section ≈ 0.034·U. On en déduit l'unité maximale qui fait tout tenir.
+  const uFit = (H*0.80)/(Math.max(1,rosterCount)*0.093 + 0.136);
+  const U = Math.min(W*Math.min(1,H/480), uFit);
   // Titre éditable : font/size/color avec fallback aux défauts du template
   const titleFont=(gd&&gd.titleFont)||"Impact";
   const titleSizeOv=gd&&gd.titleSize;
@@ -913,7 +930,7 @@ function GroupCanvas({gd,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H}){
   function tColor(defC){return titleColorOv||defC;}
   const root={width:W,height:H,position:"relative",overflow:"hidden",borderRadius:W<160?6:14,flexShrink:0,display:"flex",flexDirection:"column",userSelect:"none"};
   function Logo(props){const sz=props.sz||W*.1;if(!props.url)return<div style={{width:sz,height:sz,borderRadius:4,background:rgba(accent,.25),display:"flex",alignItems:"center",justifyContent:"center",color:accent,fontSize:sz*.3}}><Icon name="club" size={Math.round(sz*.55)} strokeWidth={1.8}/></div>;return<img src={props.url} style={{width:sz,height:sz,objectFit:"contain"}} alt=""/>;}
-  function PlayerRow(props){const p=props.p;const col=props.col||accent;const ph=p.photo||getPhoto(p);return(<div style={{display:"flex",alignItems:"center",gap:W*.018,marginBottom:W*.009,padding:(W*.005)+"px",borderRadius:3,background:rgba("#fff",.025)}}>{ph?<img src={ph} style={{width:W*.074,height:W*.074,borderRadius:W*.009,objectFit:"cover",objectPosition:"top",border:"1px solid "+rgba(col,.3)}} alt=""/>:<div style={{width:W*.074,height:W*.074,borderRadius:W*.009,background:rgba(col,.13),display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:W*.026,fontWeight:900,color:col}}>{p.number||"?"}</div>}<span style={{flex:1,color:"rgba(255,255,255,.82)",fontSize:W*.032}}>{p.name||"—"}{p.captain&&<span style={{color:col,fontSize:W*.024,marginLeft:W*.009}}> ©</span>}</span>{p.number&&<span style={{fontSize:W*.028,color:rgba("#fff",.16),fontFamily:"Impact,sans-serif"}}>#{p.number}</span>}</div>);}
+  function PlayerRow(props){const p=props.p;const col=props.col||accent;const ph=p.photo||getPhoto(p);return(<div style={{display:"flex",alignItems:"center",gap:U*.018,marginBottom:U*.009,padding:(U*.005)+"px",borderRadius:3,background:rgba("#fff",.025)}}>{ph?<img src={ph} style={{width:U*.074,height:U*.074,borderRadius:U*.009,objectFit:"cover",objectPosition:"top",border:"1px solid "+rgba(col,.3)}} alt=""/>:<div style={{width:U*.074,height:U*.074,borderRadius:U*.009,background:rgba(col,.13),display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:U*.026,fontWeight:900,color:col}}>{p.number||"?"}</div>}<span style={{flex:1,color:"rgba(255,255,255,.82)",fontSize:U*.032}}>{p.name||"—"}{p.captain&&<span style={{color:col,fontSize:U*.024,marginLeft:U*.009}}> ©</span>}</span>{p.number&&<span style={{fontSize:U*.028,color:rgba("#fff",.16),fontFamily:"Impact,sans-serif"}}>#{p.number}</span>}</div>);}
   function StaffSep(props){
     const isDark=props.dark!==false;
     const lineCol=isDark?"rgba(255,255,255,.18)":"rgba(0,0,0,.1)";
@@ -1094,8 +1111,8 @@ function HistoryThumb({h,c1,c2}){
   const wr={width:W,height:H,overflow:"hidden",borderRadius:8,flexShrink:0,position:"relative"};
   const inn={width:F.w,height:F.h,transformOrigin:"top left",transform:"scale("+(W/F.w)+")",position:"absolute",top:0,left:0};
   try{
-    if(h.type==="lineup")return<div style={wr}><div style={inn}><LineupCanvas sport={h.sport} ld={h.lineupData} tpl={h.lineupTpl||"ln1"} logoUrl={h.logoUrl} logo2Url={h.logo2Url} accent={h.accent||c1} accent2={h.accent2||c2} bgUrl={h.bgUrl}/></div></div>;
-    if(h.type==="group")return<div style={wr}><div style={inn}><GroupCanvas gd={h.groupData} tpl={h.groupTpl||"gr1"} logoUrl={h.logoUrl} logo2Url={h.logo2Url} accent={h.accent||c1} accent2={h.accent2||c2} bgUrl={h.bgUrl}/></div></div>;
+    if(h.type==="lineup")return<div style={wr}><div style={inn}><LineupCanvas sport={h.sport} ld={h.lineupData} tpl={h.lineupTpl||"ln1"} logoUrl={h.logoUrl} logo2Url={h.logo2Url} accent={h.accent||c1} accent2={h.accent2||c2} bgUrl={h.bgUrl} W={F.w} H={F.h}/></div></div>;
+    if(h.type==="group")return<div style={wr}><div style={inn}><GroupCanvas gd={h.groupData} tpl={h.groupTpl||"gr1"} logoUrl={h.logoUrl} logo2Url={h.logo2Url} accent={h.accent||c1} accent2={h.accent2||c2} bgUrl={h.bgUrl} W={F.w} H={F.h}/></div></div>;
     if(h.type==="post"){
       // Post nouveau format : layers présents → rendu standard. Sinon legacy PostCanvas via postData.
       if(h.layers&&h.layers.length>0){
@@ -2417,8 +2434,8 @@ export default function App({session}){
         <div style={isMobile?{width:270*canvasScale,height:480*canvasScale,position:"relative",overflow:"visible",flexShrink:0}:{display:"inline-block"}}>
           <div style={isMobile?{position:"absolute",top:0,left:0,width:270,height:480,transform:"scale("+canvasScale+")",transformOrigin:"top left"}:{display:"contents"}}>
             <div className="visium-canvas" style={{display:"inline-block"}}>
-              {isL&&<LineupCanvas ld={lineupData} tpl={lineupTpl} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl} slotScale={slotScale} sport={sport}/>}
-              {isG&&<GroupCanvas gd={groupData} tpl={groupTpl} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl}/>}
+              {isL&&<LineupCanvas ld={lineupData} tpl={lineupTpl} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl} slotScale={slotScale} sport={sport} W={canvasW} H={canvasH}/>}
+              {isG&&<GroupCanvas gd={groupData} tpl={groupTpl} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl} W={canvasW} H={canvasH}/>}
               {isP&&<PostCanvas pd={postData} tpl={postTpl} logoUrl={logoUrl||club?.logo_url} accent={club?.color1||"#e63329"} accent2={club?.color2||"#1a1a2e"} bgUrl={bgUrl}/>}
             </div>
           </div>
