@@ -15,6 +15,20 @@
          PNG carré, logo blanc sur fond noir. -->
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
+    <!-- Polices declarees ici plutot qu injectees par JavaScript : le
+         navigateur lance la requete des l analyse du HTML, sans attendre le
+         telechargement puis l execution du bundle. Le preconnect ouvre la
+         connexion a gstatic en parallele, ce qui evite un aller-retour DNS +
+         TLS au moment ou la feuille de style arrive. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- L identifiant est celui que testent les gardes de Landing, Auth et App :
+         en le posant ici, leurs injections a l execution deviennent inertes
+         sans avoir a toucher leur code. Le jeu de graisses est l union des
+         trois, italiques comprises. -->
+    <link id="viziona-landing-fonts" rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400&family=DM+Mono:wght@400;500&display=swap">
+
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#0a0a0a">
     <meta name="apple-mobile-web-app-capable" content="yes">

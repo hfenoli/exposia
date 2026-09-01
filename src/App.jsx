@@ -113,7 +113,9 @@ const FORMATS = {
 };
 const DEFAULT_FORMAT = "story";
 // Nombre de visuels rapatriés dans l'historique (voir commentaire au chargement).
-const HISTORY_PAGE_SIZE = 60;
+// Taille d une page d historique. Volontairement basse : chaque visuel
+// embarque ses images en base64, donc une page pese deja plusieurs Mo.
+const HISTORY_PAGE_SIZE = 12;
 function fmt(id){ return FORMATS[id]||FORMATS[DEFAULT_FORMAT]; }
 // Les formats ne concernent que l'éditeur libre (but, score, affiche, recrue,
 // annonce). Composition XI et Groupe ont des gabarits dessinés en 9:16.
@@ -1847,6 +1849,12 @@ export default function App({session}){
   const[allPlayers,setPlayers]=useState([]);
   const[media,setMedia]=useState([]);
   const[allHistory,setHistory]=useState([]);
+  // L'historique n'est pas chargé au démarrage : seul son nombre l'est, car
+  // c'est tout ce qu'affichent le badge, la vignette d'accueil et la liste de
+  // démarrage. Les visuels eux-mêmes arrivent à l'ouverture de l'onglet.
+  const[historyCount,setHistoryCount]=useState(0);
+  const[historyState,setHistoryState]=useState("idle"); // idle | loading | ready
+  const[historyDone,setHistoryDone]=useState(false);    // plus rien à charger
   // Équipes du club et équipe active. teams vide = migration 0006 non
   // appliquée, l'app fonctionne alors en mode club unique.
   const[teams,setTeams]=useState([]);
@@ -2024,45 +2032,45 @@ export default function App({session}){
         if(local)clubData={...clubData,sport:local};
       }
       setClub(clubData);
-      // Compter les visuels des 7 derniers jours
-      const since=new Date(Date.now()-7*24*60*60*1000).toISOString();
-      const{count}=await supabase
-        .from("visuals")
-        .select("*",{count:"exact",head:true})
-        .eq("club_id",clubData.id)
-        .gte("created_at",since);
-      if(stale())return;
-      setWeeklyCount(count||0);
 
-      // ── Équipes (migration 0006) ────────────────────────────────────────
-      // Tant que la table n'existe pas, on reste en mode club unique : la
-      // requête échoue, on garde une liste vide et rien n'est filtré. Le club
-      // retrouve exactement le comportement d'avant.
-      const{data:teamsData,error:teamsErr}=await supabase
-        .from("teams").select("*").eq("club_id",clubData.id)
-        .order("created_at",{ascending:true});
+      // ── Chargement du club ──────────────────────────────────────────────
+      // Ces quatre requêtes ne dépendent que de l'identifiant du club : les
+      // enchaîner en série coûtait quatre allers-retours réseau, soit près
+      // d'une seconde sur une connexion mobile. Une seule salve suffit.
+      //
+      // L'historique n'en fait volontairement PAS partie. Les visuels
+      // embarquent leurs images en base64 : soixante visuels représentent
+      // plusieurs dizaines de mégaoctets, téléchargés jusqu'ici à chaque
+      // connexion alors que seul leur NOMBRE est utilisé hors de l'onglet
+      // Visuels. On ne compte ici, on ne charge qu'à l'ouverture de l'onglet.
+      const since=new Date(Date.now()-7*24*60*60*1000).toISOString();
+      const cid=clubData.id;
+      const [weekRes, teamsRes, playersRes, mediaRes, totalRes] = await Promise.all([
+        supabase.from("visuals").select("*",{count:"exact",head:true}).eq("club_id",cid).gte("created_at",since),
+        supabase.from("teams").select("*").eq("club_id",cid).order("created_at",{ascending:true}),
+        supabase.from("players").select("*, photos:player_photos(*)").eq("club_id",cid),
+        supabase.from("media").select("*").eq("club_id",cid),
+        supabase.from("visuals").select("*",{count:"exact",head:true}).eq("club_id",cid),
+      ]);
       if(stale())return;
-      const teamList=teamsErr?[]:(teamsData||[]);
-      if(teamsErr)console.warn("[load] teams indisponible (migration 0006 non appliquée ?) :",teamsErr.message);
+
+      setWeeklyCount(weekRes.count||0);
+      setHistoryCount(totalRes.count||0);
+
+      // Équipes (migration 0006). Tant que la table n'existe pas, la requête
+      // échoue, la liste reste vide et rien n'est filtré : le club retrouve
+      // exactement le comportement d'avant.
+      const teamList=teamsRes.error?[]:(teamsRes.data||[]);
+      if(teamsRes.error)console.warn("[load] teams indisponible (migration 0006 non appliquée ?) :",teamsRes.error.message);
       setTeams(teamList);
       // Équipe active : celle mémorisée pour ce club si elle existe encore,
       // sinon la plus ancienne.
-      const savedTid=lsGet("team_"+clubData.id);
+      const savedTid=lsGet("team_"+cid);
       const active=teamList.find(t=>t.id===savedTid)||teamList[0]||null;
       setTeamId(active?active.id:null);
 
-      const{data:playersData}=await supabase.from("players").select("*, photos:player_photos(*)").eq("club_id",clubData.id);
-      if(stale())return;
-      setPlayers(sortPlayers(playersData));
-      const{data:mediaData}=await supabase.from("media").select("*").eq("club_id",clubData.id);
-      if(stale())return;
-      setMedia(mediaData||[]);
-      // Les visuels embarquent leurs images en base64 : sans limite, un club
-      // actif téléchargerait des dizaines de Mo à chaque ouverture.
-      const{data:visualsData}=await supabase.from("visuals").select("*").eq("club_id",clubData.id).order("created_at",{ascending:false}).limit(HISTORY_PAGE_SIZE);
-      if(stale())return;
-      const loadedSport=clubData.sport||DEFAULT_SPORT;
-      setHistory((visualsData||[]).map(v=>mapVisual(v,loadedSport)));
+      setPlayers(sortPlayers(playersRes.data));
+      setMedia(mediaRes.data||[]);
       setLoading(false);
     }
     load();
@@ -2283,11 +2291,41 @@ export default function App({session}){
       saved=data;
       if(saved)setHistory(h=>[mapVisual(saved,sport),...h]);
     }
-    if(saved&&!editId)setWeeklyCount(w=>w+1);
+    if(saved&&!editId){setWeeklyCount(w=>w+1);setHistoryCount(c=>c+1);}
     if(saved)setEditId(saved.id);
     setSaveFlash(true);setTimeout(()=>setSaveFlash(false),2000);
   }
-  async function deleteVisual(id){await supabase.from("visuals").delete().eq("id",id);setHistory(h=>h.filter(x=>x.id!==id));}
+  // Charge une page d'historique. Appelée à l'ouverture de l'onglet Visuels,
+  // puis par le bouton « Charger plus ». Une page de 12 pèse déjà plusieurs
+  // mégaoctets à cause des images en base64 : on n'en charge jamais plus que
+  // ce que l'utilisateur demande à voir.
+  const loadingHistRef=useRef(false);
+  async function loadHistoryPage(reset){
+    if(!club||loadingHistRef.current)return;
+    if(!reset&&historyDone)return;
+    loadingHistRef.current=true;
+    setHistoryState("loading");
+    const from=reset?0:allHistory.length;
+    const{data,error}=await supabase.from("visuals").select("*")
+      .eq("club_id",club.id)
+      .order("created_at",{ascending:false})
+      .range(from, from+HISTORY_PAGE_SIZE-1);
+    loadingHistRef.current=false;
+    if(error){
+      console.error("[loadHistoryPage] échec:",error.message);
+      setHistoryState("ready");return;
+    }
+    const page=(data||[]).map(v=>mapVisual(v,sport));
+    setHistory(prev=>reset?page:[...prev,...page]);
+    setHistoryDone(page.length<HISTORY_PAGE_SIZE);
+    setHistoryState("ready");
+  }
+  // Première ouverture de l'onglet : on déclenche le chargement.
+  useEffect(()=>{
+    if(nav==="history"&&historyState==="idle"&&club)loadHistoryPage(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[nav,club,historyState]);
+  async function deleteVisual(id){await supabase.from("visuals").delete().eq("id",id);setHistory(h=>h.filter(x=>x.id!==id));setHistoryCount(c=>Math.max(0,c-1));}
   async function signOut(){await supabase.auth.signOut();}
   async function downloadPng(){
     const el=document.querySelector(".visium-canvas");
@@ -2562,7 +2600,7 @@ export default function App({session}){
           <div style={{overflow:"hidden",flex:1}}><div style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:18,fontWeight:400,letterSpacing:".06em",color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{club?.name||"Viziona"}</div><div style={{fontFamily:"'DM Mono',ui-monospace,monospace",fontSize:9,color:t.text3,marginTop:2,letterSpacing:".1em",textTransform:"uppercase"}}>Studio visuel</div></div>
         </div>
         <nav style={{padding:"10px 8px",flex:1}}>
-          {NAVL.map(n=>(<button key={n.id} onClick={()=>{setNav(n.id);if(n.id!=="create")setSelType(null);}} style={{display:"flex",alignItems:"center",gap:10,width:"100%",background:nav===n.id?rgba(t.accent,.15):"transparent",border:"none",borderRadius:9,padding:"9px 11px",color:nav===n.id?t.accent:t.text2,cursor:"pointer",fontSize:13,marginBottom:1,textAlign:"left",fontWeight:nav===n.id?600:400}}><Icon name={n.icon} size={17}/><span>{n.label}</span>{n.id==="history"&&history.length>0&&<span style={{marginLeft:"auto",background:rgba(t.accent,.2),color:t.accent,fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{history.length}</span>}</button>))}
+          {NAVL.map(n=>(<button key={n.id} onClick={()=>{setNav(n.id);if(n.id!=="create")setSelType(null);}} style={{display:"flex",alignItems:"center",gap:10,width:"100%",background:nav===n.id?rgba(t.accent,.15):"transparent",border:"none",borderRadius:9,padding:"9px 11px",color:nav===n.id?t.accent:t.text2,cursor:"pointer",fontSize:13,marginBottom:1,textAlign:"left",fontWeight:nav===n.id?600:400}}><Icon name={n.icon} size={17}/><span>{n.label}</span>{n.id==="history"&&historyCount>0&&<span style={{marginLeft:"auto",background:rgba(t.accent,.2),color:t.accent,fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{historyCount}</span>}</button>))}
         </nav>
         <div style={{padding:12,borderTop:"1px solid "+t.border,display:"flex",flexDirection:"column",gap:8}}>
           <button onClick={()=>openCreate("goal")} style={{background:"#0a0a0a",color:"#fff",border:"2px solid "+(club?.color1||"#e63329"),borderRadius:2,padding:"10px 10px",fontSize:11,fontWeight:700,cursor:"pointer",width:"100%",letterSpacing:".12em",textTransform:"uppercase",fontFamily:"inherit"}}>Créer un visuel</button>
@@ -2576,7 +2614,7 @@ export default function App({session}){
             if(onboardingSkipped)return null;
             const clubDone=club?.is_configured===true;
             const playersDone=players.length>0;
-            const visualsDone=history.length>0;
+            const visualsDone=historyCount>0;
             if(clubDone&&playersDone&&visualsDone)return null;
             const steps=[
               {done:clubDone,label:"Configurer mon club",icon:"club",onClick:()=>setNav("club")},
@@ -2615,7 +2653,7 @@ export default function App({session}){
             );
           })()}
           <div style={{padding:"0 28px",display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:12,marginBottom:28}}>{CT.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,padding:"20px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(club?.color1||"#e63329",.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}><div style={{marginBottom:10,color:t.accent}}><Icon name={typeIconName(c.id,sport)} size={24} strokeWidth={1.5}/></div><div style={{fontWeight:700,color:t.text,fontSize:13,marginBottom:3}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.4}}>{c.desc}</div></div>))}</div>
-          <div style={{padding:"0 28px 28px",display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10}}>{[[history.length,"Visuels"],[players.length,T.players],[media.length,"Médias"],[LINEUP_TPLS.length+GROUP_TPLS.length+POST_TPLS.length,"Templates"]].map(([v,l])=>(<div key={l} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:22,fontWeight:700,color:t.accent,lineHeight:1}}>{v}</div><div style={{fontSize:11,color:t.text3,marginTop:4}}>{l}</div></div>))}</div>
+          <div style={{padding:"0 28px 28px",display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10}}>{[[historyCount,"Visuels"],[players.length,T.players],[media.length,"Médias"],[LINEUP_TPLS.length+GROUP_TPLS.length+POST_TPLS.length,"Templates"]].map(([v,l])=>(<div key={l} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:22,fontWeight:700,color:t.accent,lineHeight:1}}>{v}</div><div style={{fontSize:11,color:t.text3,marginTop:4}}>{l}</div></div>))}</div>
         </div>)}
         {nav==="club"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Mon Club</h2>
@@ -2702,16 +2740,24 @@ export default function App({session}){
         {nav==="create"&&(!selType?(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}><h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Choisir un type</h2><p style={{color:t.text3,marginBottom:22,fontSize:13}}>Sélectionnez ce que vous souhaitez créer.</p><TeamBar teams={teams} teamId={teamId} onPick={setTeamId} t={t} label="Créer pour"/><div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:14,maxWidth:680}}>{CT.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:"22px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(t.accent,.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}>  <div style={{marginBottom:12,color:t.accent}}><Icon name={typeIconName(c.id,sport)} size={26} strokeWidth={1.5}/></div><div style={{fontWeight:700,color:t.text,fontSize:14,marginBottom:4}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.5}}>{c.desc}</div></div>))}</div></div>):(selType==="lineup"||selType==="group")?renderSpecial():renderStandard())}
         {nav==="history"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Historique</h2>
-          <p style={{color:t.text3,marginBottom:22,fontSize:13}}>{history.length+" visuel"+(history.length!==1?"s":"")+" · Cloud ☁️"}</p>
+          <p style={{color:t.text3,marginBottom:22,fontSize:13}}>{historyCount+" visuel"+(historyCount!==1?"s":"")+(allHistory.length&&allHistory.length<historyCount?" · "+allHistory.length+" affichés":"")}</p>
           <TeamBar teams={teams} teamId={teamId} onPick={setTeamId} t={t}/>
-          {history.length===0?<div style={Object.assign({},card,{padding:"60px 20px",textAlign:"center",color:t.text3})}><div style={{marginBottom:14,display:"flex",justifyContent:"center",opacity:.5}}><Icon name="history" size={34} strokeWidth={1.3}/></div><div style={{fontSize:14}}>Aucun visuel sauvegardé</div></div>:(<div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:14}}>{history.map(h=>(<div key={h.id} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,overflow:"hidden"}}><div style={{background:"#030306",display:"flex",alignItems:"center",justifyContent:"center",padding:10}}><WhenVisible minHeight={140}><HistoryThumb h={h} c1={club?.color1||"#e63329"} c2={club?.color2||"#1a1a2e"}/></WhenVisible></div><div style={{padding:"10px 12px",borderTop:"1px solid "+t.border}}><div style={{fontSize:12,fontWeight:600,color:t.text,marginBottom:6,display:"flex",alignItems:"center",gap:7}}><span style={{color:t.text3,display:"flex"}}><Icon name={typeIconName(h.type,sport)} size={14} strokeWidth={1.7}/></span>{h.ct&&h.ct.label?h.ct.label:"Visuel"}</div><div style={{display:"flex",gap:6}}><button onClick={()=>{openCreate(h.type,h);setNav("create");}} style={{flex:1,background:rgba(t.accent,.15),color:t.accent,border:"1px solid "+rgba(t.accent,.3),borderRadius:7,padding:"6px 8px",fontSize:11,cursor:"pointer",fontWeight:600}}>↩ Modifier</button><button onClick={()=>deleteVisual(h.id)} style={{background:"rgba(239,68,68,.1)",color:"#fca5a5",border:"1px solid rgba(239,68,68,.25)",borderRadius:7,padding:"6px 8px",fontSize:11,cursor:"pointer"}}>✕</button></div></div></div>))}</div>)}
+          {historyState!=="ready"&&history.length===0?<div style={Object.assign({},card,{padding:"60px 20px",textAlign:"center",color:t.text3})}><div style={{fontSize:13}}>Chargement de vos visuels…</div></div>:history.length===0?<div style={Object.assign({},card,{padding:"60px 20px",textAlign:"center",color:t.text3})}><div style={{marginBottom:14,display:"flex",justifyContent:"center",opacity:.5}}><Icon name="history" size={34} strokeWidth={1.3}/></div><div style={{fontSize:14}}>Aucun visuel sauvegardé</div></div>:(<div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:14}}>{history.map(h=>(<div key={h.id} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,overflow:"hidden"}}><div style={{background:"#030306",display:"flex",alignItems:"center",justifyContent:"center",padding:10}}><WhenVisible minHeight={140}><HistoryThumb h={h} c1={club?.color1||"#e63329"} c2={club?.color2||"#1a1a2e"}/></WhenVisible></div><div style={{padding:"10px 12px",borderTop:"1px solid "+t.border}}><div style={{fontSize:12,fontWeight:600,color:t.text,marginBottom:6,display:"flex",alignItems:"center",gap:7}}><span style={{color:t.text3,display:"flex"}}><Icon name={typeIconName(h.type,sport)} size={14} strokeWidth={1.7}/></span>{h.ct&&h.ct.label?h.ct.label:"Visuel"}</div><div style={{display:"flex",gap:6}}><button onClick={()=>{openCreate(h.type,h);setNav("create");}} style={{flex:1,background:rgba(t.accent,.15),color:t.accent,border:"1px solid "+rgba(t.accent,.3),borderRadius:7,padding:"6px 8px",fontSize:11,cursor:"pointer",fontWeight:600}}>↩ Modifier</button><button onClick={()=>deleteVisual(h.id)} style={{background:"rgba(239,68,68,.1)",color:"#fca5a5",border:"1px solid rgba(239,68,68,.25)",borderRadius:7,padding:"6px 8px",fontSize:11,cursor:"pointer"}}>✕</button></div></div></div>))}</div>)}
+          {historyState==="ready"&&!historyDone&&allHistory.length>0&&(
+            <div style={{display:"flex",justifyContent:"center",marginTop:18}}>
+              <button onClick={()=>loadHistoryPage(false)} style={{background:"transparent",color:t.text2,border:"1px solid "+t.border2,borderRadius:8,padding:"10px 22px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
+                Charger plus ({historyCount-allHistory.length} restant{historyCount-allHistory.length>1?"s":""})
+              </button>
+            </div>)}
+          {historyState==="loading"&&allHistory.length>0&&(
+            <div style={{textAlign:"center",marginTop:18,fontSize:12,color:t.text3}}>Chargement…</div>)}
         </div>)}
         {nav==="settings"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Paramètres</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>Interface et données.</p>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16,maxWidth:650}}>
             <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Thème</div>{[["dark","Sombre","Interface noire premium"],["light","Clair","Interface blanche minimaliste"],["club","Couleurs du club","Adapté à vos couleurs"]].map(([mode,label,desc])=>(<div key={mode} onClick={()=>updateClub({theme_mode:mode})} style={{display:"flex",alignItems:"center",gap:12,padding:"13px 14px",borderRadius:10,border:"2px solid "+((club?.theme_mode||"dark")===mode?t.accent:t.border),background:(club?.theme_mode||"dark")===mode?rgba(t.accent,.12):t.bg3,cursor:"pointer",marginBottom:8}}><div style={{width:20,height:20,borderRadius:"50%",border:"2px solid "+t.accent,background:(club?.theme_mode||"dark")===mode?t.accent:"transparent",flexShrink:0}}/><div><div style={{fontSize:13,fontWeight:600,color:t.text}}>{label}</div><div style={{fontSize:11,color:t.text3,marginTop:2}}>{desc}</div></div></div>))}</div>
-            <div style={Object.assign({},card,{display:"flex",flexDirection:"column",gap:14})}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase"}}>Votre club</div><div style={{display:"flex",alignItems:"center",gap:12}}>{club?.logo_url?<img src={club.logo_url} style={{width:52,height:52,objectFit:"contain",borderRadius:8}} alt=""/>:<div style={{width:52,height:52,borderRadius:8,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:700,color:contrastText(mixC(club?.color1||"#e63329",club?.color2||"#1a1a2e",.5))}}>{(club?.name||"?")[0].toUpperCase()}</div>}<div><div style={{fontSize:16,fontWeight:700,color:t.text}}>{club?.name||"Club non configuré"}</div><div style={{fontSize:12,color:t.text3,marginTop:3}}>{session.user.email}</div><div style={{fontSize:12,color:t.text3}}>{players.length+" "+T.playersLower+" · "+media.length+" médias · "+history.length+" visuels"}</div></div></div><button onClick={()=>setNav("club")} style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:9,padding:"9px 16px",color:t.text2,cursor:"pointer",fontSize:12,fontWeight:500,textAlign:"left"}}>Modifier les infos du club →</button><button onClick={signOut} style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.2)",borderRadius:9,padding:"9px 16px",color:"#fca5a5",cursor:"pointer",fontSize:12,textAlign:"left"}}>Se déconnecter</button></div>
+            <div style={Object.assign({},card,{display:"flex",flexDirection:"column",gap:14})}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase"}}>Votre club</div><div style={{display:"flex",alignItems:"center",gap:12}}>{club?.logo_url?<img src={club.logo_url} style={{width:52,height:52,objectFit:"contain",borderRadius:8}} alt=""/>:<div style={{width:52,height:52,borderRadius:8,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:700,color:contrastText(mixC(club?.color1||"#e63329",club?.color2||"#1a1a2e",.5))}}>{(club?.name||"?")[0].toUpperCase()}</div>}<div><div style={{fontSize:16,fontWeight:700,color:t.text}}>{club?.name||"Club non configuré"}</div><div style={{fontSize:12,color:t.text3,marginTop:3}}>{session.user.email}</div><div style={{fontSize:12,color:t.text3}}>{players.length+" "+T.playersLower+" · "+media.length+" médias · "+historyCount+" visuels"}</div></div></div><button onClick={()=>setNav("club")} style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:9,padding:"9px 16px",color:t.text2,cursor:"pointer",fontSize:12,fontWeight:500,textAlign:"left"}}>Modifier les infos du club →</button><button onClick={signOut} style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.2)",borderRadius:9,padding:"9px 16px",color:"#fca5a5",cursor:"pointer",fontSize:12,textAlign:"left"}}>Se déconnecter</button></div>
           </div>
           <div style={{marginTop:28,paddingTop:18,borderTop:"1px solid "+t.border,maxWidth:650}}>
             <a href="/#cgu" target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:t.text3,textDecoration:"underline",letterSpacing:".02em"}}>Conditions générales d'utilisation</a>
@@ -2732,7 +2778,7 @@ export default function App({session}){
                 style={{flex:isCreate?1.25:1,minWidth:0,background:isCreate?(active?t.accent:rgba(t.accent,.18)):"none",border:"none",padding:"4px 2px",color:isCreate?(active?contrastText(t.accent):t.accent):(active?t.accent:t.text2),cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1,fontWeight:active?700:500,position:"relative",margin:isCreate?"4px":0,borderRadius:isCreate?12:0,transition:"all .15s",overflow:"hidden"}}>
                 <Icon name={n.icon} size={isCreate?21:19} strokeWidth={isCreate?2:1.6}/>
                 <span style={{fontSize:isCreate?9:8,letterSpacing:isCreate?".04em":0,textTransform:isCreate?"uppercase":"none",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{n.label}</span>
-                {n.id==="history"&&history.length>0&&<span style={{position:"absolute",top:3,right:"15%",background:t.accent,color:contrastText(t.accent),fontSize:7,fontWeight:700,padding:"1px 4px",borderRadius:7,minWidth:12,textAlign:"center",lineHeight:1.2}}>{history.length}</span>}
+                {n.id==="history"&&historyCount>0&&<span style={{position:"absolute",top:3,right:"15%",background:t.accent,color:contrastText(t.accent),fontSize:7,fontWeight:700,padding:"1px 4px",borderRadius:7,minWidth:12,textAlign:"center",lineHeight:1.2}}>{historyCount}</span>}
               </button>
             );
           })}

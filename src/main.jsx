@@ -5,13 +5,18 @@ import { StrictMode, useState, useEffect, Component, lazy, Suspense } from "reac
 import { createRoot } from "react-dom/client"
 import { supabase } from "./supabase"
 import Auth from "./Auth"
-import Landing from "./Landing"
 
 // L'éditeur et l'écran admin ne servent qu'une fois connecté. Les charger à la
 // demande évite à un visiteur de la page publique de télécharger tout le
 // studio (éditeur, traitement d'image, registre des sports) pour rien.
 const App = lazy(() => import("./App"))
 const Admin = lazy(() => import("./Admin"))
+// Symétriquement, la page publique ne sert qu'aux visiteurs non connectés :
+// un club qui revient sur l'app la téléchargeait pour rien. Elle est grosse —
+// galerie des sept sports, gabarits de démonstration, trois documents
+// juridiques. Auth reste en statique : c'est le petit écran qui suit
+// immédiatement la landing, le charger à part ajouterait une attente visible.
+const Landing = lazy(() => import("./Landing"))
 
 function Splash({ label }) {
   return (
@@ -181,9 +186,9 @@ function Root() {
   }
 
   // Permettre l'accès à la landing (CGU notamment) même quand authentifié
-  if (typeof window !== "undefined" && window.location.hash === "#cgu") return <Landing onEnter={(mode) => { window.location.hash = ""; enterAuth(mode); }} />
+  if (typeof window !== "undefined" && window.location.hash === "#cgu") return <Suspense fallback={<Splash/>}><Landing onEnter={(mode) => { window.location.hash = ""; enterAuth(mode); }} /></Suspense>
 
-  if (showLanding && !session) return <Landing onEnter={enterAuth} />
+  if (showLanding && !session) return <Suspense fallback={<Splash/>}><Landing onEnter={enterAuth} /></Suspense>
   if (!session) return <Auth onBack={() => setShowLanding(true)} initialMode={authMode}/>
   return <Suspense fallback={<Splash label="Chargement du studio…"/>}><App session={session} /></Suspense>
 }
