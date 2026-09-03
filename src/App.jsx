@@ -1172,10 +1172,46 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
     const t=setTimeout(()=>setMobileToast(false),2000);
     return()=>clearTimeout(t);
   },[sel,isMobile,mobileSheet]);
+  // ── Pile d'annulation ─────────────────────────────────────────────────────
+  // Un instantané était pris avec JSON.parse(JSON.stringify(layers)), donc une
+  // COPIE PROFONDE. Or un calque sponsor porte son image en data URL : avec
+  // trois sponsors, chaque instantané sérialisait puis reconstruisait 2 Mo de
+  // base64, et la pile en retenait huit. Comme onMD en prenait un à CHAQUE
+  // appui, vingt interactions allouaient puis jetaient 80 Mo. C'est ce qui
+  // faisait tomber l'éditeur sur téléphone.
+  //
+  // Une copie de surface suffit : les calques sont des objets plats, et les
+  // chaînes JavaScript étant immuables, les data URL sont PARTAGÉES au lieu
+  // d'être dupliquées. Le coût d'un instantané devient celui de quelques
+  // dizaines de petits objets.
+  function snap(list){ return list.map(l=>({...l})); }
+  // Les curseurs (taille, ombre, interligne, courbure…) appellent upd() à
+  // chaque événement : un seul glissement empilait des dizaines d'états et
+  // vidait donc les huit niveaux d'annulation du mobile en un geste. On
+  // regroupe les appels rapprochés — le premier de la rafale porte déjà le
+  // « avant », les suivants n'apportent rien.
+  const lastPushRef=useRef(0);
   function pushHist(){
-    historyRef.current.push(JSON.parse(JSON.stringify(layers)));
+    const now=Date.now();
+    if(now-lastPushRef.current<400){ lastPushRef.current=now; return; }
+    lastPushRef.current=now;
+    historyRef.current.push(snap(layers));
     if(historyRef.current.length>HIST_MAX)historyRef.current.shift();
     setHistoryDepth(historyRef.current.length);
+  }
+  // Instantané différé : on retient l'état d'avant-geste sans l'empiler, et on
+  // ne l'empile qu'au relâchement SI quelque chose a bougé. Sélectionner un
+  // calque sans le déplacer ne pollue donc plus la pile — ce qui était le cas
+  // le plus fréquent, et le plus coûteux.
+  const pendingRef=useRef(null);
+  function armHist(){ pendingRef.current=snap(layers); }
+  function commitHist(changed){
+    if(pendingRef.current&&changed){
+      historyRef.current.push(pendingRef.current);
+      if(historyRef.current.length>HIST_MAX)historyRef.current.shift();
+      setHistoryDepth(historyRef.current.length);
+    }
+    pendingRef.current=null;
   }
   function undo(){
     if(historyRef.current.length===0)return;
@@ -1206,13 +1242,11 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
     if(e.changedTouches&&e.changedTouches.length>0)return{x:e.changedTouches[0].clientX,y:e.changedTouches[0].clientY};
     return{x:e.clientX,y:e.clientY};
   }
-  const onMD=useCallback((e,id)=>{const l=layers.find(x=>x.id===id);if(!l||l.locked)return;e.preventDefault();e.stopPropagation();setSel(id);historyRef.current.push(JSON.parse(JSON.stringify(layers)));if(historyRef.current.length>HIST_MAX)historyRef.current.shift();setHistoryDepth(historyRef.current.length);const rect=cvRef.current.getBoundingClientRect();const p=pt(e);dragRef.current={id,ox:l.x,oy:l.y,mx0:(p.x-rect.left)/rect.width*100,my0:(p.y-rect.top)/rect.height*100};},[layers,HIST_MAX]);
+  const onMD=useCallback((e,id)=>{const l=layers.find(x=>x.id===id);if(!l||l.locked)return;e.preventDefault();e.stopPropagation();setSel(id);armHist();const rect=cvRef.current.getBoundingClientRect();const p=pt(e);dragRef.current={id,ox:l.x,oy:l.y,mx0:(p.x-rect.left)/rect.width*100,my0:(p.y-rect.top)/rect.height*100};},[layers,HIST_MAX]);
   const onResize=useCallback((e,id,corner)=>{
     const l=layers.find(x=>x.id===id);if(!l||l.locked)return;
     setSel(id);
-    historyRef.current.push(JSON.parse(JSON.stringify(layers)));
-    if(historyRef.current.length>HIST_MAX)historyRef.current.shift();
-    setHistoryDepth(historyRef.current.length);
+    armHist();
     const rect=cvRef.current.getBoundingClientRect();
     const p=pt(e);
     resizeRef.current={id,corner,ox:l.x,oy:l.y,ow:l.w,oh:l.h,startX:p.x,startY:p.y,canvasW:rect.width,canvasH:rect.height};
@@ -1244,7 +1278,17 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
     setLayers(prev=>prev.map(l=>l.id===dragRef.current.id?{...l,x:Math.max(0,Math.min(90,dragRef.current.ox+(mx-dragRef.current.mx0))),y:Math.max(0,Math.min(95,dragRef.current.oy+(my-dragRef.current.my0)))}:l));
     if(e.cancelable)e.preventDefault();
   },[setLayers]);
-  const onMU=useCallback(()=>{dragRef.current=null;resizeRef.current=null;},[]);
+  // Fin de geste : on n'empile l'instantané que si le calque a réellement
+  // bougé ou changé de taille. Un simple appui de sélection n'alimente donc
+  // plus la pile d'annulation.
+  const onMU=useCallback(()=>{
+    const d=dragRef.current, r=resizeRef.current;
+    let changed=false;
+    if(d){const cur=layers.find(x=>x.id===d.id);if(cur&&(cur.x!==d.ox||cur.y!==d.oy))changed=true;}
+    if(r){const cur=layers.find(x=>x.id===r.id);if(cur&&(cur.x!==r.ox||cur.y!==r.oy||cur.w!==r.ow||cur.h!==r.oh))changed=true;}
+    commitHist(changed);
+    dragRef.current=null;resizeRef.current=null;
+  },[layers]);
   function addColorBlock(){
     pushHist();
     const newId="cb_"+Date.now();
