@@ -444,7 +444,13 @@ function makeLayers(type,c1,c2,sport){
       L("bd",4,"text",6,60,88,18,"Corps",Object.assign({},TD,{text:"Texte du message.",fontSize:14,color:"rgba(255,255,255,0.7)",align:"left",lineHeight:1.5})),
     ],
   };
-  return JSON.parse(JSON.stringify(sets[type]||sets.goal));
+  const out=JSON.parse(JSON.stringify(sets[type]||sets.goal));
+  // Motif de fond propose d emblee selon la discipline : c est ce qui donne
+  // au visuel un air de « sport du club » des l ouverture, sans reglage. Le
+  // club reste libre d en changer ou de l enlever dans le panneau Fond.
+  const pat=SPORT_PATTERN[sport];
+  if(pat) out.forEach(function(l){ if(l.type==="bg"){ l.pattern=pat; l.patternStrength=14; } });
+  return out;
 }
 // ─── CURVED TEXT ──────────────────────────────────────────────
 function CurvedText({lay,containerW}){
@@ -520,9 +526,51 @@ function CurvedText({lay,containerW}){
   );
 }
 // ─── LAYER RENDERER ───────────────────────────────────────────
+// ─── MOTIFS DE FOND ───────────────────────────────────────────
+// Alternative à l'aplat uni : des trames géométriques qui évoquent le sport
+// sans figurer quoi que ce soit. Dessinées en SVG plutôt qu'en dégradés CSS
+// répétés, parce que html2canvas rend le SVG de façon fiable — c'est déjà le
+// cas du filigrane — alors que le support des `repeating-linear-gradient` est
+// inégal selon les navigateurs.
+// Elles prennent la couleur du club et restent en fond : opacité basse, pas
+// d'interception des clics.
+const BG_PATTERNS = [
+  {id:"",         label:"Aucun"},
+  {id:"stripes",  label:"Rayures"},
+  {id:"chevrons", label:"Chevrons"},
+  {id:"grid",     label:"Grille"},
+  {id:"rings",    label:"Cercles"},
+  {id:"dots",     label:"Trame"},
+  {id:"waves",    label:"Vagues"},
+  {id:"halo",     label:"Halo"},
+];
+// Motif propose par defaut selon la discipline, quand le club n'a rien choisi.
+const SPORT_PATTERN = {football:"stripes", rugby:"chevrons", hockey:"grid", basketball:"rings", handball:"dots", natation:"waves", triathlon:"chevrons"};
+function BgPattern({name,color,strength}){
+  if(!name) return null;
+  const c = color||"#ffffff";
+  const o = (strength==null?18:strength)/100;   // opacité globale, réglable
+  const pid = "bgp_"+name;
+  let def=null;
+  if(name==="stripes")  def=<pattern id={pid} width="26" height="26" patternUnits="userSpaceOnUse" patternTransform="rotate(35)"><rect width="9" height="26" fill={c}/></pattern>;
+  if(name==="chevrons") def=<pattern id={pid} width="30" height="30" patternUnits="userSpaceOnUse"><path d="M0 22 L15 8 L30 22" fill="none" stroke={c} strokeWidth="5"/></pattern>;
+  if(name==="grid")     def=<pattern id={pid} width="22" height="22" patternUnits="userSpaceOnUse"><path d="M22 0 L0 0 0 22" fill="none" stroke={c} strokeWidth="1.4"/></pattern>;
+  if(name==="rings")    def=<pattern id={pid} width="64" height="64" patternUnits="userSpaceOnUse"><circle cx="32" cy="32" r="27" fill="none" stroke={c} strokeWidth="2.4"/><circle cx="32" cy="32" r="14" fill="none" stroke={c} strokeWidth="2.4"/></pattern>;
+  if(name==="dots")     def=<pattern id={pid} width="16" height="16" patternUnits="userSpaceOnUse"><circle cx="4" cy="4" r="2.4" fill={c}/></pattern>;
+  if(name==="waves")    def=<pattern id={pid} width="48" height="24" patternUnits="userSpaceOnUse"><path d="M0 18 Q12 6 24 18 T48 18" fill="none" stroke={c} strokeWidth="3"/></pattern>;
+  if(name==="halo")     def=<radialGradient id={pid} cx="50%" cy="18%" r="72%"><stop offset="0%" stopColor={c} stopOpacity="1"/><stop offset="100%" stopColor={c} stopOpacity="0"/></radialGradient>;
+  if(!def) return null;
+  return(
+    <svg aria-hidden="true" width="100%" height="100%" preserveAspectRatio="none"
+      style={{position:"absolute",inset:0,pointerEvents:"none",opacity:o}}>
+      <defs>{def}</defs>
+      <rect width="100%" height="100%" fill={"url(#"+pid+")"}/>
+    </svg>
+  );
+}
 function renderLayerContent(lay, bgUrl, playerUrl, logoUrl, logo2Url, accent, accent2, clubName){
   const isTextType = ["text","watertext","heading","subtext"].includes(lay.type);
-  if(lay.type==="bg") return(<div style={{width:"100%",height:"100%",overflow:"hidden",background:lay.fillColor||"transparent"}}>{bgUrl?<img src={bgUrl} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>:(lay.fillColor?null:<div style={{width:"100%",height:"100%",background:"linear-gradient(160deg,#0a0a1a,#1a0a2e)"}}/>)}</div>);
+  if(lay.type==="bg") return(<div style={{width:"100%",height:"100%",overflow:"hidden",position:"relative",background:lay.fillColor||"transparent"}}>{bgUrl?<img src={bgUrl} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>:(lay.fillColor?null:<div style={{width:"100%",height:"100%",background:"linear-gradient(160deg,#0a0a1a,#1a0a2e)"}}/>)}<BgPattern name={lay.pattern} color={lay.patternColor||accent} strength={lay.patternStrength}/></div>);
   if(lay.type==="overlay") return(<div style={{width:"100%",height:"100%",background:"linear-gradient(to bottom,rgba(0,0,0,"+((lay.opacity||60)/200)+"),rgba(0,0,0,"+((lay.opacity||60)/100)+")"}}/>);
   if(lay.type==="stripe") return(<div style={{width:"100%",height:"100%",background:"linear-gradient(90deg,"+(lay.color||accent)+","+(lay.color2||accent2)+")"}}/>);
   if(lay.type==="colorblock") return(<div style={{width:"100%",height:"100%",background:lay.color||"#ff5555",opacity:(lay.opacity==null?80:lay.opacity)/100}}/>);
@@ -2662,16 +2710,48 @@ export default function App({session}){
             {bgUrl&&<button onClick={()=>setBgUrl(null)} style={{fontSize:11,color:t.text3,background:"none",border:"none",cursor:"pointer"}}>✕ Retirer</button>}
           </div>
         </PBox>
-        {selType==="post"&&(()=>{
+        {/* Fond : couleur ET motif, sur TOUS les types de l'éditeur libre.
+            Le réglage n'était proposé que sur « Annonce », alors que le calque
+            de fond existe sur chacun d'eux. */}
+        {(()=>{
           const bgLay=layers.find(l=>l.type==="bg");
-          const curColor=(bgLay&&bgLay.fillColor)||"#000000";
+          if(!bgLay)return null;
+          const curColor=bgLay.fillColor||"#000000";
+          const curPat=bgLay.pattern||"";
+          const curStr=bgLay.patternStrength==null?18:bgLay.patternStrength;
+          const setBg=(patch)=>setLayers(prev=>prev.map(l=>l.type==="bg"?{...l,...patch}:l));
           return(
             <PBox t={t}>
-              <SHdr label="Couleur de fond" t={t}/>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <input type="color" value={curColor} onChange={e=>setLayers(prev=>prev.map(l=>l.type==="bg"?{...l,fillColor:e.target.value}:l))} style={{width:60,height:36,borderRadius:6,border:"1px solid "+t.border2,background:t.bg3,cursor:"pointer",padding:2}}/>
-                <span style={{fontSize:11,color:t.text3}}>Visible si pas d'image de fond</span>
+              <SHdr label="Fond" t={t}/>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                <input type="color" value={curColor} onChange={e=>setBg({fillColor:e.target.value})} style={{width:56,height:34,borderRadius:6,border:"1px solid "+t.border2,background:t.bg3,cursor:"pointer",padding:2}}/>
+                <span style={{fontSize:11,color:t.text3,lineHeight:1.35}}>Couleur unie, visible sous le motif et sans image de fond</span>
               </div>
+              <div style={{fontSize:9,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:6}}>Motif</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+                {BG_PATTERNS.map(bp=>{
+                  const on=curPat===bp.id;
+                  return(
+                    <button key={bp.id||"none"} onClick={()=>setBg({pattern:bp.id})} title={bp.label}
+                      style={{position:"relative",height:46,borderRadius:7,overflow:"hidden",cursor:"pointer",padding:0,
+                        background:curColor,border:"2px solid "+(on?t.accent:t.border2)}}>
+                      <BgPattern name={bp.id} color={t.accent} strength={42}/>
+                      <span style={{position:"absolute",left:0,right:0,bottom:0,fontSize:8,padding:"2px 0",background:"rgba(0,0,0,.6)",color:"#fff",letterSpacing:".04em"}}>{bp.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {curPat&&(<>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10}}>
+                  <span style={{fontSize:10,color:t.text3,flexShrink:0}}>Intensité</span>
+                  <input type="range" min={4} max={60} step={1} value={curStr} onChange={e=>setBg({patternStrength:+e.target.value})} style={{flex:1,minWidth:0}}/>
+                  <span style={{fontSize:10,color:t.accent,fontVariantNumeric:"tabular-nums",width:26,textAlign:"right"}}>{curStr}</span>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginTop:8}}>
+                  <span style={{fontSize:10,color:t.text3,flexShrink:0}}>Couleur du motif</span>
+                  <input type="color" value={bgLay.patternColor||club?.color1||"#e63329"} onChange={e=>setBg({patternColor:e.target.value})} style={{width:44,height:28,borderRadius:5,border:"1px solid "+t.border2,background:t.bg3,cursor:"pointer",padding:2}}/>
+                </div>
+              </>)}
             </PBox>
           );
         })()}
