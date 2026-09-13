@@ -23,6 +23,11 @@ const BASE_TERMS = {
   competition: "Compétition", competitionPlaceholder: "2e ligue · J12",
   scoreEvent: "BUT !", scoreEventShort: "BUT",
   lineupTitle: "Composition XI", lineupShort: "Composition", formationLabel: "Formation",
+  // Jeton court affiche devant la formation dans l en-tete du visuel. Seul le
+  // football en a besoin : ses formations sont purement numeriques (4-4-2) et
+  // « XI » donne le contexte. Partout ailleurs le nom de la formation est deja
+  // explicite (« XV de depart », « Alignement 5+1 »), d ou une valeur vide.
+  lineupBadge: "XI",
   staff: "Staff", squadSection: "Joueurs & groupe",
 };
 
@@ -91,7 +96,7 @@ export const SPORTS = {
     types: TEAM_TYPES,
     terms: {
       scoreEvent: "ESSAI !", scoreEventShort: "ESSAI",
-      lineupTitle: "Composition XV", competitionPlaceholder: "LNA · J12",
+      lineupTitle: "Composition XV", competitionPlaceholder: "LNA · J12", lineupBadge: "",
     },
     typeLabels: { goal: { label: "Essai", desc: "Célébration d'un essai" }, lineup: { label: "Composition XV", desc: "XV de départ" } },
   },
@@ -114,7 +119,7 @@ export const SPORTS = {
     types: TEAM_TYPES,
     terms: {
       venue: "Patinoire", lineupTitle: "Alignement", lineupShort: "Alignement",
-      formationLabel: "Ligne", competitionPlaceholder: "MyHockey League · J12",
+      formationLabel: "Ligne", competitionPlaceholder: "MyHockey League · J12", lineupBadge: "",
     },
     typeLabels: { goal: { }, lineup: { label: "Alignement", desc: "Ligne de départ" } },
   },
@@ -137,7 +142,7 @@ export const SPORTS = {
     types: TEAM_TYPES,
     terms: {
       venue: "Salle", scoreEvent: "PANIER !", scoreEventShort: "PANIER",
-      lineupTitle: "Cinq de départ", lineupShort: "Cinq de départ",
+      lineupTitle: "Cinq de départ", lineupShort: "Cinq de départ", lineupBadge: "",
       competitionPlaceholder: "SB League · J12",
     },
     typeLabels: { goal: { label: "Panier", desc: "Action décisive" }, lineup: { label: "Cinq de départ", desc: "Les 5 titulaires" } },
@@ -160,7 +165,7 @@ export const SPORTS = {
     ],
     types: TEAM_TYPES,
     terms: {
-      venue: "Salle", lineupTitle: "Sept de départ", lineupShort: "Sept de départ",
+      venue: "Salle", lineupTitle: "Sept de départ", lineupShort: "Sept de départ", lineupBadge: "",
       competitionPlaceholder: "SHL · J12",
     },
     typeLabels: { goal: { }, lineup: { label: "Sept de départ", desc: "Les 7 titulaires" } },
