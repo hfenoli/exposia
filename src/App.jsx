@@ -1,7 +1,7 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import { supabase } from "./supabase";
 import { compressImageFile, removeBackground, dominantBorderColor, isImageFile, formatBytes, makeThumbnail, TOLERANCE_PRESETS, MAX_SOURCE_BYTES } from "./imaging";
-import { SPORT_LIST, DEFAULT_SPORT, getSport, termsFor, ctypesFor, ctypeInfo } from "./sports";
+import { SPORT_LIST, DEFAULT_SPORT, getSport, termsFor, ctypesFor, ctypeInfo, isTeamSport } from "./sports";
 // ─── BOTTOM SHEET SWIPE-TO-DISMISS ────────────────────────────
 // Helper module-level pour pouvoir être utilisé dans DragCanvas comme dans App.
 function makeSwipeClose(onClose){
@@ -168,8 +168,20 @@ function playerPosLabel(p){
   const num=(p.number===0||p.number)?String(p.number).trim():"";
   return [p.position||"",num?"#"+num:""].filter(Boolean).join(" · ");
 }
-function isNameLayer(l){ return l.id==="nm"||/nom\s*(du\s*)?joueur/i.test(l.label||""); }
-function isPosLayer(l){ return l.id==="ps"||/^poste/i.test(l.label||""); }
+// Detection du calque a remplir automatiquement quand on choisit un joueur.
+// Les motifs testaient « nom joueur » et « poste », soit le vocabulaire du
+// football : le libelle reel est « Nom athlete », « Nom nageur », ou encore
+// « Format » et « Specialite » selon la discipline. Un calque ajoute a la main
+// n etait donc plus reconnu hors football. On teste desormais le prefixe et on
+// s appuie sur le vocabulaire du sport.
+function isNameLayer(l){ return l.id==="nm"||/^nom\b/i.test(l.label||""); }
+function isPosLayer(l,sport){
+  if(l.id==="ps") return true;
+  const lbl=(l.label||"").trim().toLowerCase();
+  if(/^poste/.test(lbl)) return true;
+  if(sport){ const pl=(termsFor(sport).positionLabel||"").toLowerCase(); if(pl&&lbl.startsWith(pl)) return true; }
+  return false;
+}
 function applyPlayerToLayers(layers,player,prevPlayer,sport){
   const POS_PLACEHOLDERS=posPlaceholders(sport);
   if(!player) return layers;
@@ -182,7 +194,7 @@ function applyPlayerToLayers(layers,player,prevPlayer,sport){
   return layers.map(l=>{
     if(!l||!["text","heading","subtext"].includes(l.type)) return l;
     if(isNameLayer(l)&&name&&free(l.text,NAME_PLACEHOLDERS,prevName)) return Object.assign({},l,{text:name});
-    if(isPosLayer(l)&&pos&&free(l.text,POS_PLACEHOLDERS,prevPos)) return Object.assign({},l,{text:pos});
+    if(isPosLayer(l,sport)&&pos&&free(l.text,POS_PLACEHOLDERS,prevPos)) return Object.assign({},l,{text:pos});
     return l;
   });
 }
@@ -436,6 +448,36 @@ function makeLayers(type,c1,c2,sport){
       L("p3",8,"text",8,64,84,8,"3e place",Object.assign({},TD,{text:"3.  Prénom Nom  ·  00:57:03",fontSize:17,color:"#cd8b5a",align:"left"})),
       L("dt",9,"text",6,88,88,6,"Date / lieu",Object.assign({},TD,{text:"12 avril · "+T.venue,fontSize:12,color:"rgba(255,255,255,0.45)"})),
     ],
+    // ── Variantes pour les sports individuels ────────────────────────────
+    // Natation et triathlon recoivent aussi « Resultats » et « Affiche », mais
+    // les gabarits collectifs y sont absurdes : le premier affiche un tableau
+    // de score 2-0 avec logo adversaire, le second « MON CLUB vs Epreuve ».
+    // On ne joue pas contre une course. Ces variantes sont choisies
+    // automatiquement quand le sport est individuel.
+    resultSolo:[
+      L("bg",0,"bg",0,0,100,100,"Fond",{locked:true,fillColor:"#0b0b12"}),
+      L("ov",1,"overlay",0,0,100,100,"Assombrissement",{locked:true,opacity:45}),
+      L("st",2,"stripe",0,0,100,1.5,"Bande",{color:c1,color2:c2}),
+      L("lg",3,"logo",4,4,13,13,"Logo club"),
+      L("ti",4,"text",6,19,88,9,"Titre",Object.assign({},TD,{text:ctypeInfo(sport,"result").label.toUpperCase(),fontSize:38,color:"#ffffff",bold:true,letterSpacing:4})),
+      L("ev",5,"text",6,29,88,6,T.opponent,Object.assign({},TD,{text:T.competitionPlaceholder,fontSize:14,color:c1})),
+      L("r1",6,"text",8,41,84,7,"Ligne 1",Object.assign({},TD,{text:"1.  Prénom Nom  ·  00:54:12",fontSize:17,color:"#ffffff",align:"left"})),
+      L("r2",7,"text",8,49,84,7,"Ligne 2",Object.assign({},TD,{text:"4.  Prénom Nom  ·  00:56:30",fontSize:16,color:"rgba(255,255,255,0.86)",align:"left"})),
+      L("r3",8,"text",8,57,84,7,"Ligne 3",Object.assign({},TD,{text:"9.  Prénom Nom  ·  00:58:05",fontSize:16,color:"rgba(255,255,255,0.86)",align:"left"})),
+      L("r4",9,"text",8,65,84,7,"Ligne 4",Object.assign({},TD,{text:"12.  Prénom Nom  ·  01:00:22",fontSize:16,color:"rgba(255,255,255,0.72)",align:"left"})),
+      L("dt",10,"text",6,88,88,6,"Date / lieu",Object.assign({},TD,{text:"12 avril · "+T.venue,fontSize:12,color:"rgba(255,255,255,0.45)"})),
+    ],
+    matchSolo:[
+      L("bg",0,"bg",0,0,100,100,"Fond",{locked:true}),
+      L("ov",1,"overlay",0,0,100,100,"Assombrissement",{locked:true,opacity:58}),
+      L("st",2,"stripe",0,0,100,1.5,"Bande",{color:c1,color2:c2}),
+      L("tg",3,"text",6,16,88,6,"Étiquette",Object.assign({},TD,{text:ctypeInfo(sport,"match").label.toUpperCase(),fontSize:11,color:c1,bold:true,letterSpacing:4})),
+      L("ev",4,"text",4,24,92,18,T.opponent,Object.assign({},TD,{text:T.competitionPlaceholder,fontSize:40,color:"#ffffff",bold:true})),
+      L("dt",5,"text",4,46,92,8,"Date",Object.assign({},TD,{text:"Samedi 12 avril · 09h00",fontSize:18,color:"#ffffff"})),
+      L("vn",6,"text",4,55,92,6,T.venue,Object.assign({},TD,{text:"Nom du lieu",fontSize:13,color:"rgba(255,255,255,0.55)"})),
+      L("lg",7,"logo",43,68,14,14,"Logo club"),
+      L("nb",8,"text",4,84,92,6,"Engagés",Object.assign({},TD,{text:"6 "+T.playersLower+" engagés",fontSize:13,color:c1})),
+    ],
     post:[
       L("bg",0,"bg",0,0,100,100,"Fond",{locked:true,fillColor:"#000000"}),
       L("lg",1,"logo",4,4,14,14,"Logo club"),
@@ -444,7 +486,10 @@ function makeLayers(type,c1,c2,sport){
       L("bd",4,"text",6,60,88,18,"Corps",Object.assign({},TD,{text:"Texte du message.",fontSize:14,color:"rgba(255,255,255,0.7)",align:"left",lineHeight:1.5})),
     ],
   };
-  const out=JSON.parse(JSON.stringify(sets[type]||sets.goal));
+  // Un sport individuel prend la variante dediee quand elle existe.
+  const solo = getSport(sport).kind === "individual";
+  const key = (solo && sets[type+"Solo"]) ? type+"Solo" : type;
+  const out=JSON.parse(JSON.stringify(sets[key]||sets.goal));
   // Motif de fond propose d emblee selon la discipline : c est ce qui donne
   // au visuel un air de « sport du club » des l ouverture, sans reglage. Le
   // club reste libre d en changer ou de l enlever dans le panneau Fond.
@@ -2678,6 +2723,10 @@ export default function App({session}){
     </div>);
   }
   function renderStandard(){
+    // Un sport individuel n'affronte personne : ni logo adversaire, ni score
+    // d'equipe. Les gabarits resultSolo / matchSolo retirent deja les calques
+    // correspondants, ce drapeau retire les reglages qui les pilotaient.
+    const showOpponent = isTeamSport(sport) && (selType==="result"||selType==="match");
     const stdPanelStyle=isMobile?{position:"fixed",bottom:0,left:0,right:0,maxHeight:"75vh",background:t.bg2,borderTop:"1px solid "+t.border,overflowY:"auto",padding:14,flexShrink:0,zIndex:200,transform:mobileSheet==="options"?"translateY(0)":"translateY(100%)",transition:"transform .25s ease",boxShadow:mobileSheet==="options"?"0 -8px 24px rgba(0,0,0,.4)":"none",borderTopLeftRadius:16,borderTopRightRadius:16}:{width:250,background:t.bg2,borderRight:"1px solid "+t.border,overflowY:"auto",padding:14,flexShrink:0};
     return(<div style={{flex:1,display:"flex",overflow:"hidden",position:"relative",flexDirection:isMobile?"column":"row"}}>
       {isMobile&&mobileSheet==="options"&&<div onClick={()=>setMobileSheet(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:150}}/>}
@@ -2755,11 +2804,12 @@ export default function App({session}){
             </PBox>
           );
         })()}
+        {/* Le logo adversaire n'a de sens que pour un sport collectif. */}
         <PBox t={t}>
-          <SHdr label={selType==="recruit"?"Logo club":"Logos"} t={t}/>
-          <div style={{display:"grid",gridTemplateColumns:(selType==="result"||selType==="match")?"1fr 1fr":"1fr",gap:10}}>
+          <SHdr label={(selType==="recruit"||!showOpponent)?"Logo club":"Logos"} t={t}/>
+          <div style={{display:"grid",gridTemplateColumns:showOpponent?"1fr 1fr":"1fr",gap:10}}>
             <div><div style={{fontSize:10,color:t.text3,marginBottom:5}}>Club</div><UpBtn val={logoUrl} on={setLogoUrl} w={52} h={52} r={8} label="Upload" t={t}/>{club?.logo_url&&<button onClick={()=>setLogoUrl(club.logo_url)} style={{fontSize:10,color:t.accent,background:"none",border:"none",cursor:"pointer",marginTop:4,display:"block"}}>← Logo club</button>}</div>
-            {(selType==="result"||selType==="match")&&<div><div style={{fontSize:10,color:t.text3,marginBottom:5}}>Adversaire</div><UpBtn val={logo2Url} on={setLogo2Url} w={52} h={52} r={8} label="Upload" t={t}/>{logo2Url&&<button onClick={()=>setLogo2Url(null)} style={{fontSize:10,color:t.text3,background:"none",border:"none",cursor:"pointer",marginTop:4,display:"block"}}>✕</button>}</div>}
+            {showOpponent&&<div><div style={{fontSize:10,color:t.text3,marginBottom:5}}>{T.opponent}</div><UpBtn val={logo2Url} on={setLogo2Url} w={52} h={52} r={8} label="Upload" t={t}/>{logo2Url&&<button onClick={()=>setLogo2Url(null)} style={{fontSize:10,color:t.text3,background:"none",border:"none",cursor:"pointer",marginTop:4,display:"block"}}>✕</button>}</div>}
           </div>
         </PBox>
         {saveBtn()}
