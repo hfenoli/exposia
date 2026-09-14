@@ -1898,6 +1898,22 @@ function PostEditor({pd,setPd,t}){
 // Certaines colonnes sont ajoutées par des migrations qui peuvent ne pas être
 // encore appliquées (thumb_url, migration 0003). Plutôt que de faire échouer
 // l'import, on réessaie sans elles.
+// Traduit une erreur Postgres en phrase comprehensible. Le detail technique
+// reste en console pour le diagnostic : ce qui s affichait jusqu ici, du type
+// « new row violates row-level security policy », alarme le club sans lui dire
+// quoi faire. Les messages leves par nos propres declencheurs de quota
+// (errcode 54000) sont deja ecrits pour l utilisateur : on les laisse passer.
+function humanError(error, fallback){
+  if(!error) return fallback;
+  const code=error.code||"";
+  if(code==="54000") return error.message;
+  if(code==="42501") return "Action non autorisee pour votre compte.";
+  if(code==="23505") return "Cet element existe deja.";
+  if(code==="23503") return "Element introuvable : il a peut-etre ete supprime entre-temps.";
+  if(code==="PGRST301"||code==="401") return "Votre session a expire. Rechargez la page pour vous reconnecter.";
+  if(/fetch|network|failed to fetch/i.test(error.message||"")) return "Connexion interrompue. Verifiez votre reseau et reessayez.";
+  return fallback;
+}
 function isMissingColumn(error){
   return !!error && (error.code==="42703" || /column .* does not exist/i.test(error.message||""));
 }
@@ -2281,7 +2297,7 @@ export default function App({session}){
     const{data,error}=await supabase.from("teams").insert({club_id:club.id,name:label}).select().single();
     if(error){
       console.error("[addTeam] échec:",error.message);
-      setLimitError(error.code==="54000"?error.message:"Impossible de créer l'équipe : "+error.message);
+      setLimitError(humanError(error,"Creation de l equipe impossible. Reessayez dans un instant."));
       setTimeout(()=>setLimitError(""),4000);return;
     }
     setTeams(ts=>[...ts,data]);
@@ -2342,7 +2358,7 @@ export default function App({session}){
     if(!img)return;
     const{data,error}=await insertTolerant("player_photos",
       {player_id:playerId,url:img.url,thumb_url:img.thumbUrl,name:file.name,is_fav:false},["thumb_url"]);
-    if(error){console.error("[addPhoto] échec:",error);alert("Enregistrement de la photo impossible : "+error.message);return;}
+    if(error){console.error("[addPhoto] échec:",error);alert(humanError(error,"Enregistrement de la photo impossible. Reessayez dans un instant."));return;}
     if(data)setPlayers(prev=>prev.map(p=>p.id===playerId?{...p,photos:sortPhotos([...(p.photos||[]),data])}:p));
   },[]);
   const addPhotoUrl=useCallback(async(playerId,url,name)=>{
@@ -2350,12 +2366,12 @@ export default function App({session}){
     try{ thumbUrl=await makeThumbnail(url); }catch(e){ console.warn("[addPhotoUrl] vignette non générée:",e); }
     const{data,error}=await insertTolerant("player_photos",
       {player_id:playerId,url,thumb_url:thumbUrl,name:name||"photo_nobg",is_fav:false},["thumb_url"]);
-    if(error){console.error("[addPhotoUrl] échec:",error);alert("Enregistrement de la photo impossible : "+error.message);return;}
+    if(error){console.error("[addPhotoUrl] échec:",error);alert(humanError(error,"Enregistrement de la photo impossible. Reessayez dans un instant."));return;}
     if(data)setPlayers(prev=>prev.map(p=>p.id===playerId?{...p,photos:sortPhotos([...(p.photos||[]),data])}:p));
   },[]);
   const deletePhoto=useCallback(async(playerId,photoId,photoUrl)=>{
     const{error}=await supabase.from("player_photos").delete().eq("id",photoId);
-    if(error){console.error("[deletePhoto] échec:",error);alert("Suppression impossible : "+error.message);return;}
+    if(error){console.error("[deletePhoto] échec:",error);alert(humanError(error,"Suppression impossible. Reessayez dans un instant."));return;}
     setPlayers(prev=>prev.map(p=>p.id===playerId
       ?{...p,photos:(p.photos||[]).filter(ph=>ph.id!==photoId)}
       :p));
@@ -2395,7 +2411,7 @@ export default function App({session}){
       if(!img)continue;
       const{data,error}=await insertTolerant("media",
         {club_id:club.id,url:img.url,thumb_url:img.thumbUrl,name:file.name},["thumb_url"]);
-      if(error){console.error("[pickMedia] échec:",error);alert("Enregistrement du média impossible : "+error.message);continue;}
+      if(error){console.error("[pickMedia] échec:",error);alert(humanError(error,"Enregistrement du media impossible. Reessayez dans un instant."));continue;}
       if(data)setMedia(m=>[...m,data]);
     }
   }
@@ -2460,8 +2476,12 @@ export default function App({session}){
   async function save(){
     if(!editId){
       if(weeklyCount>=(club.max_visuals_per_week||5)){
-        setLimitError("Limite hebdomadaire atteinte. Passez à l'offre supérieure pour continuer.");
-        setTimeout(()=>setLimitError(""),3000);
+        // Le message disait seulement « limite atteinte ». Le club ignorait
+        // combien il avait droit, sur quelle periode, et quand cela se
+        // libere -- au pire moment, apres avoir compose son visuel.
+        const maxW=club.max_visuals_per_week||5;
+        setLimitError("Vous avez cree vos "+maxW+" visuels sur les 7 derniers jours. Le compteur est glissant : le plus ancien se libere au fil des jours. Passez a l offre superieure pour en creer davantage.");
+        setTimeout(()=>setLimitError(""),7000);
         return;
       }
     }
@@ -2473,12 +2493,12 @@ export default function App({session}){
     let saved;
     if(editId){
       const{data,error}=await writeVisual("update",payload,editId);
-      if(error){console.error("[save] update failed:",error.message);setLimitError("Erreur lors de la sauvegarde : "+error.message);setTimeout(()=>setLimitError(""),4000);return;}
+      if(error){console.error("[save] update failed:",error.message);setLimitError(humanError(error,"Sauvegarde impossible pour le moment. Reessayez dans un instant."));setTimeout(()=>setLimitError(""),4000);return;}
       saved=data;
       if(saved)setHistory(h=>h.map(x=>x.id===editId?mapVisual(saved,sport):x));
     } else {
       const{data,error}=await writeVisual("insert",payload);
-      if(error){console.error("[save] insert failed:",error.message);setLimitError("Erreur lors de la sauvegarde : "+error.message);setTimeout(()=>setLimitError(""),4000);return;}
+      if(error){console.error("[save] insert failed:",error.message);setLimitError(humanError(error,"Sauvegarde impossible pour le moment. Reessayez dans un instant."));setTimeout(()=>setLimitError(""),4000);return;}
       saved=data;
       if(saved)setHistory(h=>[mapVisual(saved,sport),...h]);
     }
@@ -2886,7 +2906,26 @@ export default function App({session}){
             );
           })()}
           <div style={{padding:"0 28px",display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:12,marginBottom:28}}>{CT.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,padding:"20px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(club?.color1||"#e63329",.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}><div style={{marginBottom:10,color:t.accent}}><Icon name={typeIconName(c.id,sport)} size={24} strokeWidth={1.5}/></div><div style={{fontWeight:700,color:t.text,fontSize:13,marginBottom:3}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.4}}>{c.desc}</div></div>))}</div>
-          <div style={{padding:"0 28px 28px",display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10}}>{[[historyCount,"Visuels"],[players.length,T.players],[media.length,"Médias"],[LINEUP_TPLS.length+GROUP_TPLS.length+POST_TPLS.length,"Templates"]].map(([v,l])=>(<div key={l} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:10,padding:"14px 16px"}}><div style={{fontSize:22,fontWeight:700,color:t.accent,lineHeight:1}}>{v}</div><div style={{fontSize:11,color:t.text3,marginTop:4}}>{l}</div></div>))}</div>
+          <div style={{padding:"0 28px 28px",display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10}}>{(()=>{
+            // Le quota hebdomadaire etait charge mais jamais montre : le club
+            // ne le decouvrait qu en le heurtant, apres avoir compose son
+            // visuel. Il remplace la vignette « Templates », dont le nombre
+            // est constant et ne dit rien de sa situation.
+            const maxW=club?.max_visuals_per_week||5;
+            const reste=Math.max(0,maxW-weeklyCount);
+            const serre=reste<=1;
+            const cartes=[
+              [historyCount,"Visuels",null],
+              [players.length,T.players,null],
+              [media.length,"Médias",null],
+              [weeklyCount+" / "+(maxW>=1000?"∞":maxW),"Cette semaine",serre&&maxW<1000?"#f59e0b":null],
+            ];
+            return cartes.map(([v,l,col])=>(
+              <div key={l} style={{background:t.bg2,border:"1px solid "+(col||t.border),borderRadius:10,padding:"14px 16px"}}>
+                <div style={{fontSize:22,fontWeight:700,color:col||t.accent,lineHeight:1}}>{v}</div>
+                <div style={{fontSize:11,color:t.text3,marginTop:4}}>{l}</div>
+              </div>));
+          })()}</div>
         </div>)}
         {nav==="club"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Mon Club</h2>
