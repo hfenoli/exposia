@@ -332,11 +332,37 @@ function rr(hex){ hex=(hex||"#000").replace("#",""); if(hex.length===3)hex=hex[0
 function rgba(hex,a){ const[r,g,b]=rr(hex); return "rgba("+r+","+g+","+b+","+a+")"; }
 function mixC(h1,h2,t){ const a=rr(h1),b=rr(h2); return "#"+[0,1,2].map(i=>Math.round(a[i]+(b[i]-a[i])*t).toString(16).padStart(2,"0")).join(""); }
 function lum(h){ const[r,g,b]=rr(h); return(0.299*r+0.587*g+0.114*b)/255; }
-function contrastText(hex){
+function wcagLum(hex){
   const[r,g,b]=rr(hex);
   const lin=c=>{c/=255;return c<=0.03928?c/12.92:Math.pow((c+0.055)/1.055,2.4);};
-  const L=0.2126*lin(r)+0.7152*lin(g)+0.0722*lin(b);
-  return L>0.179?"#000":"#fff";
+  return 0.2126*lin(r)+0.7152*lin(g)+0.0722*lin(b);
+}
+function contrastText(hex){ return wcagLum(hex)>0.179?"#000":"#fff"; }
+function contrastRatio(h1,h2){
+  const a=wcagLum(h1), b=wcagLum(h2);
+  return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);
+}
+// Variante LISIBLE d'une couleur sur un fond donné.
+// La couleur du club est utilisée telle quelle comme couleur de texte et
+// d'icône dans l'interface. Un club en jaune ou en blanc cassé devenait donc
+// illisible sur le thème clair : c'est ce que remonte l'utilisateur.
+// On assombrit ou on éclaircit la teinte par paliers, en conservant sa
+// dominante, jusqu'à atteindre un rapport de contraste de 3 — le seuil WCAG
+// pour un pictogramme ou un texte de grande taille.
+function readableOn(color,bg,minRatio){
+  const target=minRatio||3;
+  if(!color||!bg) return color;
+  if(contrastRatio(color,bg)>=target) return color;
+  // On pousse vers le noir si le fond est clair, vers le blanc sinon.
+  const vers = wcagLum(bg)>0.4 ? "#000000" : "#ffffff";
+  let best=color, bestR=contrastRatio(color,bg);
+  for(let t=0.1;t<=0.9;t+=0.1){
+    const c=mixC(color,vers,t);
+    const r=contrastRatio(c,bg);
+    if(r>bestR){best=c;bestR=r;}
+    if(r>=target) return c;
+  }
+  return best;
 }
 function buildTheme(c1,c2,mode){
   const a=c1||"#e63329", b=c2||"#1a1a2e";
@@ -346,6 +372,7 @@ function buildTheme(c1,c2,mode){
       border:"#e0e0e0",border2:"#cfcfcf",
       text:"#111111",text2:"rgba(0,0,0,.6)",text3:"rgba(0,0,0,.4)",
       accent:a,accent2:b,
+      accentUI:readableOn(a,"#f5f5f5"),
     };
   }
   if(mode==="club"){
@@ -360,6 +387,7 @@ function buildTheme(c1,c2,mode){
       text2: dk?"rgba(255,255,255,.65)":"rgba(0,0,0,.55)",
       text3: dk?"rgba(255,255,255,.38)":"rgba(0,0,0,.33)",
       accent:a, accent2:b,
+      accentUI:readableOn(a, dk?mixC(a,"#000",.55):mixC(a,"#fff",.76)),
     };
   }
   return{
@@ -367,6 +395,7 @@ function buildTheme(c1,c2,mode){
     border:"rgba(255,255,255,.08)", border2:"rgba(255,255,255,.18)",
     text:"#f0f0f8", text2:"rgba(240,240,248,.58)", text3:"rgba(240,240,248,.33)",
     accent:a, accent2:b,
+    accentUI:readableOn(a,"#0f0f1a"),
   };
 }
 // ─── LAYER DEFAULTS ───────────────────────────────────────────
@@ -1555,14 +1584,14 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
         {isText&&<div style={{marginBottom:8}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
             <span style={{fontSize:9,color:t.text3}}>Texte en arc</span>
-            <span style={{fontSize:11,color:t.accent,fontWeight:600,fontVariantNumeric:"tabular-nums"}}>{(selL.curve||0)+"°"}</span>
+            <span style={{fontSize:11,color:t.accentUI,fontWeight:600,fontVariantNumeric:"tabular-nums"}}>{(selL.curve||0)+"°"}</span>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:isMobile?8:5}}>
             <button onClick={()=>upd("curve",Math.max(-180,(selL.curve||0)-1))} className="viz-touch-btn" style={{background:t.bg4,border:"1px solid "+t.border2,color:t.text2,borderRadius:isMobile?7:5,padding:0,fontSize:isMobile?18:13,cursor:"pointer",fontWeight:700,lineHeight:1,width:isMobile?44:24,height:isMobile?44:undefined,flexShrink:0,fontFamily:"inherit"}}>−</button>
             <input type="range" min={-180} max={180} step={1} value={selL.curve||0} onChange={e=>upd("curve",+e.target.value)} style={{flex:1,minWidth:0,height:isMobile?28:undefined}}/>
             <button onClick={()=>upd("curve",Math.min(180,(selL.curve||0)+1))} className="viz-touch-btn" style={{background:t.bg4,border:"1px solid "+t.border2,color:t.text2,borderRadius:isMobile?7:5,padding:0,fontSize:isMobile?18:13,cursor:"pointer",fontWeight:700,lineHeight:1,width:isMobile?44:24,height:isMobile?44:undefined,flexShrink:0,fontFamily:"inherit"}}>+</button>
           </div>
-          {(selL.curve||0)!==0&&<button onClick={()=>upd("curve",0)} style={{background:"none",border:"none",color:t.accent,cursor:"pointer",fontSize:9,padding:0,textDecoration:"underline",marginTop:3}}>Reset</button>}
+          {(selL.curve||0)!==0&&<button onClick={()=>upd("curve",0)} style={{background:"none",border:"none",color:t.accentUI,cursor:"pointer",fontSize:9,padding:0,textDecoration:"underline",marginTop:3}}>Reset</button>}
         </div>}
         {selL.type==="watertext"&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Opacité filigrane ({selL.opacity||15}%)</div><TouchSlider value={selL.opacity||15} onChange={v=>upd("opacity",v)} min={1} max={60} step={1} t={t} isMobile={isMobile}/></div>}
         {selL.type==="overlay"&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Intensité ({selL.opacity||60}%)</div><TouchSlider value={selL.opacity||60} onChange={v=>upd("opacity",v)} min={0} max={100} step={1} t={t} isMobile={isMobile}/></div>}
@@ -1625,7 +1654,7 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
             <div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Couleur</div><input type="color" value={selL.color||"#22c55e"} onChange={e=>upd("color",e.target.value)} style={{width:"100%",height:30,borderRadius:6,border:"1px solid "+t.border2,background:t.bg4,cursor:"pointer",padding:2}}/></div>
             <div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Taille</div><input type="number" value={selL.fontSize||11} onChange={e=>upd("fontSize",+e.target.value||11)} style={inp}/></div>
           </div>
-          {selL.color&&<button onClick={()=>upd("color",null)} style={{background:"none",border:"none",color:t.accent,cursor:"pointer",fontSize:9,padding:0,textDecoration:"underline",marginBottom:8}}>Reset couleur auto</button>}
+          {selL.color&&<button onClick={()=>upd("color",null)} style={{background:"none",border:"none",color:t.accentUI,cursor:"pointer",fontSize:9,padding:0,textDecoration:"underline",marginBottom:8}}>Reset couleur auto</button>}
         </>}
         <div style={{background:t.bg3,borderRadius:8,padding:9,marginBottom:8}}><div style={{fontSize:9,color:t.text3,fontWeight:700,marginBottom:6}}>POSITION & TAILLE</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginBottom:4}}><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>X %</div><input type="number" value={Math.round(selL.x||0)} onChange={e=>upd("x",+e.target.value)} style={inp}/></div><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Y %</div><input type="number" value={Math.round(selL.y||0)} onChange={e=>upd("y",+e.target.value)} style={inp}/></div></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Larg %</div><input type="number" value={Math.round(selL.w||20)} onChange={e=>upd("w",+e.target.value)} style={inp}/></div><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Haut %</div><input type="number" value={Math.round(selL.h||10)} onChange={e=>upd("h",+e.target.value)} style={inp}/></div></div></div>
         <div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Nom du calque</div><input value={selL.label||""} onChange={e=>upd("label",e.target.value)} style={inp}/></div>
@@ -1726,7 +1755,7 @@ function TplGrid({tpls,sel,onSel,t,maxTemplates}){
                 position:"relative"
               }}>
               {locked&&<span style={{position:"absolute",top:4,right:6,opacity:.55,display:"flex"}}><Icon name="lock" size={11} strokeWidth={1.9}/></span>}
-              <div style={{fontSize:11,fontWeight:sel===tpl.id?700:500,color:sel===tpl.id?t.accent:t.text}}>{tpl.label}</div>
+              <div style={{fontSize:11,fontWeight:sel===tpl.id?700:500,color:sel===tpl.id?t.accentUI:t.text}}>{tpl.label}</div>
             </div>
           );
         })}
@@ -1776,7 +1805,7 @@ function PhotoPanel({players,selId,onSel,selUrl,onSelUrl,onAdd,onAddUrl,onFav,on
     <div style={{fontSize:10,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:6}}>{T.player}</div>
     <TSel v={selId?String(selId):""} on={v=>onSel(v?v:null)} t={t} opts={[{v:"",l:"Sélectionner un "+T.playerLower+"..."},...players.map(p=>({v:p.id,l:p.name+" · #"+p.number}))]}/>
     {player&&(<div style={{marginTop:10}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}><span style={{fontSize:11,color:t.text2}}>{busy?"Import en cours…":photos.length+" photo"+(photos.length!==1?"s":"")}</span><button onClick={()=>ref.current.click()} disabled={busy} style={{fontSize:11,color:t.accent,background:rgba(t.accent,.12),border:"1px solid "+rgba(t.accent,.3),borderRadius:6,padding:"4px 10px",cursor:busy?"wait":"pointer",fontWeight:600}}>+ Photo</button></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}><span style={{fontSize:11,color:t.text2}}>{busy?"Import en cours…":photos.length+" photo"+(photos.length!==1?"s":"")}</span><button onClick={()=>ref.current.click()} disabled={busy} style={{fontSize:11,color:t.accentUI,background:rgba(t.accent,.12),border:"1px solid "+rgba(t.accent,.3),borderRadius:6,padding:"4px 10px",cursor:busy?"wait":"pointer",fontWeight:600}}>+ Photo</button></div>
       <input ref={ref} type="file" accept="image/*" multiple style={{display:"none"}} onChange={pick}/>
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4}}>
         {photos.map(ph=>{
@@ -1844,9 +1873,9 @@ function LineupEditor({ld,setLd,players,t,sport}){
   return(<div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>{termsFor(sport).formationLabel}</div><TSel v={fm} on={v=>setLd(d=>Object.assign({},d,{formation:v,starters:[]}))} t={t} opts={Object.keys(F)}/></div><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>{termsFor(sport).opponent}</div><TIn v={ld.opponent||""} on={v=>setLd(d=>Object.assign({},d,{opponent:v}))} ph="vs..." t={t}/></div></div>
     <div style={{marginBottom:8}}><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Compétition</div><TIn v={ld.competition||""} on={v=>setLd(d=>Object.assign({},d,{competition:v}))} ph="Ligue 1..." t={t}/></div>
-    <button onClick={autoFill} style={{width:"100%",background:rgba(t.accent,.15),color:t.accent,border:"1px solid "+rgba(t.accent,.3),borderRadius:7,padding:"7px",fontSize:11,cursor:"pointer",marginBottom:10,fontWeight:600}}>⚡ Remplissage auto</button>
-    {rowDefs.map((row,ri)=>(<div key={ri} style={{marginBottom:7}}><div style={{fontSize:9,color:t.accent,letterSpacing:".1em",fontWeight:700,marginBottom:3,textTransform:"uppercase"}}>{row.label}</div>{Array.from({length:row.count}).map((_,pi)=>{const idx=row.from+pi;const cur=starters[idx];const ph=getPhoto(cur);return(<div key={pi} style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}><div style={{width:24,height:24,borderRadius:5,overflow:"hidden",background:t.bg4,flexShrink:0,border:"1px solid "+(cur?t.accent:t.border)}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:9,color:t.text3,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>{idx+1}</span>}</div><TSel v={cur?cur.id:""} on={v=>setStarter(idx,v)} t={t} opts={[{v:"",l:"— Poste libre —"},...players.map(p=>({v:p.id,l:"#"+p.number+" "+p.name}))]}/>{cur&&<button onClick={()=>toggleCaptain(cur.id)} title={isCaptain(cur.id)?"Retirer le brassard":"Désigner capitaine"} style={{width:22,height:22,flexShrink:0,borderRadius:5,cursor:"pointer",fontFamily:"inherit",fontSize:10,fontWeight:700,lineHeight:1,padding:0,background:isCaptain(cur.id)?t.accent:"transparent",color:isCaptain(cur.id)?contrastText(t.accent):t.text3,border:"1px solid "+(isCaptain(cur.id)?t.accent:t.border2)}}>C</button>}</div>);})}</div>))}
-    <div style={{fontSize:9,color:t.accent,letterSpacing:".1em",fontWeight:700,marginBottom:5,marginTop:8,textTransform:"uppercase"}}>Remplaçants</div>
+    <button onClick={autoFill} style={{width:"100%",background:rgba(t.accent,.15),color:t.accentUI,border:"1px solid "+rgba(t.accent,.3),borderRadius:7,padding:"7px",fontSize:11,cursor:"pointer",marginBottom:10,fontWeight:600}}>⚡ Remplissage auto</button>
+    {rowDefs.map((row,ri)=>(<div key={ri} style={{marginBottom:7}}><div style={{fontSize:9,color:t.accentUI,letterSpacing:".1em",fontWeight:700,marginBottom:3,textTransform:"uppercase"}}>{row.label}</div>{Array.from({length:row.count}).map((_,pi)=>{const idx=row.from+pi;const cur=starters[idx];const ph=getPhoto(cur);return(<div key={pi} style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}><div style={{width:24,height:24,borderRadius:5,overflow:"hidden",background:t.bg4,flexShrink:0,border:"1px solid "+(cur?t.accent:t.border)}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:9,color:t.text3,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>{idx+1}</span>}</div><TSel v={cur?cur.id:""} on={v=>setStarter(idx,v)} t={t} opts={[{v:"",l:"— Poste libre —"},...players.map(p=>({v:p.id,l:"#"+p.number+" "+p.name}))]}/>{cur&&<button onClick={()=>toggleCaptain(cur.id)} title={isCaptain(cur.id)?"Retirer le brassard":"Désigner capitaine"} style={{width:22,height:22,flexShrink:0,borderRadius:5,cursor:"pointer",fontFamily:"inherit",fontSize:10,fontWeight:700,lineHeight:1,padding:0,background:isCaptain(cur.id)?t.accent:"transparent",color:isCaptain(cur.id)?contrastText(t.accent):t.text3,border:"1px solid "+(isCaptain(cur.id)?t.accent:t.border2)}}>C</button>}</div>);})}</div>))}
+    <div style={{fontSize:9,color:t.accentUI,letterSpacing:".1em",fontWeight:700,marginBottom:5,marginTop:8,textTransform:"uppercase"}}>Remplaçants</div>
     {Array.from({length:7}).map((_,i)=>{const cur=subs[i];const ph=getPhoto(cur);return(<div key={i} style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}><div style={{width:24,height:24,borderRadius:5,overflow:"hidden",background:t.bg4,flexShrink:0,border:"1px solid "+(cur?t.accent:t.border)}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:9,color:t.text3,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>{i+12}</span>}</div><TSel v={cur?cur.id:""} on={v=>setSub(i,v)} t={t} opts={[{v:"",l:"— Remplaçant —"},...players.map(p=>({v:p.id,l:"#"+p.number+" "+p.name}))]}/></div>);})}
   </div>);
 }
@@ -1887,10 +1916,10 @@ function GroupEditor({gd,setGd,players,t,sport}){
           <div style={{fontSize:9,color:t.text3,marginBottom:2}}>Couleur</div>
           <input type="color" value={gd.titleColor||"#ffffff"} onChange={e=>setGd(d=>Object.assign({},d,{titleColor:e.target.value}))} style={{width:"100%",height:30,borderRadius:6,border:"1px solid "+t.border2,background:t.bg4,cursor:"pointer",padding:2}}/>
         </div>
-        {(gd.titleColor||gd.titleSize||gd.titleFont)&&<button onClick={()=>setGd(d=>{const n=Object.assign({},d);delete n.titleFont;delete n.titleSize;delete n.titleColor;return n;})} style={{background:"none",border:"none",color:t.accent,cursor:"pointer",fontSize:9,padding:"4px 0",textDecoration:"underline",whiteSpace:"nowrap",alignSelf:"flex-end"}}>Reset défauts</button>}
+        {(gd.titleColor||gd.titleSize||gd.titleFont)&&<button onClick={()=>setGd(d=>{const n=Object.assign({},d);delete n.titleFont;delete n.titleSize;delete n.titleColor;return n;})} style={{background:"none",border:"none",color:t.accentUI,cursor:"pointer",fontSize:9,padding:"4px 0",textDecoration:"underline",whiteSpace:"nowrap",alignSelf:"flex-end"}}>Reset défauts</button>}
       </div>
     </div>
-    {cats.map(cat=>{const list=gd[cat.k]||[];const avail=players.filter(p=>(cat.pos?cat.pos.includes(p.position):true)&&!list.some(x=>x.id===p.id));return(<div key={cat.k} style={{marginBottom:7,background:t.bg3,borderRadius:8,padding:"9px 10px"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:11,color:t.text,fontWeight:600}}>{cat.l} <span style={{color:t.text3,fontWeight:400}}>({list.length})</span></span><button onClick={()=>add(cat.k)} style={{fontSize:10,color:t.accent,background:rgba(t.accent,.12),border:"1px solid "+rgba(t.accent,.3),borderRadius:5,padding:"3px 7px",cursor:"pointer"}}>+ Manuel</button></div>{avail.length>0&&(<div style={{display:"flex",gap:5,marginBottom:7}}><select value={impSel[cat.k]||""} onChange={e=>setImpSel(s=>Object.assign({},s,{[cat.k]:e.target.value}))} style={{flex:1,background:t.bg4,border:"1px solid "+t.border,borderRadius:5,padding:"5px 7px",color:t.text,fontSize:11,outline:"none"}}><option value="">— Ajouter depuis l'effectif —</option>{avail.map(p=><option key={p.id} value={p.id}>{"#"+p.number+" "+p.name}</option>)}</select><button onClick={()=>importOne(cat.k)} style={{background:impSel[cat.k]?t.accent:"#2a2a2a",color:"#fff",border:"none",borderRadius:5,padding:"5px 11px",fontSize:12,cursor:"pointer",fontWeight:600}}>↓</button></div>)}{list.length===0&&<div style={{fontSize:10,color:t.text3,textAlign:"center",padding:"3px 0",fontStyle:"italic"}}>Aucun joueur</div>}{list.map(p=>(<div key={p.id} style={{display:"flex",alignItems:"center",gap:5,marginBottom:4,background:t.bg4,borderRadius:6,padding:"4px 6px"}}><div style={{width:24,height:24,borderRadius:4,overflow:"hidden",background:t.bg2,flexShrink:0,cursor:"pointer",border:"1px solid "+(p.photo?t.accent:t.border)}} onClick={()=>{const i=document.createElement("input");i.type="file";i.accept="image/*";i.onchange=e=>{const f=e.target.files[0];if(!validateImageFile(f))return;const r=new FileReader();r.onload=ev=>upd(cat.k,p.id,"photo",ev.target.result);r.readAsDataURL(f);};i.click();}}>{p.photo?<img src={p.photo} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:12,color:t.text3,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>+</span>}</div><input value={p.number||""} onChange={e=>upd(cat.k,p.id,"number",e.target.value)} placeholder="#" style={Object.assign({},inp,{width:25})}/><input value={p.name||""} onChange={e=>upd(cat.k,p.id,"name",e.target.value)} placeholder="Nom" style={Object.assign({},inp,{flex:1})}/><span onClick={()=>upd(cat.k,p.id,"captain",!p.captain)} title={p.captain?"Retirer le brassard":"Désigner capitaine"} style={{cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",width:20,height:20,borderRadius:5,flexShrink:0,fontSize:10,fontWeight:700,fontFamily:"inherit",background:p.captain?t.accent:"transparent",color:p.captain?contrastText(t.accent):t.text3,border:"1px solid "+(p.captain?t.accent:t.border2)}}>C</span><button onClick={()=>rem(cat.k,p.id)} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:12,padding:0}}>✕</button></div>))}</div>);})}
+    {cats.map(cat=>{const list=gd[cat.k]||[];const avail=players.filter(p=>(cat.pos?cat.pos.includes(p.position):true)&&!list.some(x=>x.id===p.id));return(<div key={cat.k} style={{marginBottom:7,background:t.bg3,borderRadius:8,padding:"9px 10px"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:11,color:t.text,fontWeight:600}}>{cat.l} <span style={{color:t.text3,fontWeight:400}}>({list.length})</span></span><button onClick={()=>add(cat.k)} style={{fontSize:10,color:t.accentUI,background:rgba(t.accent,.12),border:"1px solid "+rgba(t.accent,.3),borderRadius:5,padding:"3px 7px",cursor:"pointer"}}>+ Manuel</button></div>{avail.length>0&&(<div style={{display:"flex",gap:5,marginBottom:7}}><select value={impSel[cat.k]||""} onChange={e=>setImpSel(s=>Object.assign({},s,{[cat.k]:e.target.value}))} style={{flex:1,background:t.bg4,border:"1px solid "+t.border,borderRadius:5,padding:"5px 7px",color:t.text,fontSize:11,outline:"none"}}><option value="">— Ajouter depuis l'effectif —</option>{avail.map(p=><option key={p.id} value={p.id}>{"#"+p.number+" "+p.name}</option>)}</select><button onClick={()=>importOne(cat.k)} style={{background:impSel[cat.k]?t.accent:"#2a2a2a",color:"#fff",border:"none",borderRadius:5,padding:"5px 11px",fontSize:12,cursor:"pointer",fontWeight:600}}>↓</button></div>)}{list.length===0&&<div style={{fontSize:10,color:t.text3,textAlign:"center",padding:"3px 0",fontStyle:"italic"}}>Aucun joueur</div>}{list.map(p=>(<div key={p.id} style={{display:"flex",alignItems:"center",gap:5,marginBottom:4,background:t.bg4,borderRadius:6,padding:"4px 6px"}}><div style={{width:24,height:24,borderRadius:4,overflow:"hidden",background:t.bg2,flexShrink:0,cursor:"pointer",border:"1px solid "+(p.photo?t.accent:t.border)}} onClick={()=>{const i=document.createElement("input");i.type="file";i.accept="image/*";i.onchange=e=>{const f=e.target.files[0];if(!validateImageFile(f))return;const r=new FileReader();r.onload=ev=>upd(cat.k,p.id,"photo",ev.target.result);r.readAsDataURL(f);};i.click();}}>{p.photo?<img src={p.photo} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:12,color:t.text3,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>+</span>}</div><input value={p.number||""} onChange={e=>upd(cat.k,p.id,"number",e.target.value)} placeholder="#" style={Object.assign({},inp,{width:25})}/><input value={p.name||""} onChange={e=>upd(cat.k,p.id,"name",e.target.value)} placeholder="Nom" style={Object.assign({},inp,{flex:1})}/><span onClick={()=>upd(cat.k,p.id,"captain",!p.captain)} title={p.captain?"Retirer le brassard":"Désigner capitaine"} style={{cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",width:20,height:20,borderRadius:5,flexShrink:0,fontSize:10,fontWeight:700,fontFamily:"inherit",background:p.captain?t.accent:"transparent",color:p.captain?contrastText(t.accent):t.text3,border:"1px solid "+(p.captain?t.accent:t.border2)}}>C</span><button onClick={()=>rem(cat.k,p.id)} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:12,padding:0}}>✕</button></div>))}</div>);})}
   </div>);
 }
 function PostEditor({pd,setPd,t}){
@@ -2710,7 +2739,7 @@ export default function App({session}){
         <PBox t={t}>
           <SHdr label="Logo club" t={t}/>
           <UpBtn val={logoUrl} on={setLogoUrl} w={56} h={56} r={8} label="Upload" t={t}/>
-          {club?.logo_url&&<button onClick={()=>setLogoUrl(club.logo_url)} style={{fontSize:10,color:t.accent,background:"none",border:"none",cursor:"pointer",marginTop:4,display:"block"}}>← Logo club</button>}
+          {club?.logo_url&&<button onClick={()=>setLogoUrl(club.logo_url)} style={{fontSize:10,color:t.accentUI,background:"none",border:"none",cursor:"pointer",marginTop:4,display:"block"}}>← Logo club</button>}
           {isL&&<div style={{marginTop:10}}><div style={{fontSize:10,color:t.text3,marginBottom:5}}>Logo adversaire</div><UpBtn val={logo2Url} on={setLogo2Url} w={56} h={56} r={8} label="Upload ADV" t={t}/>{logo2Url&&<button onClick={()=>setLogo2Url(null)} style={{fontSize:10,color:t.text3,background:"none",border:"none",cursor:"pointer",marginTop:4,display:"block"}}>✕ Retirer</button>}</div>}
         </PBox>
         {isL&&(
@@ -2743,7 +2772,7 @@ export default function App({session}){
       {isMobile&&(
         <div style={{position:"fixed",bottom:0,left:0,right:0,height:60,background:t.bg2,borderTop:"1px solid "+t.border,display:"flex",gap:8,alignItems:"center",padding:"0 12px",zIndex:90}}>
           <button onClick={()=>setSelType(null)} className="viz-touch-btn" style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:8,padding:"10px 14px",color:t.text2,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>↩</button>
-          <button onClick={()=>setMobileSheet("options")} className="viz-touch-btn" style={{flex:1,background:rgba(t.accent,.15),color:t.accent,border:"1px solid "+rgba(t.accent,.3),borderRadius:8,padding:"10px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}><Icon name="sliders" size={15}/>Options</button>
+          <button onClick={()=>setMobileSheet("options")} className="viz-touch-btn" style={{flex:1,background:rgba(t.accent,.15),color:t.accentUI,border:"1px solid "+rgba(t.accent,.3),borderRadius:8,padding:"10px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}><Icon name="sliders" size={15}/>Options</button>
           <button onClick={save} className="viz-touch-btn" style={{flex:1,background:saveFlash?"#22c55e":t.accent,color:saveFlash?"#fff":contrastText(t.accent),border:"none",borderRadius:8,padding:"10px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{saveFlash?"✓ Enregistré":"Sauver"}</button>
         </div>
       )}
@@ -2769,7 +2798,7 @@ export default function App({session}){
                 <button key={f.id} onClick={()=>changeFormat(f.id)} title={f.desc}
                   style={{background:on?rgba(t.accent,.18):t.bg3,border:"2px solid "+(on?t.accent:t.border),borderRadius:8,padding:"9px 4px",cursor:"pointer",color:t.text,fontFamily:"inherit",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
                   <span style={{display:"block",width:f.id==="story"?13:f.id==="post"?17:20,height:f.id==="story"?23:f.id==="post"?21:20,border:"1.5px solid "+(on?t.accent:t.text3),borderRadius:2}}/>
-                  <span style={{fontSize:11,fontWeight:on?700:500,color:on?t.accent:t.text}}>{f.label}</span>
+                  <span style={{fontSize:11,fontWeight:on?700:500,color:on?t.accentUI:t.text}}>{f.label}</span>
                   <span style={{fontSize:9,color:t.text3}}>{f.sub}</span>
                 </button>
               );
@@ -2821,7 +2850,7 @@ export default function App({session}){
                 <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10}}>
                   <span style={{fontSize:10,color:t.text3,flexShrink:0}}>Intensité</span>
                   <input type="range" min={4} max={60} step={1} value={curStr} onChange={e=>setBg({patternStrength:+e.target.value})} style={{flex:1,minWidth:0}}/>
-                  <span style={{fontSize:10,color:t.accent,fontVariantNumeric:"tabular-nums",width:26,textAlign:"right"}}>{curStr}</span>
+                  <span style={{fontSize:10,color:t.accentUI,fontVariantNumeric:"tabular-nums",width:26,textAlign:"right"}}>{curStr}</span>
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginTop:8}}>
                   <span style={{fontSize:10,color:t.text3,flexShrink:0}}>Couleur du motif</span>
@@ -2835,7 +2864,7 @@ export default function App({session}){
         <PBox t={t}>
           <SHdr label={(selType==="recruit"||!showOpponent)?"Logo club":"Logos"} t={t}/>
           <div style={{display:"grid",gridTemplateColumns:showOpponent?"1fr 1fr":"1fr",gap:10}}>
-            <div><div style={{fontSize:10,color:t.text3,marginBottom:5}}>Club</div><UpBtn val={logoUrl} on={setLogoUrl} w={52} h={52} r={8} label="Upload" t={t}/>{club?.logo_url&&<button onClick={()=>setLogoUrl(club.logo_url)} style={{fontSize:10,color:t.accent,background:"none",border:"none",cursor:"pointer",marginTop:4,display:"block"}}>← Logo club</button>}</div>
+            <div><div style={{fontSize:10,color:t.text3,marginBottom:5}}>Club</div><UpBtn val={logoUrl} on={setLogoUrl} w={52} h={52} r={8} label="Upload" t={t}/>{club?.logo_url&&<button onClick={()=>setLogoUrl(club.logo_url)} style={{fontSize:10,color:t.accentUI,background:"none",border:"none",cursor:"pointer",marginTop:4,display:"block"}}>← Logo club</button>}</div>
             {showOpponent&&<div><div style={{fontSize:10,color:t.text3,marginBottom:5}}>{T.opponent}</div><UpBtn val={logo2Url} on={setLogo2Url} w={52} h={52} r={8} label="Upload" t={t}/>{logo2Url&&<button onClick={()=>setLogo2Url(null)} style={{fontSize:10,color:t.text3,background:"none",border:"none",cursor:"pointer",marginTop:4,display:"block"}}>✕</button>}</div>}
           </div>
         </PBox>
@@ -2845,8 +2874,8 @@ export default function App({session}){
       {isMobile&&(
         <div style={{position:"fixed",bottom:0,left:0,right:0,height:60,background:t.bg2,borderTop:"1px solid "+t.border,display:"flex",gap:6,alignItems:"center",padding:"0 10px",zIndex:90}}>
           <button onClick={()=>setSelType(null)} className="viz-touch-btn" style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:8,padding:"10px 12px",color:t.text2,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>↩</button>
-          <button onClick={()=>setMobileSheet("options")} className="viz-touch-btn" style={{flex:1,background:rgba(t.accent,.15),color:t.accent,border:"1px solid "+rgba(t.accent,.3),borderRadius:8,padding:"10px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}><Icon name="sliders" size={15}/>Options</button>
-          <button onClick={()=>setMobileSheet("layers")} className="viz-touch-btn" style={{flex:1,background:rgba(t.accent,.15),color:t.accent,border:"1px solid "+rgba(t.accent,.3),borderRadius:8,padding:"10px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>≡ Calques</button>
+          <button onClick={()=>setMobileSheet("options")} className="viz-touch-btn" style={{flex:1,background:rgba(t.accent,.15),color:t.accentUI,border:"1px solid "+rgba(t.accent,.3),borderRadius:8,padding:"10px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}><Icon name="sliders" size={15}/>Options</button>
+          <button onClick={()=>setMobileSheet("layers")} className="viz-touch-btn" style={{flex:1,background:rgba(t.accent,.15),color:t.accentUI,border:"1px solid "+rgba(t.accent,.3),borderRadius:8,padding:"10px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>≡ Calques</button>
           <button onClick={save} className="viz-touch-btn" style={{flex:1,background:saveFlash?"#22c55e":t.accent,color:saveFlash?"#fff":contrastText(t.accent),border:"none",borderRadius:8,padding:"10px",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{saveFlash?"✓":<Icon name="save" size={16}/>}</button>
         </div>
       )}
@@ -2860,7 +2889,7 @@ export default function App({session}){
           <div style={{overflow:"hidden",flex:1}}><div style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:18,fontWeight:400,letterSpacing:".06em",color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{club?.name||"Viziona"}</div><div style={{fontFamily:"'DM Mono',ui-monospace,monospace",fontSize:9,color:t.text3,marginTop:2,letterSpacing:".1em",textTransform:"uppercase"}}>Studio visuel</div></div>
         </div>
         <nav style={{padding:"10px 8px",flex:1}}>
-          {NAVL.map(n=>(<button key={n.id} onClick={()=>{setNav(n.id);if(n.id!=="create")setSelType(null);}} style={{display:"flex",alignItems:"center",gap:10,width:"100%",background:nav===n.id?rgba(t.accent,.15):"transparent",border:"none",borderRadius:9,padding:"9px 11px",color:nav===n.id?t.accent:t.text2,cursor:"pointer",fontSize:13,marginBottom:1,textAlign:"left",fontWeight:nav===n.id?600:400}}><Icon name={n.icon} size={17}/><span>{n.label}</span>{n.id==="history"&&historyCount>0&&<span style={{marginLeft:"auto",background:rgba(t.accent,.2),color:t.accent,fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{historyCount}</span>}</button>))}
+          {NAVL.map(n=>(<button key={n.id} onClick={()=>{setNav(n.id);if(n.id!=="create")setSelType(null);}} style={{display:"flex",alignItems:"center",gap:10,width:"100%",background:nav===n.id?rgba(t.accent,.15):"transparent",border:"none",borderRadius:9,padding:"9px 11px",color:nav===n.id?t.accentUI:t.text2,cursor:"pointer",fontSize:13,marginBottom:1,textAlign:"left",fontWeight:nav===n.id?600:400}}><Icon name={n.icon} size={17}/><span>{n.label}</span>{n.id==="history"&&historyCount>0&&<span style={{marginLeft:"auto",background:rgba(t.accent,.2),color:t.accentUI,fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{historyCount}</span>}</button>))}
         </nav>
         <div style={{padding:12,borderTop:"1px solid "+t.border,display:"flex",flexDirection:"column",gap:8}}>
           <button onClick={()=>openCreate("goal")} style={{background:"#0a0a0a",color:"#fff",border:"2px solid "+(club?.color1||"#e63329"),borderRadius:2,padding:"10px 10px",fontSize:11,fontWeight:700,cursor:"pointer",width:"100%",letterSpacing:".12em",textTransform:"uppercase",fontFamily:"inherit"}}>Créer un visuel</button>
@@ -2884,7 +2913,7 @@ export default function App({session}){
             return(
               <div style={{padding:"0 28px 24px"}}>
                 <div style={{background:t.bg2,border:"1px solid "+rgba(t.accent,.25),borderRadius:12,padding:20}}>
-                  <div data-section="premiers-pas" style={{fontSize:11,color:t.accent,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",marginBottom:6}}>Premiers pas</div>
+                  <div data-section="premiers-pas" style={{fontSize:11,color:t.accentUI,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",marginBottom:6}}>Premiers pas</div>
                   <div style={{fontSize:14,color:t.text,marginBottom:14}}>Bienvenue ! Configurez votre club en 3 étapes.</div>
                   <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:10}}>
                     {steps.map((s,i)=>(
@@ -2912,7 +2941,7 @@ export default function App({session}){
               </div>
             );
           })()}
-          <div style={{padding:"0 28px",display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:12,marginBottom:28}}>{CT.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,padding:"20px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(club?.color1||"#e63329",.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}><div style={{marginBottom:10,color:t.accent}}><Icon name={typeIconName(c.id,sport)} size={24} strokeWidth={1.5}/></div><div style={{fontWeight:700,color:t.text,fontSize:13,marginBottom:3}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.4}}>{c.desc}</div></div>))}</div>
+          <div style={{padding:"0 28px",display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:12,marginBottom:28}}>{CT.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,padding:"20px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(club?.color1||"#e63329",.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}><div style={{marginBottom:10,color:t.accentUI}}><Icon name={typeIconName(c.id,sport)} size={24} strokeWidth={1.5}/></div><div style={{fontWeight:700,color:t.text,fontSize:13,marginBottom:3}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.4}}>{c.desc}</div></div>))}</div>
           <div style={{padding:"0 28px 28px",display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10}}>{(()=>{
             // Le quota hebdomadaire etait charge mais jamais montre : le club
             // ne le decouvrait qu en le heurtant, apres avoir compose son
@@ -2941,7 +2970,7 @@ export default function App({session}){
           <div style={Object.assign({},card,{maxWidth:650,marginBottom:16})}>
             <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:10,marginBottom:6}}>
               <div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase"}}>Équipes</div>
-              <div style={{fontSize:11,color:teamQuotaReached?t.accent:t.text3,fontVariantNumeric:"tabular-nums"}}>{teams.length} / {maxTeams>=999?"illimité":maxTeams}</div>
+              <div style={{fontSize:11,color:teamQuotaReached?t.accentUI:t.text3,fontVariantNumeric:"tabular-nums"}}>{teams.length} / {maxTeams>=999?"illimité":maxTeams}</div>
             </div>
             <div style={{fontSize:12,color:t.text3,marginBottom:12,lineHeight:1.5}}>
               Chaque équipe a son propre {T.playersLower.replace(/s$/,"")} et ses propres visuels. Le logo, les couleurs et le sport restent communs au club.
@@ -2963,7 +2992,7 @@ export default function App({session}){
             {teamQuotaReached
               ? <div style={{fontSize:11,color:t.text3,marginTop:8,lineHeight:1.5}}>Votre offre est limitée à {maxTeams}&nbsp;{maxTeams>1?"équipes":"équipe"}. Passez à l'offre supérieure pour en ajouter.</div>
               : <button onClick={()=>{const n=window.prompt("Nom de la nouvelle équipe","Équipe "+(teams.length+1));if(n)addTeam(n);}}
-                  style={{marginTop:6,background:rgba(t.accent,.14),color:t.accent,border:"1px solid "+rgba(t.accent,.35),borderRadius:7,padding:"8px 14px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>+ Ajouter une équipe</button>}
+                  style={{marginTop:6,background:rgba(t.accent,.14),color:t.accentUI,border:"1px solid "+rgba(t.accent,.35),borderRadius:7,padding:"8px 14px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>+ Ajouter une équipe</button>}
           </div>)}
           {/* Le sport est choisi une seule fois, à la première connexion, et
               n'est plus modifiable ensuite : il détermine les postes, les
@@ -3016,12 +3045,12 @@ export default function App({session}){
             <div>{media.length===0?<div style={Object.assign({},card,{padding:"40px 20px",textAlign:"center",color:t.text3})}><div style={{marginBottom:12,display:"flex",justifyContent:"center",opacity:.45}}><Icon name="media" size={30} strokeWidth={1.3}/></div><div>Médiathèque vide</div></div>:(<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>{media.map(m=>(<div key={m.id} style={{borderRadius:11,overflow:"hidden",border:"1px solid "+t.border}}><div style={{aspectRatio:"16/9",overflow:"hidden"}}><img src={thumbOf(m)} loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div><div style={{padding:"6px 10px",fontSize:11,color:t.text2,background:t.bg2,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"80%"}}>{m.name||"Image"}</span><button onClick={()=>deleteMedia(m.id)} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:14}}>✕</button></div></div>))}</div>)}</div>
           </div>
         </div>)}
-        {nav==="create"&&(!selType?(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}><h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Choisir un type</h2><p style={{color:t.text3,marginBottom:22,fontSize:13}}>Sélectionnez ce que vous souhaitez créer.</p><TeamBar teams={teams} teamId={teamId} onPick={setTeamId} t={t} label="Créer pour"/><div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:14,maxWidth:680}}>{CT.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:"22px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(t.accent,.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}>  <div style={{marginBottom:12,color:t.accent}}><Icon name={typeIconName(c.id,sport)} size={26} strokeWidth={1.5}/></div><div style={{fontWeight:700,color:t.text,fontSize:14,marginBottom:4}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.5}}>{c.desc}</div></div>))}</div></div>):(selType==="lineup"||selType==="group")?renderSpecial():renderStandard())}
+        {nav==="create"&&(!selType?(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}><h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Choisir un type</h2><p style={{color:t.text3,marginBottom:22,fontSize:13}}>Sélectionnez ce que vous souhaitez créer.</p><TeamBar teams={teams} teamId={teamId} onPick={setTeamId} t={t} label="Créer pour"/><div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:14,maxWidth:680}}>{CT.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:"22px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(t.accent,.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}>  <div style={{marginBottom:12,color:t.accentUI}}><Icon name={typeIconName(c.id,sport)} size={26} strokeWidth={1.5}/></div><div style={{fontWeight:700,color:t.text,fontSize:14,marginBottom:4}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.5}}>{c.desc}</div></div>))}</div></div>):(selType==="lineup"||selType==="group")?renderSpecial():renderStandard())}
         {nav==="history"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Historique</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>{historyCount+" visuel"+(historyCount!==1?"s":"")+(allHistory.length&&allHistory.length<historyCount?" · "+allHistory.length+" affichés":"")}</p>
           <TeamBar teams={teams} teamId={teamId} onPick={setTeamId} t={t}/>
-          {historyState!=="ready"&&history.length===0?<div style={Object.assign({},card,{padding:"60px 20px",textAlign:"center",color:t.text3})}><div style={{fontSize:13}}>Chargement de vos visuels…</div></div>:history.length===0?<div style={Object.assign({},card,{padding:"60px 20px",textAlign:"center",color:t.text3})}><div style={{marginBottom:14,display:"flex",justifyContent:"center",opacity:.5}}><Icon name="history" size={34} strokeWidth={1.3}/></div><div style={{fontSize:14}}>Aucun visuel sauvegardé</div></div>:(<div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:14}}>{history.map(h=>(<div key={h.id} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,overflow:"hidden"}}><div style={{background:"#030306",display:"flex",alignItems:"center",justifyContent:"center",padding:10}}><WhenVisible minHeight={140}><HistoryThumb h={h} c1={club?.color1||"#e63329"} c2={club?.color2||"#1a1a2e"}/></WhenVisible></div><div style={{padding:"10px 12px",borderTop:"1px solid "+t.border}}><div style={{fontSize:12,fontWeight:600,color:t.text,marginBottom:6,display:"flex",alignItems:"center",gap:7}}><span style={{color:t.text3,display:"flex"}}><Icon name={typeIconName(h.type,sport)} size={14} strokeWidth={1.7}/></span>{h.ct&&h.ct.label?h.ct.label:"Visuel"}</div><div style={{display:"flex",gap:6}}><button onClick={()=>{openCreate(h.type,h);setNav("create");}} style={{flex:1,background:rgba(t.accent,.15),color:t.accent,border:"1px solid "+rgba(t.accent,.3),borderRadius:7,padding:"6px 8px",fontSize:11,cursor:"pointer",fontWeight:600}}>↩ Modifier</button><button onClick={()=>deleteVisual(h.id)} style={{background:"rgba(239,68,68,.1)",color:"#fca5a5",border:"1px solid rgba(239,68,68,.25)",borderRadius:7,padding:"6px 8px",fontSize:11,cursor:"pointer"}}>✕</button></div></div></div>))}</div>)}
+          {historyState!=="ready"&&history.length===0?<div style={Object.assign({},card,{padding:"60px 20px",textAlign:"center",color:t.text3})}><div style={{fontSize:13}}>Chargement de vos visuels…</div></div>:history.length===0?<div style={Object.assign({},card,{padding:"60px 20px",textAlign:"center",color:t.text3})}><div style={{marginBottom:14,display:"flex",justifyContent:"center",opacity:.5}}><Icon name="history" size={34} strokeWidth={1.3}/></div><div style={{fontSize:14}}>Aucun visuel sauvegardé</div></div>:(<div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:14}}>{history.map(h=>(<div key={h.id} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:12,overflow:"hidden"}}><div style={{background:"#030306",display:"flex",alignItems:"center",justifyContent:"center",padding:10}}><WhenVisible minHeight={140}><HistoryThumb h={h} c1={club?.color1||"#e63329"} c2={club?.color2||"#1a1a2e"}/></WhenVisible></div><div style={{padding:"10px 12px",borderTop:"1px solid "+t.border}}><div style={{fontSize:12,fontWeight:600,color:t.text,marginBottom:6,display:"flex",alignItems:"center",gap:7}}><span style={{color:t.text3,display:"flex"}}><Icon name={typeIconName(h.type,sport)} size={14} strokeWidth={1.7}/></span>{h.ct&&h.ct.label?h.ct.label:"Visuel"}</div><div style={{display:"flex",gap:6}}><button onClick={()=>{openCreate(h.type,h);setNav("create");}} style={{flex:1,background:rgba(t.accent,.15),color:t.accentUI,border:"1px solid "+rgba(t.accent,.3),borderRadius:7,padding:"6px 8px",fontSize:11,cursor:"pointer",fontWeight:600}}>↩ Modifier</button><button onClick={()=>deleteVisual(h.id)} style={{background:"rgba(239,68,68,.1)",color:"#fca5a5",border:"1px solid rgba(239,68,68,.25)",borderRadius:7,padding:"6px 8px",fontSize:11,cursor:"pointer"}}>✕</button></div></div></div>))}</div>)}
           {historyState==="ready"&&!historyDone&&allHistory.length>0&&(
             <div style={{display:"flex",justifyContent:"center",marginTop:18}}>
               <button onClick={()=>loadHistoryPage(false)} style={{background:"transparent",color:t.text2,border:"1px solid "+t.border2,borderRadius:8,padding:"10px 22px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
@@ -3054,7 +3083,7 @@ export default function App({session}){
             const active=nav===n.id;
             return(
               <button key={n.id} onClick={()=>{setNav(n.id);if(n.id!=="create")setSelType(null);}}
-                style={{flex:isCreate?1.25:1,minWidth:0,background:isCreate?(active?t.accent:rgba(t.accent,.18)):"none",border:"none",padding:"4px 2px",color:isCreate?(active?contrastText(t.accent):t.accent):(active?t.accent:t.text2),cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1,fontWeight:active?700:500,position:"relative",margin:isCreate?"4px":0,borderRadius:isCreate?12:0,transition:"all .15s",overflow:"hidden"}}>
+                style={{flex:isCreate?1.25:1,minWidth:0,background:isCreate?(active?t.accent:rgba(t.accent,.18)):"none",border:"none",padding:"4px 2px",color:isCreate?(active?contrastText(t.accent):t.accentUI):(active?t.accentUI:t.text2),cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1,fontWeight:active?700:500,position:"relative",margin:isCreate?"4px":0,borderRadius:isCreate?12:0,transition:"all .15s",overflow:"hidden"}}>
                 <Icon name={n.icon} size={isCreate?21:19} strokeWidth={isCreate?2:1.6}/>
                 <span style={{fontSize:isCreate?9:8,letterSpacing:isCreate?".04em":0,textTransform:isCreate?"uppercase":"none",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{n.label}</span>
                 {n.id==="history"&&historyCount>0&&<span style={{position:"absolute",top:3,right:"15%",background:t.accent,color:contrastText(t.accent),fontSize:7,fontWeight:700,padding:"1px 4px",borderRadius:7,minWidth:12,textAlign:"center",lineHeight:1.2}}>{historyCount}</span>}
