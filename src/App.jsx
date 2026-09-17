@@ -1805,8 +1805,18 @@ function PhotoPanel({players,selId,onSel,selUrl,onSelUrl,onAdd,onAddUrl,onFav,on
     <div style={{fontSize:10,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:6}}>{T.player}</div>
     <TSel v={selId?String(selId):""} on={v=>onSel(v?v:null)} t={t} opts={[{v:"",l:"Sélectionner un "+T.playerLower+"..."},...players.map(p=>({v:p.id,l:p.name+" · #"+p.number}))]}/>
     {player&&(<div style={{marginTop:10}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}><span style={{fontSize:11,color:t.text2}}>{busy?"Import en cours…":photos.length+" photo"+(photos.length!==1?"s":"")}</span><button onClick={()=>ref.current.click()} disabled={busy} style={{fontSize:11,color:t.accentUI,background:rgba(t.accent,.12),border:"1px solid "+rgba(t.accent,.3),borderRadius:6,padding:"4px 10px",cursor:busy?"wait":"pointer",fontWeight:600}}>+ Photo</button></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}><span style={{fontSize:11,color:t.text2}}>{busy?"Import en cours…":photos.length+" photo"+(photos.length!==1?"s":"")}</span><button onClick={()=>ref.current.click()} disabled={busy} style={{fontSize:11,color:contrastText(t.accent),background:t.accent,border:"none",borderRadius:6,padding:"7px 14px",cursor:busy?"wait":"pointer",fontWeight:700,fontFamily:"inherit"}}>+ Ajouter une photo</button></div>
       <input ref={ref} type="file" accept="image/*" multiple style={{display:"none"}} onChange={pick}/>
+      {/* Etat vide explicite : « 0 photos » ne disait pas quoi faire, et la
+          grille restait simplement blanche. Zone cliquable qui declenche le
+          meme selecteur de fichier que le bouton. */}
+      {photos.length===0&&!busy&&(
+        <div onClick={()=>ref.current.click()}
+          style={{border:"2px dashed "+t.border2,borderRadius:9,padding:"22px 14px",textAlign:"center",cursor:"pointer",background:t.bg3}}>
+          <div style={{display:"flex",justifyContent:"center",marginBottom:8,opacity:.5}}><Icon name="user" size={26} strokeWidth={1.3}/></div>
+          <div style={{fontSize:12,color:t.text2,fontWeight:600,marginBottom:3}}>Aucune photo pour {player.name||"ce "+T.playerLower}</div>
+          <div style={{fontSize:10.5,color:t.text3,lineHeight:1.5}}>Touchez ici pour en ajouter. Elles apparaitront dans le rond des compositions et sur les visuels.</div>
+        </div>)}
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4}}>
         {photos.map(ph=>{
           const isDup=dupNames.has((ph.name||"").toLowerCase());
@@ -2375,8 +2385,13 @@ export default function App({session}){
       const rest=Object.assign({},row);delete rest.team_id;
       ({data,error}=await supabase.from("players").insert(rest).select(sel).single());
     }
-    if(error){console.error("[addPlayer] échec:",error.message);return;}
-    if(data)setPlayers(p=>sortPlayers([...p,data]));
+    if(error){console.error("[addPlayer] échec:",humanError(error,error.message));return;}
+    if(data){
+      setPlayers(p=>sortPlayers([...p,data]));
+      // On enchaine sur ses photos : le parcours obligeait a redescendre dans
+      // une autre carte et a le resélectionner dans une liste deroulante.
+      selPlayer(data.id);
+    }
     setPName("");setPNum("");
   }
   async function deletePlayer(id){
@@ -3033,7 +3048,7 @@ export default function App({session}){
             </div>
             <div><div style={{fontSize:13,fontWeight:600,color:t.text2,marginBottom:12}}>{players.length+" "+T.playerLower+(players.length!==1?"s":"")+" · "+T.squad}</div>
               {players.length===0?<div style={Object.assign({},card,{padding:"40px 20px",textAlign:"center",color:t.text3})}><div style={{marginBottom:12,display:"flex",justifyContent:"center",opacity:.45}}><Icon name="players" size={30} strokeWidth={1.3}/></div><div>{T.emptySquad}</div></div>:(
-                <div style={{display:"flex",flexDirection:"column",gap:8}}>{players.map(p=>{const fv=getPhoto(p);return(<div key={p.id} onClick={()=>{setSelPid(p.id);setSelPhoto(null);}} style={Object.assign({},card,{padding:"12px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12})}><Av photo={fv} name={p.name} size={44}/><div style={{flex:1}}><div style={{fontWeight:600,color:t.text,fontSize:14}}>{p.name}</div><div style={{fontSize:11,color:t.text3,marginTop:2}}>{p.position+" · #"+p.number+" · "+(p.photos||[]).length+" photo"+(p.photos&&p.photos.length!==1?"s":"")}</div></div><button onClick={e=>{e.stopPropagation();deletePlayer(p.id);}} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:16,padding:4}}>✕</button></div>);})}</div>)}
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>{players.map(p=>{const fv=getPhoto(p);return(<div key={p.id} onClick={()=>{selPlayer(p.id);}} title={"Gerer les photos de "+p.name} style={Object.assign({},card,{padding:"12px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,borderColor:selPid===p.id?t.accent:t.border})}><Av photo={fv} name={p.name} size={44}/><div style={{flex:1}}><div style={{fontWeight:600,color:t.text,fontSize:14}}>{p.name}</div><div style={{fontSize:11,color:t.text3,marginTop:2}}>{p.position+" · #"+p.number+" · "+(p.photos||[]).length+" photo"+(p.photos&&p.photos.length!==1?"s":"")}</div></div><button onClick={e=>{e.stopPropagation();deletePlayer(p.id);}} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:16,padding:4}}>✕</button></div>);})}</div>)}
             </div>
           </div>
         </div>)}
