@@ -1381,11 +1381,18 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
       if(e.cancelable)e.preventDefault();
       return;
     }
-    if(!dragRef.current||!cvRef.current)return;
+    // On CAPTURE la reference avant l appel a setLayers. Le garde ci-dessous
+    // ne protegeait que l entree du gestionnaire : la fonction passee a
+    // setLayers, elle, est executee plus tard par React. Sur telephone, un
+    // touchend peut survenir entre le deplacement et cette execution, et
+    // onMU remet dragRef.current a null -- d ou le plantage
+    // « null is not an object (evaluating 'dragRef.current.id') ».
+    const d=dragRef.current;
+    if(!d||!cvRef.current)return;
     const rect=cvRef.current.getBoundingClientRect();
     const p=pt(e);
     const mx=(p.x-rect.left)/rect.width*100,my=(p.y-rect.top)/rect.height*100;
-    setLayers(prev=>prev.map(l=>l.id===dragRef.current.id?{...l,x:Math.max(0,Math.min(90,dragRef.current.ox+(mx-dragRef.current.mx0))),y:Math.max(0,Math.min(95,dragRef.current.oy+(my-dragRef.current.my0)))}:l));
+    setLayers(prev=>prev.map(l=>l.id===d.id?{...l,x:Math.max(0,Math.min(90,d.ox+(mx-d.mx0))),y:Math.max(0,Math.min(95,d.oy+(my-d.my0)))}:l));
     if(e.cancelable)e.preventDefault();
   },[setLayers]);
   // Fin de geste : on n'empile l'instantané que si le calque a réellement
