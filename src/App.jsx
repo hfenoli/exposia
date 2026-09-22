@@ -1841,7 +1841,7 @@ function PhotoPanel({players,selId,onSel,selUrl,onSelUrl,onAdd,onAddUrl,onFav,on
         </div>);})}
       </div>
       {photos.length>1&&<div style={{fontSize:9,color:t.text3,marginTop:6,lineHeight:1.45}}>
-        Touchez l\u2019\u00e9toile d\u2019une photo pour en faire la photo par d\u00e9faut : c\u2019est elle qui appara\u00eet dans le rond des compositions. Les autres restent disponibles.
+        Touchez l’étoile d’une photo pour en faire la photo par défaut : c’est elle qui apparaît dans le rond des compositions. Les autres restent disponibles.
       </div>}
       {photos.length>0&&<div style={{marginTop:8}}>
         <ToleranceRow tol={tol} setTol={setTol} t={t} accent={t.accent} label="Détourage · intensité"/>
