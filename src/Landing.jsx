@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 // ─── PALETTE (thème clair) ────────────────────────────────────
 const C = {
@@ -26,7 +26,7 @@ const STATS = [
 ];
 
 // Baseline de marque — sert au footer, aux méta-données, aux e-mails.
-const BASELINE = "Le studio visuel de votre club.";
+const BASELINE = "Le studio visuel de ton club.";
 
 // ─── TARIFS ───────────────────────────────────────────────────
 // Les identifiants correspondent à la colonne `clubs.plan` en base
@@ -89,7 +89,7 @@ const PRICING = [
       "Les 22 templates, sans restriction",
       "Accompagnement au démarrage (1 h en visio)",
       "Support prioritaire sous 24 h",
-      "Vos retours priorisés dans la feuille de route",
+      "Tes retours priorisés dans la feuille de route",
     ],
     absent: [],
   },
@@ -102,7 +102,7 @@ const PRICING_COMMON = [
   "Story 9:16, Post 4:5, Carré 1:1",
   "Effectif et photos illimités",
   "Détourage automatique des fonds",
-  "Bandeaux et pastilles pour votre logo",
+  "Bandeaux et pastilles pour ton logo",
   "Export PNG haute définition",
 ];
 
@@ -117,49 +117,56 @@ const LANDING_SPORTS = [
     event: "BUT !", lineupTitle: "COMPOSITION", formation: "4-3-3 · vs Adversaire",
     rows: [[9], [7, 10, 11], [4, 6, 8], [2, 5, 3, 16], [1]],
     comp: "2E LIGUE · J12", venue: "Stade municipal", who: "M. Rodriguez · #9",
-    recruitTag: "Nouvelle recrue", recruitName: "THOMAS<br/>MARCHAND", recruitPos: "Milieu · #8" },
+    recruitTag: "Nouvelle recrue", recruitName: "THOMAS<br/>MARCHAND", recruitPos: "Milieu · #8" ,
+    postTitle: "MATCH<br/>REPORTÉ", postBody: "Reporté au samedi 18 mai, 15h00. Merci de ton compréhension."},
 
   { id: "rugby", label: "Rugby", accent: "#1D7A46", pitch: "rugby",
     cards: ["goal", "result", "match", "lineup", "recruit", "post"],
     event: "ESSAI !", lineupTitle: "COMPOSITION XV", formation: "XV de départ",
     rows: [[15], [11, 13, 12, 14], [10, 9], [6, 8, 7], [4, 5], [1, 2, 3]],
     comp: "LNA · J12", venue: "Stade", who: "L. Perret · #12",
-    recruitTag: "Nouvelle recrue", recruitName: "LUCAS<br/>PERRET", recruitPos: "Centre · #12" },
+    recruitTag: "Nouvelle recrue", recruitName: "LUCAS<br/>PERRET", recruitPos: "Centre · #12" ,
+    postTitle: "MATCH<br/>REPORTÉ", postBody: "Reporté au samedi 18 mai, 15h00. Merci de ton compréhension."},
 
   { id: "hockey", label: "Hockey", accent: "#0F5FA6", pitch: "ice",
     cards: ["goal", "result", "match", "lineup", "recruit", "post"],
     event: "BUT !", lineupTitle: "ALIGNEMENT", formation: "Alignement 5+1",
     rows: [[17, 91, 27], [4, 55], [30]],
     comp: "MYHOCKEY · J12", venue: "Patinoire", who: "N. Blanc · #17",
-    recruitTag: "Nouvelle recrue", recruitName: "NOAH<br/>BLANC", recruitPos: "Ailier · #17" },
+    recruitTag: "Nouvelle recrue", recruitName: "NOAH<br/>BLANC", recruitPos: "Ailier · #17" ,
+    postTitle: "MATCH<br/>REPORTÉ", postBody: "Reporté au samedi 18 mai, 20h15. Merci de ton compréhension."},
 
   { id: "basketball", label: "Basket", accent: "#D4541E", pitch: "court",
     cards: ["goal", "result", "match", "lineup", "recruit", "post"],
     event: "PANIER !", lineupTitle: "CINQ DE DÉPART", formation: "Cinq de départ",
     rows: [[7, 23], [11, 14], [5]],
     comp: "SB LEAGUE · J12", venue: "Salle", who: "A. Meier · #7",
-    recruitTag: "Nouvelle recrue", recruitName: "ALEX<br/>MEIER", recruitPos: "Meneur · #7" },
+    recruitTag: "Nouvelle recrue", recruitName: "ALEX<br/>MEIER", recruitPos: "Meneur · #7" ,
+    postTitle: "MATCH<br/>REPORTÉ", postBody: "Reporté au samedi 18 mai, 17h30. Merci de ton compréhension."},
 
   { id: "handball", label: "Handball", accent: "#7B2D8E", pitch: "handball",
     cards: ["goal", "result", "match", "lineup", "recruit", "post"],
     event: "BUT !", lineupTitle: "SEPT DE DÉPART", formation: "Sept de départ",
     rows: [[9, 3, 21], [7, 11, 44], [12]],
     comp: "SHL · J12", venue: "Salle", who: "J. Favre · #9",
-    recruitTag: "Nouvelle recrue", recruitName: "JULIE<br/>FAVRE", recruitPos: "Pivot · #9" },
+    recruitTag: "Nouvelle recrue", recruitName: "JULIE<br/>FAVRE", recruitPos: "Pivot · #9" ,
+    postTitle: "MATCH<br/>REPORTÉ", postBody: "Reporté au samedi 18 mai, 16h00. Merci de ton compréhension."},
 
   { id: "natation", label: "Natation", accent: "#0E7C9B", pitch: null,
     cards: ["perf", "result", "podium", "match", "recruit", "post"],
     event: "RECORD !", comp: "CHAMPIONNATS ROMANDS", venue: "Piscine du Lignon",
     who: "E. Girard · 100 m NL", chrono: "00:54:12", chronoTag: "Record personnel",
     recruitTag: "Nouveau nageur", recruitName: "EMMA<br/>GIRARD", recruitPos: "Nage libre",
-    podium: [["1.", "E. Girard", "00:54:12"], ["2.", "L. Kunz", "00:55:47"], ["3.", "M. Roth", "00:57:03"]] },
+    podium: [["1.", "E. Girard", "00:54:12"], ["2.", "L. Kunz", "00:55:47"], ["3.", "M. Roth", "00:57:03"]] ,
+    postTitle: "STAGE<br/>D’ÉTÉ", postBody: "Du 7 au 11 juillet à la piscine. Inscriptions ouvertes jusqu’au 15 juin."},
 
   { id: "triathlon", label: "Triathlon", accent: "#C9A227", pitch: null,
     cards: ["perf", "result", "podium", "match", "recruit", "post"],
     event: "FINISHER !", comp: "IRONMAN 70.3 RAPPERSWIL", venue: "Rapperswil",
     who: "S. Aebi · dossard 142", chrono: "04:21:38", chronoTag: "Record personnel",
     recruitTag: "Nouvel athlète", recruitName: "SARAH<br/>AEBI", recruitPos: "Olympique · dossard 142",
-    podium: [["1.", "S. Aebi", "04:21:38"], ["2.", "T. Vogel", "04:26:05"], ["3.", "N. Studer", "04:31:47"]] },
+    podium: [["1.", "S. Aebi", "04:21:38"], ["2.", "T. Vogel", "04:26:05"], ["3.", "N. Studer", "04:31:47"]] ,
+    postTitle: "SORTIE<br/>LONGUE", postBody: "Dimanche 8h00, départ du local. Ouverte à tous les licenciés du club."},
 ];
 const CARD_LABELS = {
   goal: "But", result: "Score final", match: "Affiche match", lineup: "Composition",
@@ -179,37 +186,37 @@ function cardLabel(sportId, type) {
 const TICKER = ["Football", "Rugby", "Hockey sur glace", "Basketball", "Handball", "Natation", "Triathlon", "But", "Essai", "Chrono", "Podium", "Composition", "Convocation", "Story 9:16", "Post 4:5", "Carré 1:1"];
 const FEATURES = [
   { n: "01", t: "Templates Pro", d: "22 templates conçus pour le sport. Pas de compétences graphiques requises. Résultat professionnel garanti à chaque fois." },
-  { n: "02", t: "30 Secondes",  d: "Depuis le bord du terrain. Ouvrez l'app, choisissez le type, exportez. Publié avant le coup de sifflet final." },
-  { n: "03", t: "Votre Sport", d: "Sept disciplines. Un club de rugby marque des essais, un club de hockey aligne ses lignes sur une patinoire, un club de natation publie des chronos. Pas un habillage : des gabarits différents." },
+  { n: "02", t: "30 Secondes",  d: "Depuis le bord du terrain. Ouvre l'app, choisis le type, exporte. Publié avant le coup de sifflet final." },
+  { n: "03", t: "Ton Sport", d: "Sept disciplines. Un club de rugby marque des essais, un club de hockey aligne ses lignes sur une patinoire, un club de natation publie des chronos. Pas un habillage : des gabarits différents." },
 ];
 const STEPS = [
-  { n: "01", t: "Votre sport, puis votre club",
-    d: "Vous choisissez votre discipline à la première connexion : le vocabulaire, les postes et les types de visuels s'y adaptent. Puis logo, deux couleurs et effectif. Dix minutes le premier soir, et c'est fini." },
+  { n: "01", t: "Ton sport, puis ton club",
+    d: "Tu choisis ton discipline à la première connexion : le vocabulaire, les postes et les types de visuels s'y adaptent. Puis logo, deux couleurs et effectif. Dix minutes le premier soir, et c'est fini." },
   { n: "02", t: "Le type de visuel",
     d: "But ou essai, score final, affiche de rencontre, composition, convocation, recrue, annonce — et pour les sports individuels, chrono et podium. Story, post ou carré : le gabarit se met à la bonne taille." },
   { n: "03", t: "Ce qui se remplit tout seul",
-    d: "Vous sélectionnez un joueur : son nom et son poste se posent sur le visuel. Le fond de sa photo peut être détouré en un geste. Vos couleurs sont déjà là." },
-  { n: "04", t: "Vous ajustez, vous exportez",
-    d: "Chaque élément se déplace et se redimensionne au doigt. Puis un PNG haute définition part directement dans vos photos. Prêt à publier." },
+    d: "Tu sélectionnes un joueur : son nom et son poste se posent sur le visuel. Le fond de sa photo peut être détouré en un geste. Tes couleurs sont déjà là." },
+  { n: "04", t: "Tu ajustes, tu exportes",
+    d: "Chaque élément se déplace et se redimensionne au doigt. Puis un PNG haute définition part directement dans tes photos. Prêt à publier." },
 ];
 const TEAM = [
   { nom: "Hugo Fenoli-Rebellato", role: "Co-fondateur", photo: "/team/hugo.jpg" },
   { nom: "Lucas Di Pasquale",     role: "Co-fondateur", photo: "/team/lucas.jpg" },
 ];
 const FAQ_ITEMS = [
-  { q: "Pour quels sports ?",                       a: "Sept aujourd'hui : football, rugby, hockey sur glace, basketball, handball, natation et triathlon. Vous choisissez le vôtre à la première connexion, et tout suit — le vocabulaire (joueur, nageur, athlète), les postes, les formations, le tracé de l'aire de jeu et les types de visuels. Les sports individuels n'ont ni composition ni score d'équipe, mais des visuels de chrono et de podium. Votre discipline n'y est pas ? Écrivez-nous, on l'ajoute." },
-  { q: "On pratique plusieurs sports dans le club.", a: "Un compte correspond à un sport. Vous pouvez y gérer plusieurs équipes, mais toutes dans la même discipline. Pour une structure omnisports, le plus simple est un accès par section — écrivez-nous, on vous arrange ça sur l'offre Institution." },
-  { q: "Faut-il des compétences en design ?",       a: "Non. Vous configurez votre club une fois (logo, couleurs, joueurs), l'app fait le reste. Aucune connaissance graphique requise." },
-  { q: "Ça marche sur téléphone ?",                 a: "Oui, l'app est pensée mobile. Installez-la sur votre écran d'accueil pour un accès en un tap, comme une vraie application." },
+  { q: "Pour quels sports ?",                       a: "Sept aujourd'hui : football, rugby, hockey sur glace, basketball, handball, natation et triathlon. Tu choisis le vôtre à la première connexion, et tout suit — le vocabulaire (joueur, nageur, athlète), les postes, les formations, le tracé de l'aire de jeu et les types de visuels. Les sports individuels n'ont ni composition ni score d'équipe, mais des visuels de chrono et de podium. Ton discipline n'y est pas ? Écris-nous, on l'ajoute." },
+  { q: "On pratique plusieurs sports dans le club.", a: "Un compte correspond à un sport. Tu peux y gérer plusieurs équipes, mais toutes dans la même discipline. Pour une structure omnisports, le plus simple est un accès par section — écris-nous, on t’arrange ça sur l'offre Institution." },
+  { q: "Faut-il des compétences en design ?",       a: "Non. Tu configures ton club une fois (logo, couleurs, joueurs), l'app fait le reste. Aucune connaissance graphique requise." },
+  { q: "Ça marche sur téléphone ?",                 a: "Oui, l'app est pensée mobile. Installe-la sur ton écran d'accueil pour un accès en un tap, comme une vraie application." },
   { q: "Combien ça coûte ?",                        a: "Trois offres selon la taille du club, de 44.99 à 189.99 CHF par mois. Au paiement annuel, un mois est offert sur les offres Équipe et Club, deux mois sur Institution. Elles diffèrent par le volume de visuels par semaine, le nombre de templates disponibles pour chaque type de visuel, et le niveau d'accompagnement — toutes les fonctionnalités de l'éditeur sont incluses partout. Le détail est dans la section Tarifs. Pas de frais d'installation, résiliable à tout moment." },
-  { q: "Comment accéder ?",                         a: "L'accès est sur invitation. Envoyez-nous un message à contact@viziona-sport.com, on revient sous 24h." },
-  { q: "Comment configurer mon club ?",             a: "Allez dans « Mon Club », uploadez votre logo, choisissez vos deux couleurs. Tout se met à jour automatiquement dans vos visuels." },
-  { q: "Comment créer mon premier visuel ?",        a: "Cliquez sur « Créer », choisissez un type (ex : But), sélectionnez un joueur si besoin, puis cliquez sur Télécharger." },
-  { q: "Comment ajouter mes joueurs ?",             a: "Section « Joueurs » → bouton « + Ajouter ». Nom, numéro, poste. Vous pouvez aussi uploader leur photo." },
-  { q: "Le visuel se télécharge où ?",              a: "Directement dans vos photos sur iPhone et Android. Prêt à publier sur Instagram, WhatsApp ou Facebook." },
-  { q: "Que deviennent les photos de nos joueurs ?", a: "Elles restent celles de votre club : nous ne les revendons pas et ne les transmettons à personne. Attention en revanche à un point qui vous incombe : pour un joueur mineur, il vous faut l'accord écrit des parents avant de publier son image. C'est détaillé dans nos conditions d'utilisation." },
-  { q: "Peut-on essayer avant de payer ?",          a: "Oui. Les clubs acceptés en bêta disposent d'un mois complet sans engagement ni carte bancaire. Si ça ne vous convient pas, vous partez avec vos visuels et on supprime vos données." },
-  { q: "Puis-je gérer plusieurs équipes ?",         a: "Oui. Chaque équipe — juniors, seniors, féminines — a son propre effectif et son propre historique de visuels, et vous basculez de l'une à l'autre en un clic. Le logo, les couleurs et le sport restent communs au club, vous ne les ressaisissez pas. L'offre Équipe en autorise une, l'offre Club trois, l'offre Institution autant que nécessaire." },
+  { q: "Comment accéder ?",                         a: "L'accès est sur invitation. Envoie-nous un message à contact@viziona-sport.com, on revient sous 24h." },
+  { q: "Comment configurer mon club ?",             a: "Va dans « Mon Club », téléverse ton logo, choisis tes deux couleurs. Tout se met à jour automatiquement dans tes visuels." },
+  { q: "Comment créer mon premier visuel ?",        a: "Clique sur « Créer », choisis un type (ex : But), sélectionne un joueur si besoin, puis cliquez sur Télécharger." },
+  { q: "Comment ajouter mes joueurs ?",             a: "Section « Joueurs » → bouton « + Ajouter ». Nom, numéro, poste. Tu peux aussi uploader leur photo." },
+  { q: "Le visuel se télécharge où ?",              a: "Directement dans tes photos sur iPhone et Android. Prêt à publier sur Instagram, WhatsApp ou Facebook." },
+  { q: "Que deviennent les photos de nos joueurs ?", a: "Elles restent celles de ton club : nous ne les revendons pas et ne les transmettons à personne. Attention en revanche à un point qui t’incombe : pour un joueur mineur, il te faut l'accord écrit des parents avant de publier son image. C'est détaillé dans nos conditions d'utilisation." },
+  { q: "Peut-on essayer avant de payer ?",          a: "Oui. Les clubs acceptés en bêta disposent d'un mois complet sans engagement ni carte bancaire. Si ça ne te convient pas, tu pars avec tes visuels et on supprime tes données." },
+  { q: "Puis-je gérer plusieurs équipes ?",         a: "Oui. Chaque équipe — juniors, seniors, féminines — a son propre effectif et son propre historique de visuels, et tu bascules de l'une à l'autre en un clic. Le logo, les couleurs et le sport restent communs au club, tu ne les ressaisissez pas. L'offre Équipe en autorise une, l'offre Club trois, l'offre Institution autant que nécessaire." },
 ];
 
 // ─── DOCUMENTS JURIDIQUES ─────────────────────────────────────
@@ -323,6 +330,31 @@ function injectFontsAndStyles() {
       .viz-up { opacity: 0; animation: viz-up .6s ease forwards; }
       .viz-fade { opacity: 0; animation: viz-fade .8s ease .3s forwards; }
       .viz-ticker-in { display: inline-flex; gap: 52px; animation: viz-tick 32s linear infinite; }
+
+      /* Révélation au défilement. Les animations existantes ne se déclenchaient
+         qu'au chargement : tout ce qui se trouve sous la ligne de flottaison
+         apparaissait déjà en place, d'où une page qui semble figée.
+         L'état de départ n'est posé QUE si le navigateur gère l'observation
+         d'intersection — sinon le contenu resterait invisible à jamais. */
+      .viz-obs [data-reveal] { opacity: 0; transform: translateY(26px); }
+      .viz-obs [data-reveal].is-in { opacity: 1; transform: none;
+        transition: opacity .7s cubic-bezier(.22,.9,.3,1), transform .7s cubic-bezier(.22,.9,.3,1); }
+      .viz-obs [data-reveal][data-delay="1"].is-in { transition-delay: .09s; }
+      .viz-obs [data-reveal][data-delay="2"].is-in { transition-delay: .18s; }
+      .viz-obs [data-reveal][data-delay="3"].is-in { transition-delay: .27s; }
+
+      /* Soulignement qui se trace sous les titres de section une fois visibles. */
+      .viz-rule { transform: scaleX(0); transform-origin: left; }
+      .viz-obs [data-reveal].is-in .viz-rule { transform: scaleX(1); transition: transform .8s cubic-bezier(.22,.9,.3,1) .15s; }
+
+      /* Respect du réglage système : aucune animation si l'utilisateur les a
+         désactivées, et le contenu reste évidemment visible. */
+      @media (prefers-reduced-motion: reduce) {
+        .viz-up, .viz-fade { animation: none !important; opacity: 1 !important; }
+        .viz-ticker-in { animation: none !important; }
+        .viz-obs [data-reveal] { opacity: 1 !important; transform: none !important; transition: none !important; }
+        .viz-rule { transform: scaleX(1) !important; }
+      }
       .viz-vcard:hover { transform: translateY(-2px); transition: transform .25s; }
       .viz-fc:hover { background: ${C.bgAlt} !important; }
       .viz-fc:hover .viz-fc-arr { color: ${C.tx} !important; transform: translate(2px,-2px) !important; }
@@ -357,7 +389,7 @@ function injectFontsAndStyles() {
         .viz-footer { padding: 24px !important; flex-direction: column !important; gap: 20px !important; text-align: center !important; }
         .viz-section { padding: 72px 24px !important; }
         .viz-team-row { flex-direction: column !important; align-items: flex-start !important; }
-        .viz-hero-h1 { font-size: clamp(64px, 14vw, 100px) !important; }
+        .viz-hero-h1 { font-size: clamp(38px, 11vw, 62px) !important; }
         .viz-hero-stats { gap: 28px !important; flex-wrap: wrap !important; }
         .viz-nav-hide { display: none !important; }
         .viz-about { grid-template-columns: 1fr !important; padding: 80px 24px !important; }
@@ -381,6 +413,40 @@ function injectFontsAndStyles() {
 // suit le rapport d'origine pour ne jamais le déformer.
 const VLOGO_D = "M 0.000 1.625 L 70.750 123.875 L 72.250 125.000 L 74.750 124.000 L 81.625 112.500 L 81.750 111.375 L 76.375 103.125 L 74.875 104.500 L 73.250 107.375 L 72.125 106.625 L 16.000 9.750 L 35.375 9.375 L 36.250 9.875 L 55.750 43.750 L 104.125 124.500 L 106.000 124.875 L 107.875 123.125 L 178.375 1.750 L 178.125 0.875 L 176.625 0.000 L 137.000 0.250 L 135.000 2.500 L 96.750 68.125 L 96.875 69.250 L 102.125 76.875 L 104.875 73.750 L 142.000 10.125 L 143.250 9.375 L 161.875 9.500 L 162.250 10.125 L 106.500 106.125 L 105.250 107.250 L 77.125 60.625 L 42.750 1.625 L 40.375 0.000 L 0.875 0.250 Z";
 const VLOGO_RATIO = 178.5 / 125.125;
+// Compteur qui s'incrémente quand il entre dans le champ. Les chiffres du
+// héros étaient posés là, inertes ; les voir monter donne le mouvement que la
+// page n'avait pas. La valeur finale est parsée depuis la chaîne, ce qui
+// préserve les suffixes du type « 30s ».
+function CountUp({ value, duration = 1100 }) {
+  const [txt, setTxt] = useState(value);
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    const cible = parseInt(String(value), 10);
+    const suffixe = String(value).replace(/^\d+/, "");
+    const reduit = typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // Sans observation d'intersection, sans valeur numérique, ou si
+    // l'utilisateur a désactivé les animations : on affiche la valeur finale.
+    if (!el || isNaN(cible) || reduit || typeof IntersectionObserver === "undefined") { setTxt(value); return; }
+    let raf = 0, io = null, parti = false;
+    const jouer = () => {
+      const t0 = performance.now();
+      const pas = (t) => {
+        const k = Math.min(1, (t - t0) / duration);
+        const doux = 1 - Math.pow(1 - k, 3);           // ralentit en fin de course
+        setTxt(Math.round(cible * doux) + suffixe);
+        if (k < 1) raf = requestAnimationFrame(pas);
+      };
+      raf = requestAnimationFrame(pas);
+    };
+    io = new IntersectionObserver((en) => {
+      if (en[0].isIntersecting && !parti) { parti = true; jouer(); io.disconnect(); }
+    }, { threshold: 0.5 });
+    io.observe(el);
+    return () => { if (raf) cancelAnimationFrame(raf); if (io) io.disconnect(); };
+  }, [value, duration]);
+  return <span ref={ref}>{txt}</span>;
+}
 function VLogo({ size = 26, color }) {
   return (
     <svg height={size} width={Math.round(size * VLOGO_RATIO)} viewBox="0 0 178.5 125.125"
@@ -637,10 +703,12 @@ function VisualCardBody({ type, sp }) {
       <div aria-hidden="true" style={{ position: "absolute", top: 0, left: 0, right: 0, height: "34%", background: accent }}/>
       <div style={{ position: "absolute", top: "11%", left: "50%", transform: "translateX(-50%)", width: 26, height: 26, borderRadius: 4, background: "rgba(0,0,0,.25)", border: "1px solid rgba(255,255,255,.35)", zIndex: 2 }}/>
       <div style={{ position: "absolute", left: "8%", right: "8%", top: "40%", zIndex: 2 }}>
-        <div style={{ fontFamily: FONT_H, fontSize: "1.45em", lineHeight: 1.02, letterSpacing: "0.02em" }}>MATCH<br/>REPORTÉ</div>
+        <div style={{ fontFamily: FONT_H, fontSize: "1.45em", lineHeight: 1.02, letterSpacing: "0.02em" }}>
+          {(sp.postTitle || "MATCH<br/>REPORTÉ").split("<br/>").map((l, i) => <div key={i}>{l}</div>)}
+        </div>
         <div style={{ width: 28, height: 2, background: accent, margin: "12px 0" }}/>
         <div style={{ fontFamily: FONT_BODY, fontSize: "0.6em", lineHeight: 1.6, color: "rgba(255,255,255,.62)", fontWeight: 300 }}>
-          Reporté au samedi 18 mai, 15h00. Merci de votre compréhension.
+          {sp.postBody || "Reporté au samedi 18 mai, 15h00. Merci de ton compréhension."}
         </div>
         <div style={{ fontFamily: FONT_M, fontSize: "0.52em", color: accent, marginTop: 12, letterSpacing: "0.1em" }}>#MonClub</div>
       </div>
@@ -652,7 +720,7 @@ function VisualCardBody({ type, sp }) {
 // ─── SECTION HEAD ─────────────────────────────────────────────
 function SHead({ tag, h2_a, h2_b, counter }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 72, paddingBottom: 36, borderBottom: "1px solid " + C.bdLite, gap: 24, flexWrap: "wrap" }}>
+    <div data-reveal style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 72, paddingBottom: 36, borderBottom: "1px solid " + C.bdLite, gap: 24, flexWrap: "wrap" }}>
       <div>
         <div style={{ fontFamily: FONT_M, fontSize: 10, color: C.tx3, letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 14 }}>{tag}</div>
         <h2 style={{ fontFamily: FONT_H, fontSize: "clamp(48px, 5.5vw, 76px)", letterSpacing: "0.02em", lineHeight: 0.9, fontWeight: 400, margin: 0, color: C.tx }}>
@@ -676,10 +744,32 @@ export default function Landing({ onEnter }) {
   const [exSportId, setExSportId] = useState("football");
   const exSport = LANDING_SPORTS.find(x => x.id === exSportId) || LANDING_SPORTS[0];
   useEffect(() => { injectFontsAndStyles(); }, []);
+
+  // Révélation au défilement. La classe viz-obs n'est posée sur la racine que
+  // si l'API existe : c'est elle qui active l'état masqué en CSS, donc sans
+  // ce garde un navigateur sans IntersectionObserver afficherait une page
+  // vide. Une fois révélé, l'élément n'est plus observé — on ne rejoue pas
+  // l'animation quand on remonte.
+  const rootRef = useRef(null);
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root || typeof IntersectionObserver === "undefined") return;
+    root.classList.add("viz-obs");
+    const cibles = root.querySelectorAll("[data-reveal]");
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (!en.isIntersecting) return;
+        en.target.classList.add("is-in");
+        io.unobserve(en.target);
+      });
+    }, { rootMargin: "0px 0px -12% 0px", threshold: 0.12 });
+    cibles.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, []);
   const handleEnter = (mode) => (e) => { if (e) e.preventDefault(); if (onEnter) onEnter(mode); };
 
   return (
-    <div style={{ background: C.bg, color: C.tx, fontFamily: FONT_BODY, overflowX: "hidden", minHeight: "100dvh", position: "relative" }}>
+    <div ref={rootRef} style={{ background: C.bg, color: C.tx, fontFamily: FONT_BODY, overflowX: "hidden", minHeight: "100dvh", position: "relative" }}>
       <div className="viz-grain" aria-hidden="true"/>
 
       {/* ─── NAV ─── */}
@@ -707,13 +797,14 @@ export default function Landing({ onEnter }) {
             <span style={{ width: 28, height: 1, background: C.tx3 }}/>
             Studio visuel · Tous les sports
           </span>
-          <h1 className="viz-up viz-hero-h1" style={{ fontFamily: FONT_H, fontSize: "clamp(88px, 10.5vw, 148px)", lineHeight: 0.87, letterSpacing: "-0.01em", margin: 0, fontWeight: 400, position: "relative", zIndex: 1, animationDelay: ".25s", color: C.tx }}>
-            Du terrain<br/>
-            <span style={{ color: "transparent", WebkitTextStroke: "1.5px " + C.tx }}>au feed.</span><br/>
-            En 30s.
+          <h1 className="viz-up viz-hero-h1" style={{ fontFamily: FONT_H, fontSize: "clamp(40px, 5.5vw, 88px)", lineHeight: 0.92, letterSpacing: "-0.01em", margin: 0, fontWeight: 400, position: "relative", zIndex: 1, animationDelay: ".25s", color: C.tx }}>
+            Ta communication<br/>
+            de club,<br/>
+            <span style={{ color: "transparent", WebkitTextStroke: "1.5px " + C.tx }}>comme les pros.</span><br/>
+            En quelques clics.
           </h1>
           <p className="viz-up" style={{ marginTop: 36, fontSize: 14, color: C.tx2, lineHeight: 1.8, fontWeight: 300, maxWidth: 440, position: "relative", zIndex: 1, animationDelay: ".4s" }}>
-            Le sifflet vient de retentir. Le temps de rejoindre le vestiaire, l'affiche du résultat est publiée — à vos couleurs, avec le bon nom, au bon format. Football, rugby, hockey, basket, handball, natation, triathlon : l'app parle la langue de votre discipline.
+            Le sifflet vient de retentir. Le temps de rejoindre le vestiaire, l'affiche du résultat est publiée — à tes couleurs, avec le bon nom, au bon format. Football, rugby, hockey, basket, handball, natation, triathlon : l'app parle la langue de ton discipline.
           </p>
           <div className="viz-up" style={{ marginTop: 52, display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", position: "relative", zIndex: 1, animationDelay: ".55s" }}>
             <a href="#" onClick={handleEnter("login")} className="viz-btn-text" style={{ background: "transparent", color: C.bk, border: "1.5px solid " + C.bk, padding: "13px 28px", borderRadius: 1, fontSize: 11, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", textDecoration: "none", transition: "all .2s" }}>Se connecter</a>
@@ -725,7 +816,7 @@ export default function Landing({ onEnter }) {
           <div className="viz-up viz-hero-stats" style={{ marginTop: 80, paddingTop: 36, borderTop: "1px solid " + C.bdLite, display: "flex", gap: 48, position: "relative", zIndex: 1, animationDelay: ".7s" }}>
             {STATS.map(s => (
               <div key={s.l} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                <div style={{ fontFamily: FONT_H, fontSize: 44, letterSpacing: "0.04em", lineHeight: 1, color: C.tx }}>{s.n}</div>
+                <div style={{ fontFamily: FONT_H, fontSize: 44, letterSpacing: "0.04em", lineHeight: 1, color: C.tx }}><CountUp value={s.n}/></div>
                 <div style={{ fontFamily: FONT_M, fontSize: 9, color: C.tx3, letterSpacing: "0.16em", textTransform: "uppercase" }}>{s.l}</div>
               </div>
             ))}
@@ -829,7 +920,7 @@ export default function Landing({ onEnter }) {
             Viziona est né de ce constat. Une app pensée pour le dirigeant bénévole qui gère tout seul, le coach qui n'a pas d'agence de comm, le club qui mérite autant d'exister en ligne qu'en compétition.
           </p>
           <p style={{ fontSize: 15, color: C.tx, lineHeight: 1.8, fontWeight: 500, margin: 0, borderLeft: "2px solid " + C.tx, paddingLeft: 16 }}>
-            En 30 secondes, depuis le bord du terrain, votre club peut publier comme un pro.
+            En 30 secondes, depuis le bord du terrain, ton club peut publier comme un pro.
           </p>
         </div>
       </section>
@@ -837,8 +928,8 @@ export default function Landing({ onEnter }) {
       {/* ─── FEATURES ─── */}
       <section id="features" className="viz-features" style={{ background: C.bgAlt, padding: "120px 52px", borderTop: "1px solid " + C.bdLite }}>
         <div style={{ maxWidth: 1340, margin: "0 auto" }}>
-          <SHead tag="Pourquoi Viziona" h2_a="Ce que vous" h2_b="obtenez" counter="03 fonctionnalités"/>
-          <div className="viz-feat-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 1, background: C.bd }}>
+          <SHead tag="Pourquoi Viziona" h2_a="Ce que tu" h2_b="obtenez" counter="03 fonctionnalités"/>
+          <div data-reveal data-delay="1" className="viz-feat-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 1, background: C.bd }}>
             {FEATURES.map(f => (
               <div key={f.n} className="viz-fc" style={{ background: C.bg, padding: "42px 38px", position: "relative", transition: "background .25s" }}>
                 <div style={{ fontFamily: FONT_M, fontSize: 10, color: C.tx4, letterSpacing: "0.14em", marginBottom: 32 }}>{f.n}</div>
@@ -863,17 +954,17 @@ export default function Landing({ onEnter }) {
             <div>
               <div style={{ fontFamily: FONT_M, fontSize: 10, color: "rgba(250,250,250,0.5)", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 14 }}>Exemples</div>
               <h2 style={{ fontFamily: FONT_H, fontSize: "clamp(48px, 5.5vw, 76px)", letterSpacing: "0.02em", lineHeight: 0.9, fontWeight: 400, margin: 0, color: C.wh }}>
-                Choisissez<br/>
-                <em style={{ fontStyle: "normal", color: "transparent", WebkitTextStroke: "1px " + C.wh }}>votre sport.</em>
+                Choisis<br/>
+                <em style={{ fontStyle: "normal", color: "transparent", WebkitTextStroke: "1px " + C.wh }}>ton sport.</em>
               </h2>
             </div>
             <p style={{ fontSize: 13, color: "rgba(250,250,250,0.55)", lineHeight: 1.8, fontWeight: 300, maxWidth: 340, margin: 0 }}>
-              L'app parle la langue de votre discipline. Le vocabulaire, les postes, le tracé du terrain et les types de visuels changent avec le sport — voyez vous-même.
+              L'app parle la langue de ton discipline. Le vocabulaire, les postes, le tracé du terrain et les types de visuels changent avec le sport — voyez tu-même.
             </p>
           </div>
 
           {/* Sélecteur de sport : change réellement le contenu des cartes */}
-          <div className="viz-sport-tabs" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 34 }}>
+          <div data-reveal className="viz-sport-tabs" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 34 }}>
             {LANDING_SPORTS.map(sp => {
               const on = sp.id === exSport.id;
               return (
@@ -889,7 +980,7 @@ export default function Landing({ onEnter }) {
             })}
           </div>
 
-          <div className="viz-ex-grid" style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 16 }}>
+          <div data-reveal data-delay="2" className="viz-ex-grid" style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 16 }}>
             {exSport.cards.map(type => (
               <div key={type}>
                 <VisualCard type={type} sp={exSport}/>
@@ -900,8 +991,8 @@ export default function Landing({ onEnter }) {
 
           <p style={{ fontSize: 12, color: "rgba(250,250,250,0.4)", lineHeight: 1.7, fontWeight: 300, marginTop: 26, maxWidth: 620 }}>
             {exSport.pitch
-              ? "Sport collectif : composition sur le tracé de votre aire de jeu, convocation, célébration d'action."
-              : "Sport individuel : ni composition ni score d'équipe, mais chrono, record personnel et podium — les visuels que vous publiez vraiment."}
+              ? "Sport collectif : composition sur le tracé de ton aire de jeu, convocation, célébration d'action."
+              : "Sport individuel : ni composition ni score d'équipe, mais chrono, record personnel et podium — les visuels que tu publies vraiment."}
           </p>
 
           <div style={{ marginTop: 44, paddingTop: 32, borderTop: "1px solid rgba(250,250,250,0.12)", display: "flex", gap: 40, flexWrap: "wrap", alignItems: "center" }}>
@@ -969,7 +1060,7 @@ export default function Landing({ onEnter }) {
               <div style={{ fontFamily: FONT_M, fontSize: 10, color: C.tx3, letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 14 }}>Tarifs</div>
               <h2 style={{ fontFamily: FONT_H, fontSize: "clamp(48px, 5.5vw, 76px)", letterSpacing: "0.02em", lineHeight: 0.9, fontWeight: 400, margin: 0, color: C.tx }}>
                 Le prix de<br/>
-                <em style={{ fontStyle: "normal", color: "transparent", WebkitTextStroke: "1px " + C.tx }}>votre taille.</em>
+                <em style={{ fontStyle: "normal", color: "transparent", WebkitTextStroke: "1px " + C.tx }}>ton taille.</em>
               </h2>
             </div>
             {/* Bascule mensuel / annuel */}
@@ -986,7 +1077,7 @@ export default function Landing({ onEnter }) {
             </div>
           </div>
 
-          <div className="viz-price-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 1, background: C.bd, border: "1px solid " + C.bd }}>
+          <div data-reveal data-delay="1" className="viz-price-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 1, background: C.bd, border: "1px solid " + C.bd }}>
             {PRICING.map(pl => {
               const mis = pl.populaire;
               const prix = billing === "an" ? pl.prixAn / 12 : pl.prixMois;
@@ -1046,8 +1137,8 @@ export default function Landing({ onEnter }) {
           <div style={{ marginTop: 32, display: "flex", gap: 40, flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between" }}>
             <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8, fontSize: 12, color: C.tx3, fontWeight: 300, lineHeight: 1.6, maxWidth: 620 }}>
               <li>— Premier mois offert pour les clubs de la bêta, sans carte bancaire.</li>
-              <li>— Résiliable à tout moment. Vous gardez les visuels déjà créés.</li>
-              <li>— Prix hors TVA. Association ou club sans but lucratif : écrivez-nous, on s'arrange.</li>
+              <li>— Résiliable à tout moment. Tu gardes les visuels déjà créés.</li>
+              <li>— Prix hors TVA. Association ou club sans but lucratif : écris-nous, on s'arrange.</li>
             </ul>
             <a href="mailto:contact@viziona-sport.com" className="viz-btn-text" style={{ fontSize: 11, fontWeight: 500, letterSpacing: "0.1em", textTransform: "uppercase", color: C.tx3, textDecoration: "none", display: "flex", alignItems: "center", gap: 7, whiteSpace: "nowrap" }}>
               Un besoin particulier ? Parlons-en <span className="viz-btn-arr" style={{ transition: "transform .2s" }}>↗</span>
@@ -1105,7 +1196,7 @@ export default function Landing({ onEnter }) {
       <div className="viz-cta-w" style={{ margin: "0 52px 120px", background: C.bk, padding: "72px 80px", display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", gap: 60, position: "relative", overflow: "hidden", marginTop: 0 }}>
         <span aria-hidden="true" style={{ position: "absolute", fontFamily: FONT_H, fontSize: 200, color: "rgba(250,250,250,0.045)", right: -10, top: "50%", transform: "translateY(-50%)", letterSpacing: "0.04em", pointerEvents: "none", whiteSpace: "nowrap" }}>VIZIONA</span>
         <div>
-          <h2 style={{ fontFamily: FONT_H, fontSize: "clamp(40px, 4.5vw, 60px)", color: C.wh, letterSpacing: "0.02em", lineHeight: 0.92, margin: 0, fontWeight: 400 }}>Prêt à élever<br/>votre club ?</h2>
+          <h2 style={{ fontFamily: FONT_H, fontSize: "clamp(40px, 4.5vw, 60px)", color: C.wh, letterSpacing: "0.02em", lineHeight: 0.92, margin: 0, fontWeight: 400 }}>Prêt à élever<br/>ton club ?</h2>
           <p style={{ fontSize: 13, color: "rgba(250,250,250,0.55)", marginTop: 14, fontWeight: 300, lineHeight: 1.65 }}>Accès sur demande · Réponse sous 24h · Premiers clubs en bêta</p>
         </div>
         <a href="#" onClick={handleEnter("signup")} className="viz-cta-b" style={{ background: C.wh, color: C.bk, padding: "15px 38px", fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", borderRadius: 1, whiteSpace: "nowrap", textDecoration: "none", display: "inline-block", transition: "transform .2s", position: "relative", zIndex: 1 }}>
