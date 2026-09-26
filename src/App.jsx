@@ -163,6 +163,22 @@ function posPlaceholders(sport){
   return ["", own, "attaquant · #9", "poste · #9"];
 }
 function norm(s){ return (s||"").trim().toLowerCase(); }
+// Nom affiche sur un visuel quand la place est comptee : on garde le nom de
+// famille. Prendre bêtement le dernier mot amputait les patronymes a
+// particule, frequents dans un club suisse : « Da Silva » devenait « Silva »,
+// « Van Damme » devenait « Damme ». On remonte donc tant que le mot precedent
+// est une particule.
+const PARTICULES = new Set(["de","du","des","da","das","do","dos","del","della","di","van","von","le","la","les","el","al","ben","bin","mac","mc","o"]);
+function surname(nom){
+  const mots=String(nom||"").trim().split(/\s+/).filter(Boolean);
+  if(!mots.length) return "";
+  if(mots.length===1) return mots[0];
+  let i=mots.length-1;
+  while(i>0 && PARTICULES.has(mots[i-1].toLowerCase().replace(/[’']$/,""))) i--;
+  // On ne remonte jamais jusqu au premier mot : il reste le prenom.
+  if(i===0) i=1;
+  return mots.slice(i).join(" ");
+}
 function playerPosLabel(p){
   if(!p) return "";
   const num=(p.number===0||p.number)?String(p.number).trim():"";
@@ -733,15 +749,15 @@ function LayerView({lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,isSel,on
 }
 // ─── LINEUP CANVAS ────────────────────────────────────────────
 // Slider tactile : +/− 44×44 sur mobile pour ajustement fin
-function TouchSlider({value,onChange,min,max,step,t,isMobile}){
+function TouchSlider({value,onChange,min,max,step,t,isMobile,label}){
   const v=value==null?min:value;
   const stp=step||1;
   const dec_=()=>onChange(Math.max(min,+(v-stp).toFixed(4)));
   const inc_=()=>onChange(Math.min(max,+(v+stp).toFixed(4)));
   return(<div style={{display:"flex",alignItems:"center",gap:isMobile?6:4,marginTop:2}}>
-    {isMobile&&<button onClick={dec_} className="viz-touch-btn" style={{background:t.bg4,border:"1px solid "+t.border2,color:t.text2,borderRadius:5,padding:0,fontSize:13,cursor:"pointer",fontWeight:700,lineHeight:1,width:44,height:36,flexShrink:0,fontFamily:"inherit"}}>−</button>}
-    <input type="range" min={min} max={max} step={stp} value={v} onChange={e=>onChange(+e.target.value)} style={{flex:1,minWidth:0}}/>
-    {isMobile&&<button onClick={inc_} className="viz-touch-btn" style={{background:t.bg4,border:"1px solid "+t.border2,color:t.text2,borderRadius:5,padding:0,fontSize:13,cursor:"pointer",fontWeight:700,lineHeight:1,width:44,height:36,flexShrink:0,fontFamily:"inherit"}}>+</button>}
+    {isMobile&&<button onClick={dec_} aria-label="Diminuer" title="Diminuer" className="viz-touch-btn" style={{background:t.bg4,border:"1px solid "+t.border2,color:t.text2,borderRadius:5,padding:0,fontSize:13,cursor:"pointer",fontWeight:700,lineHeight:1,width:44,height:36,flexShrink:0,fontFamily:"inherit"}}>−</button>}
+    <input type="range" aria-label={label||"Réglage"} min={min} max={max} step={stp} value={v} onChange={e=>onChange(+e.target.value)} style={{flex:1,minWidth:0}}/>
+    {isMobile&&<button onClick={inc_} aria-label="Augmenter" title="Augmenter" className="viz-touch-btn" style={{background:t.bg4,border:"1px solid "+t.border2,color:t.text2,borderRadius:5,padding:0,fontSize:13,cursor:"pointer",fontWeight:700,lineHeight:1,width:44,height:36,flexShrink:0,fontFamily:"inherit"}}>+</button>}
   </div>);
 }
 // Tracé officiel Viziona, identique à celui de Landing.jsx. Intégré en ligne
@@ -871,7 +887,7 @@ function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScal
     const sz = props.sz || W*.026;
     return <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:sz,height:sz,borderRadius:"50%",background:accent,color:contrastText(accent),fontSize:sz*.66,fontWeight:900,fontFamily:"Impact,sans-serif",lineHeight:1,flexShrink:0,marginLeft:sz*.28,verticalAlign:"middle"}}>C</span>;
   }
-  function Slot(props){const p=props.p;const sz=props.sz||W*.09;const square=props.square;const ph=getPhoto(p);return(<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,flex:"1 1 0",minWidth:0,padding:"0 2px",boxSizing:"border-box"}}><div style={{width:sz,height:sz,borderRadius:square?6:"50%",overflow:"hidden",border:"2px solid "+accent,background:dark?"rgba(0,0,0,.5)":"#e0e0e8",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:sz*.34,fontWeight:900,color:accent,fontFamily:"Impact,sans-serif"}}>{p&&p.number?p.number:"?"}</span>}</div><span style={{fontSize:W*.024,color:dark?"#fff":"#111",fontWeight:700,textAlign:"center",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textShadow:dark?"0 1px 5px #000":"none"}}>{p&&p.name?p.name.split(" ").pop():"—"}<CapMark p={p} sz={W*.022}/></span></div>);}
+  function Slot(props){const p=props.p;const sz=props.sz||W*.09;const square=props.square;const ph=getPhoto(p);return(<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,flex:"1 1 0",minWidth:0,padding:"0 2px",boxSizing:"border-box"}}><div style={{width:sz,height:sz,borderRadius:square?6:"50%",overflow:"hidden",border:"2px solid "+accent,background:dark?"rgba(0,0,0,.5)":"#e0e0e8",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:sz*.34,fontWeight:900,color:accent,fontFamily:"Impact,sans-serif"}}>{p&&p.number?p.number:"?"}</span>}</div><span style={{fontSize:W*.024,color:dark?"#fff":"#111",fontWeight:700,textAlign:"center",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textShadow:dark?"0 1px 5px #000":"none"}}>{p&&p.name?surname(p.name):"—"}<CapMark p={p} sz={W*.022}/></span></div>);}
   // ── Gabarits à mise en page propre ────────────────────────────────────────
   // Les six premiers partagent la même structure (en-tête, rangs sur l'aire de
   // jeu, bandeau remplaçants) et ne diffèrent que par les couleurs : c'est ce
@@ -933,7 +949,7 @@ function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScal
               ? <img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>
               : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:HEAD,fontSize:W*.07,color:rgba(accent,.5)}}>{p&&p.number?p.number:"?"}</div>}
             <div style={{position:"absolute",left:0,right:0,bottom:0,padding:(W*.012)+"px "+(W*.016)+"px",background:"linear-gradient(to top,rgba(0,0,0,.88),transparent)"}}>
-              <div style={{fontSize:W*.021,color:"#fff",fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.2}}>{p&&p.name?p.name.split(" ").pop():"—"}<CapMark p={p} sz={W*.02}/></div>
+              <div style={{fontSize:W*.021,color:"#fff",fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.2}}>{p&&p.name?surname(p.name):"—"}<CapMark p={p} sz={W*.02}/></div>
               {p&&p.number&&<div style={{fontFamily:MONO,fontSize:W*.017,color:accent,letterSpacing:".1em"}}>{p.number}</div>}
             </div>
           </div>);})}
@@ -970,7 +986,7 @@ function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScal
               {row.players.map(function(p,pi){return(
                 <span key={pi} style={{display:"inline-flex",alignItems:"baseline",gap:W*.012,minWidth:0}}>
                   <span style={{fontFamily:HEAD,fontSize:W*.035,color:accent,fontVariantNumeric:"tabular-nums"}}>{p&&p.number?p.number:"—"}</span>
-                  <span style={{fontSize:W*.027,color:"#1a1a1a",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p&&p.name?p.name.split(" ").pop():"—"}<CapMark p={p} sz={W*.021}/></span>
+                  <span style={{fontSize:W*.027,color:"#1a1a1a",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p&&p.name?surname(p.name):"—"}<CapMark p={p} sz={W*.021}/></span>
                 </span>);})}
             </div>
           </div>);})}
@@ -993,7 +1009,7 @@ function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScal
         {props.list.map(function(p,i){return(
           <div key={i} style={{display:"flex",alignItems:"center",gap:W*.02,background:i%2?rgba("#fff",.035):"transparent",padding:(W*.009)+"px "+(W*.014)+"px"}}>
             <span style={{fontFamily:MONO,fontSize:W*.03,color:accent,fontWeight:500,minWidth:W*.055,fontVariantNumeric:"tabular-nums"}}>{p&&p.number?String(p.number).padStart(2,"0"):"--"}</span>
-            <span style={{flex:1,fontFamily:MONO,fontSize:W*.023,color:rgba("#fff",.88),letterSpacing:".04em",textTransform:"uppercase",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p&&p.name?p.name.split(" ").pop():"—"}<CapMark p={p} sz={W*.02}/></span>
+            <span style={{flex:1,fontFamily:MONO,fontSize:W*.023,color:rgba("#fff",.88),letterSpacing:".04em",textTransform:"uppercase",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p&&p.name?surname(p.name):"—"}<CapMark p={p} sz={W*.02}/></span>
           </div>);})}
       </div>);};
     return(<div style={Object.assign({},root,{background:"#08090b"})}>
@@ -1012,7 +1028,7 @@ function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScal
       </div>
       {subs.length>0&&<div style={{position:"relative",zIndex:2,borderTop:"1px solid "+rgba("#fff",.12),padding:(W*.02)+"px "+(W*.30)+"px "+(W*.035)+"px "+(W*.045)+"px"}}>
         <div style={{fontFamily:MONO,fontSize:W*.017,color:rgba("#fff",.32),letterSpacing:".22em",marginBottom:W*.008}}>BANC</div>
-        <div style={{fontFamily:MONO,fontSize:W*.02,color:rgba("#fff",.6),letterSpacing:".05em",textTransform:"uppercase",lineHeight:1.6}}>{subs.map(s=>(s.number?String(s.number).padStart(2,"0")+" ":"")+(s.name?s.name.split(" ").pop():"")).join("  ·  ")}</div>
+        <div style={{fontFamily:MONO,fontSize:W*.02,color:rgba("#fff",.6),letterSpacing:".05em",textTransform:"uppercase",lineHeight:1.6}}>{subs.map(s=>(s.number?String(s.number).padStart(2,"0")+" ":"")+(s.name?surname(s.name):"")).join("  ·  ")}</div>
       </div>}
       <Watermark dark={dark} W={W}/>
     </div>);
@@ -1049,7 +1065,7 @@ function LineupCanvas({ld,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,slotScal
     {/* FIX Lucas Test 21 : le "Powered by Viziona" (Watermark) chevauchait les remplaçants
         quand il y en avait beaucoup. On réserve un paddingRight en bas suffisant pour la watermark
         (~30% de W soit ~80px sur canvas 270) — la row de remplaçants ne s'étend plus jusqu'au bord droit. */}
-    {subs.length>0&&<div style={{position:"relative",zIndex:3,borderTop:"1px solid "+rgba(accent,.3),background:rgba(dark?"#000":"#f0f0f0",.55),padding:(W*.012)+"px "+(W*.035)+"px",paddingRight:(W*.30)+"px",paddingBottom:(W*.032)+"px"}}><div style={{fontSize:W*.02,color:rgba(dark?"#fff":"#000",.38),letterSpacing:".1em",marginBottom:2}}>REMPLAÇANTS</div><div style={{display:"flex",gap:W*.016,flexWrap:"wrap",alignItems:"center"}}>{subs.map(function(s,i){const ph=getPhoto(s);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.009}}>{ph?<img src={ph} style={{width:W*.046,height:W*.046,borderRadius:"50%",objectFit:"cover",objectPosition:"top",border:"1px solid "+rgba(accent,.4)}} alt=""/>:<div style={{width:W*.046,height:W*.046,borderRadius:"50%",background:rgba(accent,.2),display:"flex",alignItems:"center",justifyContent:"center",fontSize:W*.018,color:accent}}>{s.number||"?"}</div>}<span style={{fontSize:W*.023,color:rgba(dark?"#fff":"#000",.5)}}>{s.name?s.name.split(" ").pop():""}</span></div>);})}</div></div>}
+    {subs.length>0&&<div style={{position:"relative",zIndex:3,borderTop:"1px solid "+rgba(accent,.3),background:rgba(dark?"#000":"#f0f0f0",.55),padding:(W*.012)+"px "+(W*.035)+"px",paddingRight:(W*.30)+"px",paddingBottom:(W*.032)+"px"}}><div style={{fontSize:W*.02,color:rgba(dark?"#fff":"#000",.38),letterSpacing:".1em",marginBottom:2}}>REMPLAÇANTS</div><div style={{display:"flex",gap:W*.016,flexWrap:"wrap",alignItems:"center"}}>{subs.map(function(s,i){const ph=getPhoto(s);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.009}}>{ph?<img src={ph} style={{width:W*.046,height:W*.046,borderRadius:"50%",objectFit:"cover",objectPosition:"top",border:"1px solid "+rgba(accent,.4)}} alt=""/>:<div style={{width:W*.046,height:W*.046,borderRadius:"50%",background:rgba(accent,.2),display:"flex",alignItems:"center",justifyContent:"center",fontSize:W*.018,color:accent}}>{s.number||"?"}</div>}<span style={{fontSize:W*.023,color:rgba(dark?"#fff":"#000",.5)}}>{s.name?surname(s.name):""}</span></div>);})}</div></div>}
     <Watermark dark={dark} W={W}/>
   </div>);
 }
@@ -1124,10 +1140,10 @@ function GroupCanvas({gd,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,sport}){
         <Logo url={logo2Url} sz={W*.08}/>
       </div>
       <div style={{position:"relative",zIndex:2,flex:1,padding:(W*.018)+"px",overflowY:"auto"}}>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:W*.012,alignContent:"start"}}>{allP.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}><div style={{width:W*.18,height:W*.22,borderRadius:W*.016,overflow:"hidden",border:"2px solid "+rgba(accent,.25),background:"#eee",display:"flex",alignItems:"center",justifyContent:"center"}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<div style={{color:"#ccc",display:"flex"}}><Icon name="user" size={Math.round(W*.05)} strokeWidth={1.6}/></div>}</div><span style={{fontSize:W*.024,fontWeight:700,color:"#111",textAlign:"center",maxWidth:W*.19,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?p.name.split(" ").pop():"—"}</span>{p.number&&<span style={{fontSize:W*.019,color:accent,fontWeight:700}}>#{p.number}</span>}</div>);})}</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:W*.012,alignContent:"start"}}>{allP.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}><div style={{width:W*.18,height:W*.22,borderRadius:W*.016,overflow:"hidden",border:"2px solid "+rgba(accent,.25),background:"#eee",display:"flex",alignItems:"center",justifyContent:"center"}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<div style={{color:"#ccc",display:"flex"}}><Icon name="user" size={Math.round(W*.05)} strokeWidth={1.6}/></div>}</div><span style={{fontSize:W*.024,fontWeight:700,color:"#111",textAlign:"center",maxWidth:W*.19,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?surname(p.name):"—"}</span>{p.number&&<span style={{fontSize:W*.019,color:accent,fontWeight:700}}>#{p.number}</span>}</div>);})}</div>
         {coaches.length>0&&<>
           <StaffSep dark={false}/>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:W*.012,alignContent:"start"}}>{coaches.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={"st"+i} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}><div style={{width:W*.15,height:W*.18,borderRadius:W*.016,overflow:"hidden",border:"1px solid rgba(0,0,0,.12)",background:"#eee",display:"flex",alignItems:"center",justifyContent:"center"}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<div style={{color:"#bbb",display:"flex"}}><Icon name="user" size={Math.round(W*.04)} strokeWidth={1.6}/></div>}</div><span style={{fontSize:W*.021,fontWeight:600,color:"#555",textAlign:"center",maxWidth:W*.17,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?p.name.split(" ").pop():"—"}</span></div>);})}</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:W*.012,alignContent:"start"}}>{coaches.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={"st"+i} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}><div style={{width:W*.15,height:W*.18,borderRadius:W*.016,overflow:"hidden",border:"1px solid rgba(0,0,0,.12)",background:"#eee",display:"flex",alignItems:"center",justifyContent:"center"}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<div style={{color:"#bbb",display:"flex"}}><Icon name="user" size={Math.round(W*.04)} strokeWidth={1.6}/></div>}</div><span style={{fontSize:W*.021,fontWeight:600,color:"#555",textAlign:"center",maxWidth:W*.17,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?surname(p.name):"—"}</span></div>);})}</div>
         </>}
       </div>
       <Watermark dark={tpl!=="gr5"} W={W}/>
@@ -1144,9 +1160,9 @@ function GroupCanvas({gd,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,sport}){
       </div>
       <div style={{position:"relative",zIndex:2,flex:1,display:"flex",flexDirection:"column",overflowY:"auto"}}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1px 1fr"}}>
-          <div style={{padding:(W*.016)+"px "+(W*.018)+"px"}}><div style={{fontSize:W*.019,color:accent,fontWeight:700,letterSpacing:".1em",marginBottom:W*.012}}>GK · DEF</div>{left.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.012,marginBottom:W*.012,paddingBottom:W*.012,borderBottom:"1px solid rgba(0,0,0,.05)"}}><div style={{width:W*.078,height:W*.078,borderRadius:"50%",overflow:"hidden",border:"2px solid "+rgba(accent,.28),background:"#ddd",flexShrink:0}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:W*.026,fontWeight:900,color:accent,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>{p.number||""}</span>}</div><div><div style={{fontSize:W*.028,fontWeight:700,color:"#111",maxWidth:W*.19,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?p.name.split(" ").pop():"—"}</div>{p.number&&<div style={{fontSize:W*.018,color:accent}}>#{p.number}</div>}</div></div>);})}</div>
+          <div style={{padding:(W*.016)+"px "+(W*.018)+"px"}}><div style={{fontSize:W*.019,color:accent,fontWeight:700,letterSpacing:".1em",marginBottom:W*.012}}>GK · DEF</div>{left.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.012,marginBottom:W*.012,paddingBottom:W*.012,borderBottom:"1px solid rgba(0,0,0,.05)"}}><div style={{width:W*.078,height:W*.078,borderRadius:"50%",overflow:"hidden",border:"2px solid "+rgba(accent,.28),background:"#ddd",flexShrink:0}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:W*.026,fontWeight:900,color:accent,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>{p.number||""}</span>}</div><div><div style={{fontSize:W*.028,fontWeight:700,color:"#111",maxWidth:W*.19,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?surname(p.name):"—"}</div>{p.number&&<div style={{fontSize:W*.018,color:accent}}>#{p.number}</div>}</div></div>);})}</div>
           <div style={{background:"rgba(0,0,0,.08)"}}/>
-          <div style={{padding:(W*.016)+"px "+(W*.018)+"px"}}><div style={{fontSize:W*.019,color:accent2,fontWeight:700,letterSpacing:".1em",marginBottom:W*.012}}>MIL · ATT</div>{right.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.012,marginBottom:W*.012,paddingBottom:W*.012,borderBottom:"1px solid rgba(0,0,0,.05)"}}><div style={{width:W*.078,height:W*.078,borderRadius:"50%",overflow:"hidden",border:"2px solid "+rgba(accent2,.28),background:"#ddd",flexShrink:0}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:W*.026,fontWeight:900,color:accent2,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>{p.number||""}</span>}</div><div><div style={{fontSize:W*.028,fontWeight:700,color:"#111",maxWidth:W*.19,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?p.name.split(" ").pop():"—"}</div>{p.number&&<div style={{fontSize:W*.018,color:accent2}}>#{p.number}</div>}</div></div>);})}</div>
+          <div style={{padding:(W*.016)+"px "+(W*.018)+"px"}}><div style={{fontSize:W*.019,color:accent2,fontWeight:700,letterSpacing:".1em",marginBottom:W*.012}}>MIL · ATT</div>{right.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.012,marginBottom:W*.012,paddingBottom:W*.012,borderBottom:"1px solid rgba(0,0,0,.05)"}}><div style={{width:W*.078,height:W*.078,borderRadius:"50%",overflow:"hidden",border:"2px solid "+rgba(accent2,.28),background:"#ddd",flexShrink:0}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:W*.026,fontWeight:900,color:accent2,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>{p.number||""}</span>}</div><div><div style={{fontSize:W*.028,fontWeight:700,color:"#111",maxWidth:W*.19,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?surname(p.name):"—"}</div>{p.number&&<div style={{fontSize:W*.018,color:accent2}}>#{p.number}</div>}</div></div>);})}</div>
         </div>
         {coaches.length>0&&<div style={{padding:"0 "+(W*.018)+"px "+(W*.018)+"px"}}>
           <StaffSep dark={false}/>
@@ -1577,10 +1593,10 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
         {isText&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:8}}><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Taille</div><input type="number" value={selL.fontSize||20} onChange={e=>upd("fontSize",+e.target.value||12)} style={inp}/></div><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Couleur</div><input type="color" value={(selL.color||"#ffffff").startsWith("rgba")?"#ffffff":selL.color||"#ffffff"} onChange={e=>upd("color",e.target.value)} style={{width:"100%",height:32,borderRadius:6,border:"1px solid "+t.border2,background:t.bg4,cursor:"pointer",padding:2}}/></div></div>}
         {isText&&<div style={{display:"flex",gap:4,marginBottom:8}}>{[["bold","G","Gras"],["italic","I","Italic"],["upper","AA","Majusc."]].map(([f,sym,lbl])=>(<button key={f} onClick={()=>upd(f,!selL[f])} style={{flex:1,background:selL[f]?accent:"transparent",border:"1px solid "+(selL[f]?accent:t.border2),borderRadius:6,padding:"5px 2px",color:selL[f]?"#fff":t.text2,cursor:"pointer",fontSize:9,fontWeight:600,textAlign:"center"}}><div style={{fontSize:11,fontWeight:700}}>{sym}</div><div style={{fontSize:8,opacity:.7}}>{lbl}</div></button>))}</div>}
         {isText&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:3}}>Alignement</div><div style={{display:"flex",gap:4}}>{["left","center","right"].map(al=>(<button key={al} onClick={()=>upd("align",al)} style={{flex:1,background:(selL.align||"center")===al?accent:"transparent",border:"1px solid "+((selL.align||"center")===al?accent:t.border2),borderRadius:6,padding:"5px 2px",color:(selL.align||"center")===al?"#fff":t.text2,cursor:"pointer",fontSize:12}}>{al==="left"?"←":al==="center"?"≡":"→"}</button>))}</div></div>}
-        {isText&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Espacement lettres ({(selL.letterSpacing||0).toFixed(1)}px)</div><TouchSlider value={selL.letterSpacing||0} onChange={v=>upd("letterSpacing",v)} min={-2} max={20} step={0.5} t={t} isMobile={isMobile}/></div>}
-        {isText&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Interligne ({(selL.lineHeight||1.2).toFixed(1)})</div><TouchSlider value={selL.lineHeight||1.2} onChange={v=>upd("lineHeight",v)} min={0.8} max={3} step={0.1} t={t} isMobile={isMobile}/></div>}
-        {isText&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Ombre ({selL.textShadow||0}px)</div><TouchSlider value={selL.textShadow||0} onChange={v=>upd("textShadow",v)} min={0} max={40} step={1} t={t} isMobile={isMobile}/></div>}
-        {isText&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:8}}><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Fond texte</div><input type="color" value={selL.bgColor||"#000000"} onChange={e=>upd("bgColor",e.target.value)} style={{width:"100%",height:30,borderRadius:6,border:"1px solid "+t.border2,background:t.bg4,cursor:"pointer",padding:2}}/></div><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Opacité fond ({Math.round((selL.bgOpacity||0)*100)}%)</div><TouchSlider value={selL.bgOpacity||0} onChange={v=>upd("bgOpacity",v)} min={0} max={1} step={0.05} t={t} isMobile={isMobile}/></div></div>}
+        {isText&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Espacement lettres ({(selL.letterSpacing||0).toFixed(1)}px)</div><TouchSlider label="Espacement des lettres" value={selL.letterSpacing||0} onChange={v=>upd("letterSpacing",v)} min={-2} max={20} step={0.5} t={t} isMobile={isMobile}/></div>}
+        {isText&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Interligne ({(selL.lineHeight||1.2).toFixed(1)})</div><TouchSlider label="Interligne" value={selL.lineHeight||1.2} onChange={v=>upd("lineHeight",v)} min={0.8} max={3} step={0.1} t={t} isMobile={isMobile}/></div>}
+        {isText&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Ombre ({selL.textShadow||0}px)</div><TouchSlider label="Ombre du texte" value={selL.textShadow||0} onChange={v=>upd("textShadow",v)} min={0} max={40} step={1} t={t} isMobile={isMobile}/></div>}
+        {isText&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:8}}><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Fond texte</div><input type="color" value={selL.bgColor||"#000000"} onChange={e=>upd("bgColor",e.target.value)} style={{width:"100%",height:30,borderRadius:6,border:"1px solid "+t.border2,background:t.bg4,cursor:"pointer",padding:2}}/></div><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Opacité fond ({Math.round((selL.bgOpacity||0)*100)}%)</div><TouchSlider label="Opacité" value={selL.bgOpacity||0} onChange={v=>upd("bgOpacity",v)} min={0} max={1} step={0.05} t={t} isMobile={isMobile}/></div></div>}
         {isText&&<div style={{marginBottom:8}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
             <span style={{fontSize:9,color:t.text3}}>Texte en arc</span>
@@ -1593,12 +1609,12 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
           </div>
           {(selL.curve||0)!==0&&<button onClick={()=>upd("curve",0)} style={{background:"none",border:"none",color:t.accentUI,cursor:"pointer",fontSize:9,padding:0,textDecoration:"underline",marginTop:3}}>Reset</button>}
         </div>}
-        {selL.type==="watertext"&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Opacité filigrane ({selL.opacity||15}%)</div><TouchSlider value={selL.opacity||15} onChange={v=>upd("opacity",v)} min={1} max={60} step={1} t={t} isMobile={isMobile}/></div>}
+        {selL.type==="watertext"&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Opacité filigrane ({selL.opacity||15}%)</div><TouchSlider label="Opacité" label="Opacité du filigrane" value={selL.opacity||15} onChange={v=>upd("opacity",v)} min={1} max={60} step={1} t={t} isMobile={isMobile}/></div>}
         {selL.type==="overlay"&&<div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Intensité ({selL.opacity||60}%)</div><TouchSlider value={selL.opacity||60} onChange={v=>upd("opacity",v)} min={0} max={100} step={1} t={t} isMobile={isMobile}/></div>}
         {selL.type==="stripe"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:8}}><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Couleur 1</div><input type="color" value={selL.color||accent} onChange={e=>upd("color",e.target.value)} style={{width:"100%",height:30,borderRadius:6,border:"1px solid "+t.border2,background:t.bg4,cursor:"pointer",padding:2}}/></div><div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Couleur 2</div><input type="color" value={selL.color2||accent2} onChange={e=>upd("color2",e.target.value)} style={{width:"100%",height:30,borderRadius:6,border:"1px solid "+t.border2,background:t.bg4,cursor:"pointer",padding:2}}/></div></div>}
         {selL.type==="colorblock"&&<>
           <div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Couleur</div><input type="color" value={selL.color||"#ff5555"} onChange={e=>upd("color",e.target.value)} style={{width:"100%",height:32,borderRadius:6,border:"1px solid "+t.border2,background:t.bg4,cursor:"pointer",padding:2}}/></div>
-          <div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Opacité ({selL.opacity==null?80:selL.opacity}%)</div><TouchSlider value={selL.opacity==null?80:selL.opacity} onChange={v=>upd("opacity",v)} min={0} max={100} step={1} t={t} isMobile={isMobile}/></div>
+          <div style={{marginBottom:8}}><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Opacité ({selL.opacity==null?80:selL.opacity}%)</div><TouchSlider label="Opacité" value={selL.opacity==null?80:selL.opacity} onChange={v=>upd("opacity",v)} min={0} max={100} step={1} t={t} isMobile={isMobile}/></div>
         </>}
         {selL.type==="sponsor"&&<>
           <div style={{marginBottom:8}}>
@@ -2313,7 +2329,23 @@ export default function App({session}){
     // recharger toutes les données à chaque rafraîchissement de token.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[uid]);
-  async function updateClub(patch){const updated={...club,...patch};setClub(updated);await supabase.from("clubs").update(patch).eq("id",club.id);}
+  // Nom, couleurs, logo, theme : l interface etait mise a jour AVANT
+  // l ecriture, et l echec n etait jamais lu. Un refus des droits ou une
+  // coupure reseau laissait donc le club convaincu d avoir enregistre son
+  // identite, jusqu au rechargement suivant ou tout revenait en arriere.
+  // On garde l affichage optimiste, qui rend l interface vive, mais on
+  // revient a l etat precedent et on le dit si l ecriture echoue.
+  async function updateClub(patch){
+    const avant=club;
+    setClub({...club,...patch});
+    const{error}=await supabase.from("clubs").update(patch).eq("id",club.id);
+    if(error){
+      console.error("[updateClub] echec:",error.message);
+      setClub(avant);
+      setLimitError(humanError(error,"Modification non enregistree. Reessaie dans un instant."));
+      setTimeout(()=>setLimitError(""),5000);
+    }
+  }
   // Le sport est stocké dans clubs.sport (migration 0004). Si la colonne
   // n'existe pas encore, on garde le choix en local pour ne pas bloquer le
   // club derrière un écran qu'il ne peut pas valider.
@@ -2398,7 +2430,12 @@ export default function App({session}){
     const p=players.find(x=>x.id===id);
     const n=p&&p.photos?p.photos.length:0;
     if(!window.confirm("Retirer "+((p&&p.name)||"ce joueur")+" de l'effectif"+(n?" ainsi que ses "+n+" photo"+(n>1?"s":""):"")+" ?"))return;
-    await supabase.from("players").delete().eq("id",id);
+    const{error}=await supabase.from("players").delete().eq("id",id);
+    if(error){
+      console.error("[deletePlayer] echec:",error.message);
+      alert(humanError(error,"Suppression impossible. Reessaie dans un instant."));
+      return;
+    }
     setPlayers(prev=>prev.filter(x=>x.id!==id));
     if(selPid===id){setSelPid(null);setSelPhoto(null);}
   }
@@ -2466,7 +2503,11 @@ export default function App({session}){
       if(data)setMedia(m=>[...m,data]);
     }
   }
-  async function deleteMedia(id){await supabase.from("media").delete().eq("id",id);setMedia(m=>m.filter(x=>x.id!==id));}
+  async function deleteMedia(id){
+    const{error}=await supabase.from("media").delete().eq("id",id);
+    if(error){console.error("[deleteMedia] echec:",error.message);alert(humanError(error,"Suppression impossible. Reessaie dans un instant."));return;}
+    setMedia(m=>m.filter(x=>x.id!==id));
+  }
   // Changer de format ne recrée pas le visuel : les calques sont positionnés
   // en %, seules les tailles de texte suivent la hauteur du canvas.
   function changeFormat(next){
@@ -2587,8 +2628,25 @@ export default function App({session}){
     if(nav==="history"&&historyState==="idle"&&club)loadHistoryPage(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[nav,club,historyState]);
-  async function deleteVisual(id){await supabase.from("visuals").delete().eq("id",id);setHistory(h=>h.filter(x=>x.id!==id));setHistoryCount(c=>Math.max(0,c-1));}
-  async function signOut(){await supabase.auth.signOut();}
+  async function deleteVisual(id){
+    const{error}=await supabase.from("visuals").delete().eq("id",id);
+    if(error){
+      console.error("[deleteVisual] echec:",error.message);
+      setLimitError(humanError(error,"Suppression impossible. Reessaie dans un instant."));
+      setTimeout(()=>setLimitError(""),5000);
+      return;
+    }
+    setHistory(h=>h.filter(x=>x.id!==id));setHistoryCount(c=>Math.max(0,c-1));
+  }
+  async function signOut(){
+    // Un echec laissait le club convaincu d etre deconnecte alors que sa
+    // session restait ouverte -- genant sur un appareil partage.
+    const{error}=await supabase.auth.signOut();
+    if(error){
+      console.error("[signOut] echec:",error.message);
+      alert("Deconnexion impossible pour le moment. Ferme l onglet si tu es sur un appareil partage.");
+    }
+  }
   async function downloadPng(){
     const el=document.querySelector(".visium-canvas");
     if(!el){setLimitError("Aperçu introuvable.");setTimeout(()=>setLimitError(""),2000);return;}
@@ -2788,7 +2846,7 @@ export default function App({session}){
         <div style={{position:"fixed",bottom:0,left:0,right:0,height:60,background:t.bg2,borderTop:"1px solid "+t.border,display:"flex",gap:8,alignItems:"center",padding:"0 12px",zIndex:90}}>
           <button onClick={()=>setSelType(null)} className="viz-touch-btn" style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:8,padding:"10px 14px",color:t.text2,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>↩</button>
           <button onClick={()=>setMobileSheet("options")} className="viz-touch-btn" style={{flex:1,background:rgba(t.accent,.15),color:t.accentUI,border:"1px solid "+rgba(t.accent,.3),borderRadius:8,padding:"10px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}><Icon name="sliders" size={15}/>Options</button>
-          <button onClick={save} className="viz-touch-btn" style={{flex:1,background:saveFlash?"#22c55e":t.accent,color:saveFlash?"#fff":contrastText(t.accent),border:"none",borderRadius:8,padding:"10px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{saveFlash?"✓ Enregistré":"Sauver"}</button>
+          <button onClick={save} aria-label="Enregistrer le visuel" title="Enregistrer" className="viz-touch-btn" style={{flex:1,background:saveFlash?"#22c55e":t.accent,color:saveFlash?"#fff":contrastText(t.accent),border:"none",borderRadius:8,padding:"10px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{saveFlash?"✓ Enregistré":"Sauver"}</button>
         </div>
       )}
     </div>);
@@ -2891,7 +2949,7 @@ export default function App({session}){
           <button onClick={()=>setSelType(null)} className="viz-touch-btn" style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:8,padding:"10px 12px",color:t.text2,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>↩</button>
           <button onClick={()=>setMobileSheet("options")} className="viz-touch-btn" style={{flex:1,background:rgba(t.accent,.15),color:t.accentUI,border:"1px solid "+rgba(t.accent,.3),borderRadius:8,padding:"10px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}><Icon name="sliders" size={15}/>Options</button>
           <button onClick={()=>setMobileSheet("layers")} className="viz-touch-btn" style={{flex:1,background:rgba(t.accent,.15),color:t.accentUI,border:"1px solid "+rgba(t.accent,.3),borderRadius:8,padding:"10px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>≡ Calques</button>
-          <button onClick={save} className="viz-touch-btn" style={{flex:1,background:saveFlash?"#22c55e":t.accent,color:saveFlash?"#fff":contrastText(t.accent),border:"none",borderRadius:8,padding:"10px",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{saveFlash?"✓":<Icon name="save" size={16}/>}</button>
+          <button onClick={save} aria-label="Enregistrer le visuel" title="Enregistrer" className="viz-touch-btn" style={{flex:1,background:saveFlash?"#22c55e":t.accent,color:saveFlash?"#fff":contrastText(t.accent),border:"none",borderRadius:8,padding:"10px",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{saveFlash?"✓":<Icon name="save" size={16}/>}</button>
         </div>
       )}
     </div>);
