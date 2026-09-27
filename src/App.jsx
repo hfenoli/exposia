@@ -2,6 +2,7 @@ import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import { supabase } from "./supabase";
 import { compressImageFile, removeBackground, dominantBorderColor, isImageFile, formatBytes, makeThumbnail, TOLERANCE_PRESETS, MAX_SOURCE_BYTES } from "./imaging";
 import { SPORT_LIST, DEFAULT_SPORT, getSport, termsFor, ctypesFor, ctypeInfo, isTeamSport, liveTypesFor } from "./sports";
+import { suggestionContext, suggestionsFor } from "./suggestions";
 // ─── BOTTOM SHEET SWIPE-TO-DISMISS ────────────────────────────
 // Helper module-level pour pouvoir être utilisé dans DragCanvas comme dans App.
 function makeSwipeClose(onClose){
@@ -2154,6 +2155,12 @@ export default function App({session}){
   // c'est tout ce qu'affichent le badge, la vignette d'accueil et la liste de
   // démarrage. Les visuels eux-mêmes arrivent à l'ouverture de l'onglet.
   const[historyCount,setHistoryCount]=useState(0);
+  // Date du dernier visuel : sert uniquement a la relance apres silence. Une
+  // ligne, index par club_id, dans la salve de demarrage existante.
+  const[lastVisualAt,setLastVisualAt]=useState(null);
+  // Le bandeau se referme pour la journee, pas pour toujours : demain la
+  // suggestion aura change.
+  const[sugMasquee,setSugMasquee]=useState(()=>lsGet("viz_sug_off")||"");
   const[historyState,setHistoryState]=useState("idle"); // idle | loading | ready
   const[historyDone,setHistoryDone]=useState(false);    // plus rien à charger
   // Équipes du club et équipe active. teams vide = migration 0006 non
@@ -2271,6 +2278,18 @@ export default function App({session}){
   // bouton retour) retombe sur la creation plutot que sur un ecran masque.
   const navLive = liveMode && nav!=="create" && nav!=="history" ? "create" : nav;
   const CT=useMemo(()=>liveMode?liveTypesFor(sport):ctypesFor(sport),[sport,liveMode]);
+  // ── SUGGESTIONS DU JOUR ───────────────────────────────────────────────
+  // Recalculees a chaque rendu de l ecran de creation : la date suffit, il n y
+  // a ni requete ni etat a tenir. La cle du jour sert au masquage : refermer
+  // le bandeau le vaut pour aujourd hui, pas pour toujours.
+  const jourCle = new Date().toISOString().slice(0,10);
+  const suggestions = useMemo(()=>{
+    if(!club||!club.is_configured)return [];
+    try{ return suggestionsFor(suggestionContext(new Date(),sport,club.name,lastVisualAt),2); }
+    catch(e){ console.warn("[suggestions] ignorees:",e&&e.message); return []; }
+  },[club,sport,lastVisualAt]);
+  const sugVisibles = sugMasquee===jourCle ? [] : suggestions;
+  function masquerSuggestions(){ setSugMasquee(jourCle); lsSet("viz_sug_off",jourCle); }
   const F=fmt(format);
   const supportsFormat=FORMAT_TYPES.includes(selType);
   // Composition XI / Groupe restent en 9:16 (gabarits dessinés pour ce ratio).
@@ -2387,17 +2406,21 @@ export default function App({session}){
       // Visuels. On ne compte ici, on ne charge qu'à l'ouverture de l'onglet.
       const since=new Date(Date.now()-7*24*60*60*1000).toISOString();
       const cid=clubData.id;
-      const [weekRes, teamsRes, playersRes, mediaRes, totalRes] = await Promise.all([
+      const [weekRes, teamsRes, playersRes, mediaRes, totalRes, lastRes] = await Promise.all([
         supabase.from("visuals").select("*",{count:"exact",head:true}).eq("club_id",cid).gte("created_at",since),
         supabase.from("teams").select("*").eq("club_id",cid).order("created_at",{ascending:true}),
         supabase.from("players").select("*, photos:player_photos(*)").eq("club_id",cid),
         supabase.from("media").select("*").eq("club_id",cid),
         supabase.from("visuals").select("*",{count:"exact",head:true}).eq("club_id",cid),
+        // Une seule colonne, une seule ligne : rien a voir avec le poids de
+        // l historique, qui reste charge a la demande.
+        supabase.from("visuals").select("created_at").eq("club_id",cid).order("created_at",{ascending:false}).limit(1),
       ]);
       if(stale())return;
 
       setWeeklyCount(weekRes.count||0);
       setHistoryCount(totalRes.count||0);
+      setLastVisualAt(lastRes.error||!lastRes.data||!lastRes.data.length?null:lastRes.data[0].created_at);
 
       // Équipes (migration 0006). Tant que la table n'existe pas, la requête
       // échoue, la liste reste vide et rien n'est filtré : le club retrouve
@@ -2631,7 +2654,12 @@ export default function App({session}){
     if(pd&&(pd.date||pd.hashtag))layers.push({id:"dt",z:5,type:"text",x:6,y:88,w:88,h:6,locked:false,label:"Date / Hashtag",text:(pd.date||"")+(pd.date&&pd.hashtag?" · ":"")+(pd.hashtag||""),font:"Impact",fontSize:11,color:"rgba(255,255,255,0.55)",bold:false,italic:false,upper:false,letterSpacing:0,lineHeight:1.2,bgColor:"#000000",bgOpacity:0,textShadow:6,align:"center",curve:0});
     return layers;
   }
-  function openCreate(type,fromH){
+  // `fill` vient d une suggestion du jour : des textes deja ecrits, poses sur
+  // les calques par defaut (fill.layers, par identifiant de calque) ou sur les
+  // deux editeurs qui n en utilisent pas (fill.group, fill.lineup). Un
+  // identifiant inconnu est ignore, ce qui permet a une meme suggestion de
+  // servir un gabarit collectif et sa variante individuelle.
+  function openCreate(type,fromH,fill){
     setSelType(type);setNav("create");
     setFormat(fromH&&fromH.format?fromH.format:DEFAULT_FORMAT);
     if(fromH){
@@ -2652,9 +2680,14 @@ export default function App({session}){
     } else {
       setEditId(null);setBgUrl(null);setLogoUrl(club?.logo_url||null);setLogo2Url(null);setSelPid(null);setSelPhoto(null);
       // Post est désormais un éditeur libre : utilise makeLayers comme goal/result/match/recruit
-      if(type!=="lineup"&&type!=="group")setLayers(makeLayers(type,club?.color1||"#e63329",club?.color2||"#1a1a2e",sport));
-      if(type==="lineup")setLineupData({formation:firstFormation(sport),starters:[],subs:[],opponent:"",competition:""});
-      if(type==="group")setGroupData({title:"",competition:"",gk:[],def:[],mid:[],fwd:[],coaches:[]});
+      const pre=fill||{};
+      if(type!=="lineup"&&type!=="group"){
+        const base=makeLayers(type,club?.color1||"#e63329",club?.color2||"#1a1a2e",sport);
+        const txt=pre.layers||null;
+        setLayers(txt?base.map(l=>(txt[l.id]!=null?Object.assign({},l,{text:txt[l.id]}):l)):base);
+      }
+      if(type==="lineup")setLineupData(Object.assign({formation:firstFormation(sport),starters:[],subs:[],opponent:"",competition:""},pre.lineup||{}));
+      if(type==="group")setGroupData(Object.assign({title:"",competition:"",gk:[],def:[],mid:[],fwd:[],coaches:[]},pre.group||{}));
     }
   }
   async function save(){
@@ -3210,7 +3243,7 @@ export default function App({session}){
             <div>{media.length===0?<div style={Object.assign({},card,{padding:"40px 20px",textAlign:"center",color:t.text3})}><div style={{marginBottom:12,display:"flex",justifyContent:"center",opacity:.45}}><Icon name="media" size={30} strokeWidth={1.3}/></div><div>Médiathèque vide</div></div>:(<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>{media.map(m=>(<div key={m.id} style={{borderRadius:11,overflow:"hidden",border:"1px solid "+t.border}}><div style={{aspectRatio:"16/9",overflow:"hidden"}}><img src={thumbOf(m)} loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div><div style={{padding:"6px 10px",fontSize:11,color:t.text2,background:t.bg2,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"80%"}}>{m.name||"Image"}</span><button onClick={()=>deleteMedia(m.id)} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:14}}>✕</button></div></div>))}</div>)}</div>
           </div>
         </div>)}
-        {navLive==="create"&&(!selType?(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>{liveMode&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:14}}><span style={{display:"inline-flex",alignItems:"center",gap:6,background:rgba(t.accent,.13),color:t.accentUI,border:"1px solid "+rgba(t.accent,.28),borderRadius:20,padding:"4px 11px",fontSize:10,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase"}}><Icon name="stopwatch" size={12} strokeWidth={2}/>Mode match</span><button onClick={()=>setPhoneMode(true)} style={{background:"none",border:"none",color:t.text3,fontSize:11,cursor:"pointer",padding:"4px 0",textDecoration:"underline",fontFamily:"inherit",flexShrink:0}}>Version complète</button></div>}<h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>{liveMode?"Publier":"Choisir un type"}</h2><p style={{color:t.text3,marginBottom:22,fontSize:13}}>{liveMode?"L'essentiel du jour de match. Le reste se règle en version complète.":"Sélectionnez ce que vous souhaitez créer."}</p><TeamBar teams={teams} teamId={teamId} onPick={setTeamId} t={t} label="Créer pour"/><div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:14,maxWidth:680}}>{CT.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:"22px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(t.accent,.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}>  <div style={{marginBottom:12,color:t.accentUI}}><Icon name={typeIconName(c.id,sport)} size={26} strokeWidth={1.5}/></div><div style={{fontWeight:700,color:t.text,fontSize:14,marginBottom:4}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.5}}>{c.desc}</div></div>))}</div></div>):(selType==="lineup"||selType==="group")?renderSpecial():renderStandard())}
+        {navLive==="create"&&(!selType?(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>{liveMode&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:14}}><span style={{display:"inline-flex",alignItems:"center",gap:6,background:rgba(t.accent,.13),color:t.accentUI,border:"1px solid "+rgba(t.accent,.28),borderRadius:20,padding:"4px 11px",fontSize:10,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase"}}><Icon name="stopwatch" size={12} strokeWidth={2}/>Mode match</span><button onClick={()=>setPhoneMode(true)} style={{background:"none",border:"none",color:t.text3,fontSize:11,cursor:"pointer",padding:"4px 0",textDecoration:"underline",fontFamily:"inherit",flexShrink:0}}>Version complète</button></div>}<h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>{liveMode?"Publier":"Choisir un type"}</h2><p style={{color:t.text3,marginBottom:22,fontSize:13}}>{liveMode?"L'essentiel du jour de match. Le reste se règle en version complète.":"Sélectionnez ce que vous souhaitez créer."}</p>{sugVisibles.length>0&&<div style={{marginBottom:18,maxWidth:680}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7}}><span style={{fontSize:9,color:t.text3,fontWeight:700,letterSpacing:".14em",textTransform:"uppercase"}}>Aujourd'hui</span><button onClick={masquerSuggestions} aria-label="Masquer les suggestions du jour" title="Masquer pour aujourd'hui" style={{background:"none",border:"none",color:t.text3,fontSize:15,lineHeight:1,cursor:"pointer",padding:"2px 4px",fontFamily:"inherit"}}>×</button></div>{sugVisibles.map(sg=>(<div key={sg.id} style={{display:"flex",alignItems:"center",gap:12,background:t.bg2,border:"1px solid "+t.border,borderLeft:"3px solid "+t.accent,borderRadius:10,padding:"12px 14px",marginBottom:7,flexWrap:"wrap"}}><div style={{flex:"1 1 200px",minWidth:0}}><div style={{fontSize:13,fontWeight:700,color:t.text,marginBottom:2}}>{sg.titre}</div><div style={{fontSize:11.5,color:t.text3,lineHeight:1.5}}>{sg.corps}</div></div><button onClick={()=>openCreate(sg.type,null,sg.fill)} style={{display:"inline-flex",alignItems:"center",gap:7,background:rgba(t.accent,.15),color:t.accentUI,border:"1px solid "+rgba(t.accent,.32),borderRadius:8,padding:"9px 14px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",flexShrink:0,whiteSpace:"nowrap"}}><Icon name={typeIconName(sg.type,sport)} size={15} strokeWidth={1.8}/>{sg.action}</button></div>))}</div>}<TeamBar teams={teams} teamId={teamId} onPick={setTeamId} t={t} label="Créer pour"/><div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:14,maxWidth:680}}>{CT.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:"22px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(t.accent,.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}>  <div style={{marginBottom:12,color:t.accentUI}}><Icon name={typeIconName(c.id,sport)} size={26} strokeWidth={1.5}/></div><div style={{fontWeight:700,color:t.text,fontSize:14,marginBottom:4}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.5}}>{c.desc}</div></div>))}</div></div>):(selType==="lineup"||selType==="group")?renderSpecial():renderStandard())}
         {navLive==="history"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Historique</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>{historyCount+" visuel"+(historyCount!==1?"s":"")+(allHistory.length&&allHistory.length<historyCount?" · "+allHistory.length+" affichés":"")}</p>
