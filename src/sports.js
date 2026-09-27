@@ -16,10 +16,13 @@ export const DEFAULT_SPORT = "football";
 // Vocabulaire par défaut — chaque sport n'écrase que ce qui diffère.
 const BASE_TERMS = {
   player: "Joueur", players: "Joueurs", playerLower: "joueur", playersLower: "joueurs",
-  squad: "Effectif", squadTitle: "Effectif & Photos", squadDesc: "Vos joueurs avec leurs photos.",
+  squad: "Effectif", squadOf: "de l'effectif", squadTitle: "Effectif & Photos", squadDesc: "Vos joueurs avec leurs photos.",
   newPlayer: "Nouveau joueur", addToSquad: "+ Ajouter à l'effectif", emptySquad: "Aucun joueur",
   positionLabel: "Poste", numberLabel: "Numéro", numberPlaceholder: "9",
   match: "Match", matchLower: "match", opponent: "Adversaire", venue: "Stade",
+  // Intitulé automatique quand les deux scores sont égaux, et nom de la surface
+  // de jeu tel qu'il apparaît dans le sélecteur de gabarits de composition.
+  drawLabel: "MATCH NUL", pitchLabel: "Terrain", groupTitle: "GROUPE A",
   competition: "Compétition", competitionPlaceholder: "2e ligue · J12",
   scoreEvent: "BUT !", scoreEventShort: "BUT",
   lineupTitle: "Composition XI", lineupShort: "Composition", formationLabel: "Formation",
@@ -118,7 +121,7 @@ export const SPORTS = {
     ],
     types: TEAM_TYPES,
     terms: {
-      venue: "Patinoire", lineupTitle: "Alignement", lineupShort: "Alignement",
+      venue: "Patinoire", pitchLabel: "Glace", lineupTitle: "Alignement", lineupShort: "Alignement",
       formationLabel: "Ligne", competitionPlaceholder: "MyHockey League · J12", lineupBadge: "",
     },
     typeLabels: { goal: { }, lineup: { label: "Alignement", desc: "Ligne de départ" } },
@@ -141,7 +144,7 @@ export const SPORTS = {
     ],
     types: TEAM_TYPES,
     terms: {
-      venue: "Salle", scoreEvent: "PANIER !", scoreEventShort: "PANIER",
+      venue: "Salle", pitchLabel: "Parquet", scoreEvent: "PANIER !", scoreEventShort: "PANIER",
       lineupTitle: "Cinq de départ", lineupShort: "Cinq de départ", lineupBadge: "",
       competitionPlaceholder: "SB League · J12",
     },
@@ -165,7 +168,7 @@ export const SPORTS = {
     ],
     types: TEAM_TYPES,
     terms: {
-      venue: "Salle", lineupTitle: "Sept de départ", lineupShort: "Sept de départ", lineupBadge: "",
+      venue: "Salle", pitchLabel: "Terrain", lineupTitle: "Sept de départ", lineupShort: "Sept de départ", lineupBadge: "",
       competitionPlaceholder: "SHL · J12",
     },
     typeLabels: { goal: { }, lineup: { label: "Sept de départ", desc: "Les 7 titulaires" } },
@@ -183,10 +186,11 @@ export const SPORTS = {
     types: SOLO_TYPES,
     terms: {
       player: "Nageur", players: "Nageurs", playerLower: "nageur", playersLower: "nageurs",
-      squad: "Équipe", squadTitle: "Nageurs & Photos", squadDesc: "Vos nageurs avec leurs photos.",
+      squad: "Équipe", squadOf: "de l'équipe", squadTitle: "Nageurs & Photos", squadDesc: "Vos nageurs avec leurs photos.",
       newPlayer: "Nouveau nageur", addToSquad: "+ Ajouter à l'équipe", emptySquad: "Aucun nageur",
       positionLabel: "Spécialité", numberLabel: "N° de licence", numberPlaceholder: "1234",
       match: "Compétition", matchLower: "compétition", opponent: "Club adverse", venue: "Piscine",
+      drawLabel: "ÉGALITÉ", pitchLabel: "Bassin", groupTitle: "DÉLÉGATION",
       competitionPlaceholder: "Championnats romands",
       staff: "Encadrement", squadSection: "Nageurs & délégation",
     },
@@ -211,10 +215,11 @@ export const SPORTS = {
     types: SOLO_TYPES,
     terms: {
       player: "Athlète", players: "Athlètes", playerLower: "athlète", playersLower: "athlètes",
-      squad: "Équipe", squadTitle: "Athlètes & Photos", squadDesc: "Vos athlètes avec leurs photos.",
+      squad: "Équipe", squadOf: "de l'équipe", squadTitle: "Athlètes & Photos", squadDesc: "Vos athlètes avec leurs photos.",
       newPlayer: "Nouvel athlète", addToSquad: "+ Ajouter à l'équipe", emptySquad: "Aucun athlète",
       positionLabel: "Format", numberLabel: "Dossard", numberPlaceholder: "142",
       match: "Course", matchLower: "course", opponent: "Épreuve", venue: "Lieu",
+      drawLabel: "ÉGALITÉ", pitchLabel: "Parcours", groupTitle: "DÉLÉGATION",
       competitionPlaceholder: "Ironman 70.3 Rapperswil",
       staff: "Encadrement", squadSection: "Athlètes & délégation",
     },

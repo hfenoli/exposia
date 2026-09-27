@@ -314,18 +314,32 @@ function pathFromNav(navId){
 // Les six premiers partagent la mise en page « terrain » et ne diffèrent que
 // par les couleurs. Les quatre suivants changent de STRUCTURE — c'est ce qui
 // les rend réellement distincts, d'où leur catégorie à part.
+// Les deux familles de gabarits de composition se distinguent par la présence
+// de la surface de jeu. Son nom change avec le sport — terrain, glace,
+// parquet — et il était écrit « Terrain » pour tout le monde. Les constantes
+// portent donc un jeton, remplacé au rendu par le mot du registre.
+const CAT_PITCH = "@pitch", CAT_NOPITCH = "@nopitch";
 const LINEUP_TPLS = [
-  {id:"ln1", label:"Noir Absolu",     cat:"Terrain"},
-  {id:"ln2", label:"Feu & Braise",    cat:"Terrain"},
-  {id:"ln3", label:"Élite Serif",     cat:"Terrain"},
-  {id:"ln4", label:"Élite Diag",      cat:"Terrain"},
-  {id:"ln5", label:"Chrome",          cat:"Terrain"},
-  {id:"ln6", label:"Minimal",         cat:"Terrain"},
-  {id:"ln7", label:"Feuille de match",cat:"Sans terrain"},
-  {id:"ln8", label:"Mosaïque",        cat:"Sans terrain"},
-  {id:"ln9", label:"Papier",          cat:"Sans terrain"},
-  {id:"ln10",label:"Tableau",         cat:"Sans terrain"},
+  {id:"ln1", label:"Noir Absolu",     cat:CAT_PITCH},
+  {id:"ln2", label:"Feu & Braise",    cat:CAT_PITCH},
+  {id:"ln3", label:"Élite Serif",     cat:CAT_PITCH},
+  {id:"ln4", label:"Élite Diag",      cat:CAT_PITCH},
+  {id:"ln5", label:"Chrome",          cat:CAT_PITCH},
+  {id:"ln6", label:"Minimal",         cat:CAT_PITCH},
+  {id:"ln7", label:"Feuille de match",cat:CAT_NOPITCH},
+  {id:"ln8", label:"Mosaïque",        cat:CAT_NOPITCH},
+  {id:"ln9", label:"Papier",          cat:CAT_NOPITCH},
+  {id:"ln10",label:"Tableau",         cat:CAT_NOPITCH},
 ];
+function tplsForSport(tpls, sport){
+  if(!tpls.some(function(x){return x.cat===CAT_PITCH||x.cat===CAT_NOPITCH;}))return tpls;
+  const p = termsFor(sport).pitchLabel || "Terrain";
+  return tpls.map(function(x){
+    if(x.cat===CAT_PITCH)   return Object.assign({},x,{cat:p});
+    if(x.cat===CAT_NOPITCH) return Object.assign({},x,{cat:"Sans "+p.toLowerCase()});
+    return x;
+  });
+}
 const GROUP_TPLS = [
   {id:"gr1",label:"Convocation Pro", cat:"Officiel"},
   {id:"gr2",label:"Élite Dark",      cat:"Officiel"},
@@ -658,7 +672,7 @@ function BgPattern({name,color,strength}){
     </svg>
   );
 }
-function renderLayerContent(lay, bgUrl, playerUrl, logoUrl, logo2Url, accent, accent2, clubName){
+function renderLayerContent(lay, bgUrl, playerUrl, logoUrl, logo2Url, accent, accent2, clubName, sport){
   const isTextType = ["text","watertext","heading","subtext"].includes(lay.type);
   if(lay.type==="bg") return(<div style={{width:"100%",height:"100%",overflow:"hidden",position:"relative",background:lay.fillColor||"transparent"}}>{bgUrl?<img src={bgUrl} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>:(lay.fillColor?null:<div style={{width:"100%",height:"100%",background:"linear-gradient(160deg,#0a0a1a,#1a0a2e)"}}/>)}<BgPattern name={lay.pattern} color={lay.patternColor||accent} strength={lay.patternStrength}/></div>);
   if(lay.type==="overlay") return(<div style={{width:"100%",height:"100%",background:"linear-gradient(to bottom,rgba(0,0,0,"+((lay.opacity||60)/200)+"),rgba(0,0,0,"+((lay.opacity||60)/100)+")"}}/>);
@@ -697,7 +711,7 @@ function renderLayerContent(lay, bgUrl, playerUrl, logoUrl, logo2Url, accent, ac
   if(lay.type==="scoreblock"||lay.type==="scorebig"){
     const fs = lay.fontSize||(lay.type==="scorebig"?44:22);
     const homeName = lay.homeLabel||clubName||"";
-    const awayName = lay.awayLabel||"Adversaire";
+    const awayName = lay.awayLabel||termsFor(sport).opponent;
     const showNames = lay.showNames!==false;
     const nameFs = Math.max(9, fs*0.22);
     return(<div style={{width:"100%",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:fs*0.05}}>
@@ -716,7 +730,7 @@ function renderLayerContent(lay, bgUrl, playerUrl, logoUrl, logo2Url, accent, ac
   }
   if(lay.type==="resultlabel"){
     const sh=parseInt(lay.scoreHome||"0"), sa=parseInt(lay.scoreAway||"0");
-    const autoLbl=sh>sa?"VICTOIRE":sh===sa?"MATCH NUL":"DÉFAITE";
+    const autoLbl=sh>sa?"VICTOIRE":sh===sa?termsFor(sport).drawLabel:"DÉFAITE";
     const lbl=(lay.text!=null&&lay.text!=="")?(lay.upper?lay.text.toUpperCase():lay.text):autoLbl;
     const autoCol=sh>sa?"#22c55e":sh===sa?"#f59e0b":"#ef4444";
     const lc=lay.color||autoCol;
@@ -724,11 +738,11 @@ function renderLayerContent(lay, bgUrl, playerUrl, logoUrl, logo2Url, accent, ac
   }
   return null;
 }
-function LayerView({lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,isSel,onMD,onResize,hideHandles,clubName}){
+function LayerView({lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,isSel,onMD,onResize,hideHandles,clubName,sport}){
   const s={position:"absolute",left:lay.x+"%",top:lay.y+"%",width:lay.w+"%",height:lay.h+"%",cursor:lay.locked?"default":"grab",boxSizing:"border-box",outline:isSel&&!lay.locked?"2px solid "+accent:"none",outlineOffset:1,zIndex:lay.z};
   const showHandles=!hideHandles&&isSel&&!lay.locked&&["photo","colorblock","sponsor","logo","logo2"].includes(lay.type);
   return(<div style={s} onMouseDown={lay.locked?undefined:e=>onMD(e,lay.id)} onTouchStart={lay.locked?undefined:e=>onMD(e,lay.id)}>
-    {renderLayerContent(lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,clubName)}
+    {renderLayerContent(lay,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,clubName,sport)}
     {showHandles&&["tl","tr","bl","br"].map(c=>(
       <div key={c}
         onMouseDown={e=>{e.preventDefault();e.stopPropagation();onResize&&onResize(e,lay.id,c);}}
@@ -1078,7 +1092,7 @@ function GroupCanvas({gd,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,sport}){
   // On lit la même source que l'éditeur, et on masque les sections vides.
   const SPCATS = getSport(sport).groupCats;
   W=W||270; H=H||480;
-  const title=gd&&gd.title?gd.title:"GROUPE A";
+  const title=gd&&gd.title?gd.title:(termsFor(sport).groupTitle||"GROUPE A");
   const competition=gd&&gd.competition?gd.competition:"";
   const gk=gd&&gd.gk?gd.gk:[];
   const def=gd&&gd.def?gd.def:[];
@@ -1101,7 +1115,7 @@ function GroupCanvas({gd,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,sport}){
     SPCATS.forEach(function(c,i){
       const list=byKey[c.k]||[];
       if(!list.length)return;
-      out.push({l:(c.l||"").toUpperCase(),list:list,c:c.k==="coaches"?"rgba(255,255,255,.5)":colors[i%colors.length]});
+      out.push({k:c.k,l:(c.l||"").toUpperCase(),list:list,c:c.k==="coaches"?"rgba(255,255,255,.5)":colors[i%colors.length]});
     });
     return out;
   }
@@ -1120,15 +1134,36 @@ function GroupCanvas({gd,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,sport}){
   const root={width:W,height:H,position:"relative",overflow:"hidden",borderRadius:W<160?6:14,flexShrink:0,display:"flex",flexDirection:"column",userSelect:"none"};
   function Logo(props){const sz=props.sz||W*.1;if(!props.url)return<div style={{width:sz,height:sz,borderRadius:4,background:rgba(accent,.25),display:"flex",alignItems:"center",justifyContent:"center",color:accent,fontSize:sz*.3}}><Icon name="club" size={Math.round(sz*.55)} strokeWidth={1.8}/></div>;return<img src={props.url} style={{width:sz,height:sz,objectFit:"contain"}} alt=""/>;}
   function PlayerRow(props){const p=props.p;const col=props.col||accent;const ph=p.photo||getPhoto(p);return(<div style={{display:"flex",alignItems:"center",gap:U*.018,marginBottom:U*.009,padding:(U*.005)+"px",borderRadius:3,background:rgba("#fff",.025)}}>{ph?<img src={ph} style={{width:U*.074,height:U*.074,borderRadius:U*.009,objectFit:"cover",objectPosition:"top",border:"1px solid "+rgba(col,.3)}} alt=""/>:<div style={{width:U*.074,height:U*.074,borderRadius:U*.009,background:rgba(col,.13),display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:U*.026,fontWeight:900,color:col}}>{p.number||"?"}</div>}<span style={{flex:1,color:"rgba(255,255,255,.82)",fontSize:U*.032}}>{p.name||"—"}{p.captain&&<span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:W*.024,height:W*.024,borderRadius:"50%",background:col,color:contrastText(col),fontSize:W*.016,fontWeight:900,fontFamily:"Impact,sans-serif",lineHeight:1,marginLeft:W*.008,verticalAlign:"middle"}}>C</span>}</span>{p.number&&<span style={{fontSize:U*.028,color:rgba("#fff",.16),fontFamily:"Impact,sans-serif"}}>#{p.number}</span>}</div>);}
+  // L'intitulé de la section encadrement vient du registre, comme les autres :
+  // « Staff » dans les sports collectifs, « Encadrement » en natation et en
+  // triathlon. Il était écrit en dur, donc en vocabulaire de football partout.
+  const STAFF_LABEL = (function(){
+    const c = SPCATS.filter(function(x){return x.k==="coaches";})[0];
+    return (c && c.l) || "Staff";
+  })();
   function StaffSep(props){
     const isDark=props.dark!==false;
     const lineCol=isDark?"rgba(255,255,255,.18)":"rgba(0,0,0,.1)";
     const txtCol=isDark?"rgba(255,255,255,.6)":"#888";
     return(<div style={{display:"flex",alignItems:"center",gap:W*.012,margin:(W*.022)+"px 0 "+(W*.012)+"px"}}>
       <div style={{flex:1,height:1,background:lineCol}}/>
-      <span style={{fontSize:W*.02,color:txtCol,letterSpacing:".22em",fontWeight:700,textTransform:"uppercase"}}>Staff</span>
+      <span style={{fontSize:W*.02,color:txtCol,letterSpacing:".22em",fontWeight:700,textTransform:"uppercase"}}>{STAFF_LABEL}</span>
       <div style={{flex:1,height:1,background:lineCol}}/>
     </div>);
+  }
+  // ── Répartition des catégories en deux colonnes (gabarit Split Duo) ──────
+  // Coupe la liste à l'endroit qui équilibre le mieux les deux colonnes, en
+  // respectant l'ordre du sport. Pour le football cela redonne exactement
+  // gardiens + défenseurs à gauche, milieux + attaquants à droite.
+  function splitCats(list){
+    const total=list.reduce(function(s,c){return s+c.list.length;},0);
+    let best=1,bestDiff=Infinity,acc=0;
+    for(let i=0;i<list.length-1;i++){
+      acc+=list[i].list.length;
+      const diff=Math.abs(acc-(total-acc));
+      if(diff<bestDiff){bestDiff=diff;best=i+1;}
+    }
+    return [list.slice(0,best),list.slice(best)];
   }
   if(tpl==="gr3"){
     const allP=[].concat(gk,def,mid,fwd).slice(0,16);
@@ -1150,7 +1185,37 @@ function GroupCanvas({gd,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,sport}){
     </div>);
   }
   if(tpl==="gr4"){
-    const left=[].concat(gk,def),right=[].concat(mid,fwd);
+    // Les deux colonnes étaient celles du football : gardiens + défenseurs à
+    // gauche sous « GK · DEF », milieux + attaquants à droite sous « MIL · ATT ».
+    // Un triathlon n'a qu'une catégorie, « Athlètes », rangée en interne sous la
+    // clé fwd : toute la délégation atterrissait à droite et la colonne de
+    // gauche restait vide sous un intitulé de football.
+    // On part maintenant des catégories du sport.
+    //  · plusieurs catégories → on coupe là où les deux colonnes s'équilibrent,
+    //    et chaque catégorie garde son propre intitulé ;
+    //  · une seule catégorie → on coupe la liste elle-même en deux et
+    //    l'intitulé passe au-dessus des deux colonnes.
+    const gcats = sportCats([accent,accent2]).filter(function(c){return c.k!=="coaches";});
+    const soloCat = gcats.length===1 ? gcats[0] : null;
+    let colA=[], colB=[];
+    if(soloCat){
+      const half=Math.ceil(soloCat.list.length/2);
+      colA=[{l:"",c:accent, list:soloCat.list.slice(0,half)}];
+      colB=[{l:"",c:accent2,list:soloCat.list.slice(half)}];
+    }else if(gcats.length){
+      const parts=splitCats(gcats); colA=parts[0]; colB=parts[1];
+    }
+    // Fonction et non composant : GroupCanvas se re-rend a chaque frappe dans
+    // l editeur, et un composant redefini a chaque rendu remonterait les <img>
+    // des photos a chaque fois (scintillement).
+    function grCol(cols){
+      return(<div style={{padding:(W*.016)+"px "+(W*.018)+"px"}}>{cols.map(function(cat,ci){
+        return(<div key={ci} style={{marginBottom:ci<cols.length-1?W*.016:0}}>
+          {cat.l&&<div style={{fontSize:W*.019,color:cat.c,fontWeight:700,letterSpacing:".1em",marginBottom:W*.012,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cat.l}</div>}
+          {cat.list.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.012,marginBottom:W*.012,paddingBottom:W*.012,borderBottom:"1px solid rgba(0,0,0,.05)"}}><div style={{width:W*.078,height:W*.078,borderRadius:"50%",overflow:"hidden",border:"2px solid "+rgba(cat.c,.28),background:"#ddd",flexShrink:0}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:W*.026,fontWeight:900,color:cat.c,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>{p.number||""}</span>}</div><div style={{minWidth:0}}><div style={{fontSize:W*.028,fontWeight:700,color:"#111",maxWidth:W*.19,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?surname(p.name):"—"}{p.captain&&<span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:W*.022,height:W*.022,borderRadius:"50%",background:cat.c,color:contrastText(cat.c),fontSize:W*.014,fontWeight:900,fontFamily:"Impact,sans-serif",lineHeight:1,marginLeft:W*.006,verticalAlign:"middle"}}>C</span>}</div>{p.number&&<div style={{fontSize:W*.018,color:cat.c}}>#{p.number}</div>}</div></div>);})}
+        </div>);
+      })}</div>);
+    }
     return(<div style={Object.assign({},root,{background:"#f5f5f7"})}>
       {bgUrl&&<img src={bgUrl} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",opacity:.06}} alt=""/>}
       <div style={{position:"relative",zIndex:2,background:"linear-gradient(90deg,"+accent+","+accent2+")",padding:(W*.025)+"px "+(W*.04)+"px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
@@ -1159,10 +1224,11 @@ function GroupCanvas({gd,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,sport}){
         <Logo url={logo2Url} sz={W*.07}/>
       </div>
       <div style={{position:"relative",zIndex:2,flex:1,display:"flex",flexDirection:"column",overflowY:"auto"}}>
+        {soloCat&&<div style={{padding:(W*.016)+"px "+(W*.018)+"px 0",fontSize:W*.019,color:accent,fontWeight:700,letterSpacing:".1em"}}>{soloCat.l}<span style={{color:"#bbb",fontWeight:400,marginLeft:W*.014}}>{soloCat.list.length}</span></div>}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1px 1fr"}}>
-          <div style={{padding:(W*.016)+"px "+(W*.018)+"px"}}><div style={{fontSize:W*.019,color:accent,fontWeight:700,letterSpacing:".1em",marginBottom:W*.012}}>GK · DEF</div>{left.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.012,marginBottom:W*.012,paddingBottom:W*.012,borderBottom:"1px solid rgba(0,0,0,.05)"}}><div style={{width:W*.078,height:W*.078,borderRadius:"50%",overflow:"hidden",border:"2px solid "+rgba(accent,.28),background:"#ddd",flexShrink:0}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:W*.026,fontWeight:900,color:accent,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>{p.number||""}</span>}</div><div><div style={{fontSize:W*.028,fontWeight:700,color:"#111",maxWidth:W*.19,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?surname(p.name):"—"}</div>{p.number&&<div style={{fontSize:W*.018,color:accent}}>#{p.number}</div>}</div></div>);})}</div>
+          {grCol(colA)}
           <div style={{background:"rgba(0,0,0,.08)"}}/>
-          <div style={{padding:(W*.016)+"px "+(W*.018)+"px"}}><div style={{fontSize:W*.019,color:accent2,fontWeight:700,letterSpacing:".1em",marginBottom:W*.012}}>MIL · ATT</div>{right.map(function(p,i){const ph=p.photo||getPhoto(p);return(<div key={i} style={{display:"flex",alignItems:"center",gap:W*.012,marginBottom:W*.012,paddingBottom:W*.012,borderBottom:"1px solid rgba(0,0,0,.05)"}}><div style={{width:W*.078,height:W*.078,borderRadius:"50%",overflow:"hidden",border:"2px solid "+rgba(accent2,.28),background:"#ddd",flexShrink:0}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:W*.026,fontWeight:900,color:accent2,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>{p.number||""}</span>}</div><div><div style={{fontSize:W*.028,fontWeight:700,color:"#111",maxWidth:W*.19,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name?surname(p.name):"—"}</div>{p.number&&<div style={{fontSize:W*.018,color:accent2}}>#{p.number}</div>}</div></div>);})}</div>
+          {grCol(colB)}
         </div>
         {coaches.length>0&&<div style={{padding:"0 "+(W*.018)+"px "+(W*.018)+"px"}}>
           <StaffSep dark={false}/>
@@ -1306,16 +1372,16 @@ function HistoryThumb({h,c1,c2}){
       // Post nouveau format : layers présents → rendu standard. Sinon legacy PostCanvas via postData.
       if(h.layers&&h.layers.length>0){
         const sortedP=[...h.layers].sort((a,b)=>a.z-b.z);
-        return(<div style={Object.assign({},wr,{background:"#000"})}><div style={inn}>{sortedP.map(lay=><LayerView key={lay.id} lay={lay} bgUrl={h.bgUrl} playerUrl={h.playerUrl} logoUrl={h.logoUrl} logo2Url={h.logo2Url} accent={h.accent||c1} accent2={h.accent2||c2} isSel={false} onMD={()=>{}}/>)}</div></div>);
+        return(<div style={Object.assign({},wr,{background:"#000"})}><div style={inn}>{sortedP.map(lay=><LayerView key={lay.id} lay={lay} bgUrl={h.bgUrl} playerUrl={h.playerUrl} logoUrl={h.logoUrl} logo2Url={h.logo2Url} accent={h.accent||c1} accent2={h.accent2||c2} isSel={false} onMD={()=>{}} sport={h.sport}/>)}</div></div>);
       }
       return<div style={wr}><div style={inn}><PostCanvas pd={h.postData} tpl={h.postTpl||"pt1"} logoUrl={h.logoUrl} accent={h.accent||c1} accent2={h.accent2||c2} bgUrl={h.bgUrl}/></div></div>;
     }
     const sorted=[...(h.layers||[])].sort((a,b)=>a.z-b.z);
-    return(<div style={Object.assign({},wr,{background:"#111"})}><div style={inn}>{sorted.map(lay=><LayerView key={lay.id} lay={lay} bgUrl={h.bgUrl} playerUrl={h.playerUrl} logoUrl={h.logoUrl} logo2Url={h.logo2Url} accent={h.accent||c1} accent2={h.accent2||c2} isSel={false} onMD={()=>{}}/>)}</div></div>);
+    return(<div style={Object.assign({},wr,{background:"#111"})}><div style={inn}>{sorted.map(lay=><LayerView key={lay.id} lay={lay} bgUrl={h.bgUrl} playerUrl={h.playerUrl} logoUrl={h.logoUrl} logo2Url={h.logo2Url} accent={h.accent||c1} accent2={h.accent2||c2} isSel={false} onMD={()=>{}} sport={h.sport}/>)}</div></div>);
   }catch{return<div style={Object.assign({},wr,{background:"#111",display:"flex",alignItems:"center",justifyContent:"center",color:"#555"})}><Icon name="doc" size={22}/></div>;}
 }
 // ─── DRAG CANVAS ──────────────────────────────────────────────
-function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,t,isMobile,mobileSheet,setMobileSheet,canvasScale,clubName,cw,ch,onLogoChange}){
+function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,t,isMobile,mobileSheet,setMobileSheet,canvasScale,clubName,sport,cw,ch,onLogoChange}){
   const CW=cw||270, CH=ch||480;
   // Chaque snapshot est un clone profond des calques, sponsors compris — et
   // ceux-ci portent leur image en data URL. Pile plus courte sur mobile.
@@ -1557,7 +1623,7 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
       <div style={isMobile?{width:CW*cs,height:CH*cs,position:"relative",flexShrink:0}:{display:"contents"}}>
         <div style={isMobile?{position:"absolute",top:0,left:0,width:CW,height:CH,transform:"scale("+cs+")",transformOrigin:"top left"}:{display:"contents"}}>
           <div ref={cvRef} className="visium-canvas" onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU} onTouchMove={onMM} onTouchEnd={onMU} onTouchCancel={onMU} onClick={layerHit} style={{width:CW,height:CH,position:"relative",overflow:"hidden",borderRadius:16,border:"1px solid "+t.border,background:"#111",cursor:"default",userSelect:"none",WebkitUserSelect:"none",touchAction:"none",flexShrink:0}}>
-            {sorted.map(lay=>(<LayerView key={lay.id} lay={lay} bgUrl={bgUrl} playerUrl={playerUrl} logoUrl={logoUrl} logo2Url={logo2Url} accent={accent} accent2={accent2} isSel={sel===lay.id} onMD={onMD} onResize={onResize} hideHandles={isMobile} clubName={clubName}/>))}
+            {sorted.map(lay=>(<LayerView key={lay.id} lay={lay} bgUrl={bgUrl} playerUrl={playerUrl} logoUrl={logoUrl} logo2Url={logo2Url} accent={accent} accent2={accent2} isSel={sel===lay.id} onMD={onMD} onResize={onResize} hideHandles={isMobile} clubName={clubName} sport={sport}/>))}
             <Watermark W={cw}/>
           </div>
         </div>
@@ -1650,15 +1716,15 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
         {(selL.type==="scoreblock"||selL.type==="scorebig")&&<>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:6}}>
             <div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Score domicile</div><input value={selL.scoreHome||"0"} onChange={e=>upd("scoreHome",e.target.value)} style={inp}/></div>
-            <div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Score adversaire</div><input value={selL.scoreAway||"0"} onChange={e=>upd("scoreAway",e.target.value)} style={inp}/></div>
+            <div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Score {termsFor(sport).opponent.toLowerCase()}</div><input value={selL.scoreAway||"0"} onChange={e=>upd("scoreAway",e.target.value)} style={inp}/></div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:6}}>
             <div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Nom domicile</div><input value={selL.homeLabel!=null?selL.homeLabel:(clubName||"")} onChange={e=>upd("homeLabel",e.target.value)} placeholder={clubName||"Mon club"} style={inp}/></div>
-            <div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Nom adversaire</div><input value={selL.awayLabel!=null?selL.awayLabel:"Adversaire"} onChange={e=>upd("awayLabel",e.target.value)} placeholder="Adversaire" style={inp}/></div>
+            <div><div style={{fontSize:9,color:t.text3,marginBottom:2}}>Nom {termsFor(sport).opponent.toLowerCase()}</div><input value={selL.awayLabel!=null?selL.awayLabel:termsFor(sport).opponent} onChange={e=>upd("awayLabel",e.target.value)} placeholder={termsFor(sport).opponent} style={inp}/></div>
           </div>
           <label style={{display:"flex",alignItems:"center",gap:6,fontSize:10,color:t.text3,marginBottom:8,cursor:"pointer"}}>
             <input type="checkbox" checked={selL.showNames!==false} onChange={e=>upd("showNames",e.target.checked)}/>
-            Afficher les noms d'équipe
+            Afficher les noms
           </label>
         </>}
         {selL.type==="resultlabel"&&<>
@@ -1897,8 +1963,8 @@ function LineupEditor({ld,setLd,players,t,sport}){
     setLd(d=>Object.assign({},d,{starters:lineup,subs:players.filter(p=>!used.has(p.id)).slice(0,7)}));
   }
   return(<div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>{termsFor(sport).formationLabel}</div><TSel v={fm} on={v=>setLd(d=>Object.assign({},d,{formation:v,starters:[]}))} t={t} opts={Object.keys(F)}/></div><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>{termsFor(sport).opponent}</div><TIn v={ld.opponent||""} on={v=>setLd(d=>Object.assign({},d,{opponent:v}))} ph="vs..." t={t}/></div></div>
-    <div style={{marginBottom:8}}><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Compétition</div><TIn v={ld.competition||""} on={v=>setLd(d=>Object.assign({},d,{competition:v}))} ph="Ligue 1..." t={t}/></div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>{termsFor(sport).formationLabel}</div><TSel v={fm} on={v=>setLd(d=>Object.assign({},d,{formation:v,starters:[]}))} t={t} opts={Object.keys(F)}/></div><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>{termsFor(sport).opponent}</div><TIn v={ld.opponent||""} on={v=>setLd(d=>Object.assign({},d,{opponent:v}))} ph={"vs "+termsFor(sport).opponent.toLowerCase()} t={t}/></div></div>
+    <div style={{marginBottom:8}}><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Compétition</div><TIn v={ld.competition||""} on={v=>setLd(d=>Object.assign({},d,{competition:v}))} ph={termsFor(sport).competitionPlaceholder} t={t}/></div>
     <button onClick={autoFill} style={{width:"100%",background:rgba(t.accent,.15),color:t.accentUI,border:"1px solid "+rgba(t.accent,.3),borderRadius:7,padding:"7px",fontSize:11,cursor:"pointer",marginBottom:10,fontWeight:600}}>⚡ Remplissage auto</button>
     {rowDefs.map((row,ri)=>(<div key={ri} style={{marginBottom:7}}><div style={{fontSize:9,color:t.accentUI,letterSpacing:".1em",fontWeight:700,marginBottom:3,textTransform:"uppercase"}}>{row.label}</div>{Array.from({length:row.count}).map((_,pi)=>{const idx=row.from+pi;const cur=starters[idx];const ph=getPhoto(cur);return(<div key={pi} style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}><div style={{width:24,height:24,borderRadius:5,overflow:"hidden",background:t.bg4,flexShrink:0,border:"1px solid "+(cur?t.accent:t.border)}}>{ph?<img src={ph} style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"top"}} alt=""/>:<span style={{fontSize:9,color:t.text3,display:"flex",alignItems:"center",justifyContent:"center",height:"100%"}}>{idx+1}</span>}</div><TSel v={cur?cur.id:""} on={v=>setStarter(idx,v)} t={t} opts={[{v:"",l:"— Poste libre —"},...players.map(p=>({v:p.id,l:"#"+p.number+" "+p.name}))]}/>{cur&&<button onClick={()=>toggleCaptain(cur.id)} title={isCaptain(cur.id)?"Retirer le brassard":"Désigner capitaine"} style={{width:22,height:22,flexShrink:0,borderRadius:5,cursor:"pointer",fontFamily:"inherit",fontSize:10,fontWeight:700,lineHeight:1,padding:0,background:isCaptain(cur.id)?t.accent:"transparent",color:isCaptain(cur.id)?contrastText(t.accent):t.text3,border:"1px solid "+(isCaptain(cur.id)?t.accent:t.border2)}}>C</button>}</div>);})}</div>))}
     <div style={{fontSize:9,color:t.accentUI,letterSpacing:".1em",fontWeight:700,marginBottom:5,marginTop:8,textTransform:"uppercase"}}>Remplaçants</div>
@@ -1922,7 +1988,7 @@ function GroupEditor({gd,setGd,players,t,sport}){
   function importOne(k){const pid=impSel[k];if(!pid)return;const p=players.find(x=>x.id===pid);if(!p||(gd[k]||[]).some(x=>x.id===p.id))return;setGd(d=>Object.assign({},d,{[k]:[...(d[k]||[]),{id:p.id,name:p.name,number:p.number,photo:getPhoto(p),captain:false}]}));setImpSel(s=>Object.assign({},s,{[k]:""}));}
   const inp={background:t.bg2,border:"1px solid "+t.border,borderRadius:4,padding:"2px 5px",color:t.text,fontSize:11,outline:"none"};
   return(<div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Titre</div><TIn v={title} on={v=>setGd(d=>Object.assign({},d,{title:v}))} ph="GROUPE A" t={t}/></div><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Compétition</div><TIn v={competition} on={v=>setGd(d=>Object.assign({},d,{competition:v}))} ph="Ligue 1..." t={t}/></div></div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Titre</div><TIn v={title} on={v=>setGd(d=>Object.assign({},d,{title:v}))} ph={termsFor(sport).groupTitle||"GROUPE A"} t={t}/></div><div><div style={{fontSize:10,color:t.text3,marginBottom:3}}>Compétition</div><TIn v={competition} on={v=>setGd(d=>Object.assign({},d,{competition:v}))} ph={termsFor(sport).competitionPlaceholder} t={t}/></div></div>
     <div style={{background:t.bg3,borderRadius:8,padding:9,marginBottom:10}}>
       <div style={{fontSize:9,color:t.text3,fontWeight:700,letterSpacing:".1em",marginBottom:6,textTransform:"uppercase"}}>Style du titre</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
@@ -2429,7 +2495,8 @@ export default function App({session}){
   async function deletePlayer(id){
     const p=players.find(x=>x.id===id);
     const n=p&&p.photos?p.photos.length:0;
-    if(!window.confirm("Retirer "+((p&&p.name)||"ce joueur")+" de l'effectif"+(n?" ainsi que ses "+n+" photo"+(n>1?"s":""):"")+" ?"))return;
+    const TT=termsFor(sport);
+    if(!window.confirm("Retirer "+((p&&p.name)||("ce "+TT.playerLower))+" "+TT.squadOf+(n?" ainsi que ses "+n+" photo"+(n>1?"s":""):"")+" ?"))return;
     const{error}=await supabase.from("players").delete().eq("id",id);
     if(error){
       console.error("[deletePlayer] echec:",error.message);
@@ -2794,7 +2861,7 @@ export default function App({session}){
   function backBtn(){return<button onClick={()=>setSelType(null)} style={{display:"inline-flex",alignItems:"center",gap:7,background:t.bg3,border:"1px solid "+t.border2,borderRadius:8,padding:"7px 13px",color:t.text2,cursor:"pointer",fontSize:12,marginBottom:14,fontWeight:500}}>↩ Retour</button>;}
   function renderSpecial(){
     const isL=selType==="lineup",isP=selType==="post",isG=selType==="group";
-    const tpls=isL?LINEUP_TPLS:isP?POST_TPLS:GROUP_TPLS;
+    const tpls=tplsForSport(isL?LINEUP_TPLS:isP?POST_TPLS:GROUP_TPLS, sport);
     const tpl=isL?lineupTpl:isP?postTpl:groupTpl;
     const setTpl=isL?setLineupTpl:isP?setPostTpl:setGroupTpl;
     const panelStyle=isMobile?{position:"fixed",bottom:0,left:0,right:0,maxHeight:"75vh",background:t.bg2,borderTop:"1px solid "+t.border,overflowY:"auto",padding:14,flexShrink:0,zIndex:200,transform:mobileSheet==="options"?"translateY(0)":"translateY(100%)",transition:"transform .25s ease",boxShadow:mobileSheet==="options"?"0 -8px 24px rgba(0,0,0,.4)":"none",borderTopLeftRadius:16,borderTopRightRadius:16}:{width:268,background:t.bg2,borderRight:"1px solid "+t.border,overflowY:"auto",padding:14,flexShrink:0};
@@ -2943,7 +3010,7 @@ export default function App({session}){
         </PBox>
         {saveBtn()}
       </div>
-      <DragCanvas key={editId||("new_"+selType)} layers={layers} setLayers={setLayers} bgUrl={bgUrl} playerUrl={selPhoto} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={t.accent} accent2={t.accent2} t={t} isMobile={isMobile} mobileSheet={mobileSheet} setMobileSheet={setMobileSheet} canvasScale={canvasScale} clubName={club?.name} cw={canvasW} ch={canvasH} onLogoChange={(kind,url)=>{if(kind==="logo2")setLogo2Url(url);else setLogoUrl(url);}}/>
+      <DragCanvas key={editId||("new_"+selType)} layers={layers} setLayers={setLayers} bgUrl={bgUrl} playerUrl={selPhoto} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={t.accent} accent2={t.accent2} t={t} isMobile={isMobile} mobileSheet={mobileSheet} setMobileSheet={setMobileSheet} canvasScale={canvasScale} clubName={club?.name} sport={sport} cw={canvasW} ch={canvasH} onLogoChange={(kind,url)=>{if(kind==="logo2")setLogo2Url(url);else setLogoUrl(url);}}/>
       {isMobile&&(
         <div style={{position:"fixed",bottom:0,left:0,right:0,height:60,background:t.bg2,borderTop:"1px solid "+t.border,display:"flex",gap:6,alignItems:"center",padding:"0 10px",zIndex:90}}>
           <button onClick={()=>setSelType(null)} className="viz-touch-btn" style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:8,padding:"10px 12px",color:t.text2,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>↩</button>
