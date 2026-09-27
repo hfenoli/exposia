@@ -1620,7 +1620,7 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
           <div style={{marginBottom:8}}>
             <div style={{fontSize:9,color:t.text3,marginBottom:4}}>Logo sponsor</div>
             <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
-              <UpBtn val={selL.url} on={url=>{pushHist();upd("url",url);}} w={64} h={48} r={6} label="Upload" t={t}/>
+              <UpBtn val={selL.url} on={url=>{pushHist();upd("url",url);}} w={64} h={48} r={6} label="Importer" t={t}/>
               {selL.url&&<button onClick={()=>{pushHist();upd("url",null);}} style={{fontSize:10,color:t.text3,background:"none",border:"none",cursor:"pointer",padding:"4px 0",alignSelf:"center"}}>✕ Retirer</button>}
             </div>
           </div>
@@ -1831,7 +1831,7 @@ function PhotoPanel({players,selId,onSel,selUrl,onSelUrl,onAdd,onAddUrl,onFav,on
           style={{border:"2px dashed "+t.border2,borderRadius:9,padding:"22px 14px",textAlign:"center",cursor:"pointer",background:t.bg3}}>
           <div style={{display:"flex",justifyContent:"center",marginBottom:8,opacity:.5}}><Icon name="user" size={26} strokeWidth={1.3}/></div>
           <div style={{fontSize:12,color:t.text2,fontWeight:600,marginBottom:3}}>Aucune photo pour {player.name||"ce "+T.playerLower}</div>
-          <div style={{fontSize:10.5,color:t.text3,lineHeight:1.5}}>Touchez ici pour en ajouter. Elles apparaitront dans le rond des compositions et sur les visuels.</div>
+          <div style={{fontSize:10.5,color:t.text3,lineHeight:1.5}}>Touchez ici pour en ajouter. Elles apparaîtront dans le rond des compositions et sur les visuels.</div>
         </div>)}
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4}}>
         {photos.map(ph=>{
@@ -1969,11 +1969,11 @@ function humanError(error, fallback){
   if(!error) return fallback;
   const code=error.code||"";
   if(code==="54000") return error.message;
-  if(code==="42501") return "Action non autorisee pour votre compte.";
-  if(code==="23505") return "Cet element existe deja.";
-  if(code==="23503") return "Element introuvable : il a peut-etre ete supprime entre-temps.";
-  if(code==="PGRST301"||code==="401") return "Votre session a expire. Rechargez la page pour vous reconnecter.";
-  if(/fetch|network|failed to fetch/i.test(error.message||"")) return "Connexion interrompue. Verifiez votre reseau et reessayez.";
+  if(code==="42501") return "Action non autorisée pour votre compte.";
+  if(code==="23505") return "Cet élément existe déjà.";
+  if(code==="23503") return "Élément introuvable : il a peut-être été supprimé entre-temps.";
+  if(code==="PGRST301"||code==="401") return "Votre session a expiré. Rechargez la page pour vous reconnecter.";
+  if(/fetch|network|failed to fetch/i.test(error.message||"")) return "Connexion interrompue. Vérifiez votre réseau et réessayez.";
   return fallback;
 }
 function isMissingColumn(error){
@@ -2342,7 +2342,7 @@ export default function App({session}){
     if(error){
       console.error("[updateClub] echec:",error.message);
       setClub(avant);
-      setLimitError(humanError(error,"Modification non enregistree. Reessaie dans un instant."));
+      setLimitError(humanError(error,"Modification non enregistrée. Réessayez dans un instant."));
       setTimeout(()=>setLimitError(""),5000);
     }
   }
@@ -2375,7 +2375,7 @@ export default function App({session}){
     const{data,error}=await supabase.from("teams").insert({club_id:club.id,name:label}).select().single();
     if(error){
       console.error("[addTeam] échec:",error.message);
-      setLimitError(humanError(error,"Creation de l equipe impossible. Reessayez dans un instant."));
+      setLimitError(humanError(error,"Création de l'équipe impossible. Réessayez dans un instant."));
       setTimeout(()=>setLimitError(""),4000);return;
     }
     setTeams(ts=>[...ts,data]);
@@ -2433,7 +2433,7 @@ export default function App({session}){
     const{error}=await supabase.from("players").delete().eq("id",id);
     if(error){
       console.error("[deletePlayer] echec:",error.message);
-      alert(humanError(error,"Suppression impossible. Reessaie dans un instant."));
+      alert(humanError(error,"Suppression impossible. Réessayez dans un instant."));
       return;
     }
     setPlayers(prev=>prev.filter(x=>x.id!==id));
@@ -2446,7 +2446,7 @@ export default function App({session}){
     if(!img)return;
     const{data,error}=await insertTolerant("player_photos",
       {player_id:playerId,url:img.url,thumb_url:img.thumbUrl,name:file.name,is_fav:false},["thumb_url"]);
-    if(error){console.error("[addPhoto] échec:",error);alert(humanError(error,"Enregistrement de la photo impossible. Reessayez dans un instant."));return;}
+    if(error){console.error("[addPhoto] échec:",error);alert(humanError(error,"Enregistrement de la photo impossible. Réessayez dans un instant."));return;}
     if(data)setPlayers(prev=>prev.map(p=>p.id===playerId?{...p,photos:sortPhotos([...(p.photos||[]),data])}:p));
   },[]);
   const addPhotoUrl=useCallback(async(playerId,url,name)=>{
@@ -2454,12 +2454,12 @@ export default function App({session}){
     try{ thumbUrl=await makeThumbnail(url); }catch(e){ console.warn("[addPhotoUrl] vignette non générée:",e); }
     const{data,error}=await insertTolerant("player_photos",
       {player_id:playerId,url,thumb_url:thumbUrl,name:name||"photo_nobg",is_fav:false},["thumb_url"]);
-    if(error){console.error("[addPhotoUrl] échec:",error);alert(humanError(error,"Enregistrement de la photo impossible. Reessayez dans un instant."));return;}
+    if(error){console.error("[addPhotoUrl] échec:",error);alert(humanError(error,"Enregistrement de la photo impossible. Réessayez dans un instant."));return;}
     if(data)setPlayers(prev=>prev.map(p=>p.id===playerId?{...p,photos:sortPhotos([...(p.photos||[]),data])}:p));
   },[]);
   const deletePhoto=useCallback(async(playerId,photoId,photoUrl)=>{
     const{error}=await supabase.from("player_photos").delete().eq("id",photoId);
-    if(error){console.error("[deletePhoto] échec:",error);alert(humanError(error,"Suppression impossible. Reessayez dans un instant."));return;}
+    if(error){console.error("[deletePhoto] échec:",error);alert(humanError(error,"Suppression impossible. Réessayez dans un instant."));return;}
     setPlayers(prev=>prev.map(p=>p.id===playerId
       ?{...p,photos:(p.photos||[]).filter(ph=>ph.id!==photoId)}
       :p));
@@ -2499,13 +2499,13 @@ export default function App({session}){
       if(!img)continue;
       const{data,error}=await insertTolerant("media",
         {club_id:club.id,url:img.url,thumb_url:img.thumbUrl,name:file.name},["thumb_url"]);
-      if(error){console.error("[pickMedia] échec:",error);alert(humanError(error,"Enregistrement du media impossible. Reessayez dans un instant."));continue;}
+      if(error){console.error("[pickMedia] échec:",error);alert(humanError(error,"Enregistrement du média impossible. Réessayez dans un instant."));continue;}
       if(data)setMedia(m=>[...m,data]);
     }
   }
   async function deleteMedia(id){
     const{error}=await supabase.from("media").delete().eq("id",id);
-    if(error){console.error("[deleteMedia] echec:",error.message);alert(humanError(error,"Suppression impossible. Reessaie dans un instant."));return;}
+    if(error){console.error("[deleteMedia] echec:",error.message);alert(humanError(error,"Suppression impossible. Réessayez dans un instant."));return;}
     setMedia(m=>m.filter(x=>x.id!==id));
   }
   // Changer de format ne recrée pas le visuel : les calques sont positionnés
@@ -2572,7 +2572,7 @@ export default function App({session}){
         // combien il avait droit, sur quelle periode, et quand cela se
         // libere -- au pire moment, apres avoir compose son visuel.
         const maxW=club.max_visuals_per_week||5;
-        setLimitError("Vous avez cree vos "+maxW+" visuels sur les 7 derniers jours. Le compteur est glissant : le plus ancien se libere au fil des jours. Passez a l offre superieure pour en creer davantage.");
+        setLimitError("Vous avez créé vos "+maxW+" visuels sur les 7 derniers jours. Le compteur est glissant : le plus ancien se libère au fil des jours. Passez à l'offre supérieure pour en créer davantage.");
         setTimeout(()=>setLimitError(""),7000);
         return;
       }
@@ -2585,12 +2585,12 @@ export default function App({session}){
     let saved;
     if(editId){
       const{data,error}=await writeVisual("update",payload,editId);
-      if(error){console.error("[save] update failed:",error.message);setLimitError(humanError(error,"Sauvegarde impossible pour le moment. Reessayez dans un instant."));setTimeout(()=>setLimitError(""),4000);return;}
+      if(error){console.error("[save] update failed:",error.message);setLimitError(humanError(error,"Sauvegarde impossible pour le moment. Réessayez dans un instant."));setTimeout(()=>setLimitError(""),4000);return;}
       saved=data;
       if(saved)setHistory(h=>h.map(x=>x.id===editId?mapVisual(saved,sport):x));
     } else {
       const{data,error}=await writeVisual("insert",payload);
-      if(error){console.error("[save] insert failed:",error.message);setLimitError(humanError(error,"Sauvegarde impossible pour le moment. Reessayez dans un instant."));setTimeout(()=>setLimitError(""),4000);return;}
+      if(error){console.error("[save] insert failed:",error.message);setLimitError(humanError(error,"Sauvegarde impossible pour le moment. Réessayez dans un instant."));setTimeout(()=>setLimitError(""),4000);return;}
       saved=data;
       if(saved)setHistory(h=>[mapVisual(saved,sport),...h]);
     }
@@ -2632,7 +2632,7 @@ export default function App({session}){
     const{error}=await supabase.from("visuals").delete().eq("id",id);
     if(error){
       console.error("[deleteVisual] echec:",error.message);
-      setLimitError(humanError(error,"Suppression impossible. Reessaie dans un instant."));
+      setLimitError(humanError(error,"Suppression impossible. Réessayez dans un instant."));
       setTimeout(()=>setLimitError(""),5000);
       return;
     }
@@ -2644,7 +2644,7 @@ export default function App({session}){
     const{error}=await supabase.auth.signOut();
     if(error){
       console.error("[signOut] echec:",error.message);
-      alert("Deconnexion impossible pour le moment. Ferme l onglet si tu es sur un appareil partage.");
+      alert("Déconnexion impossible pour le moment. Fermez l'onglet si vous êtes sur un appareil partagé.");
     }
   }
   async function downloadPng(){
@@ -2807,13 +2807,13 @@ export default function App({session}){
         <PBox t={t}>
           <SHdr label="Image de fond" t={t}/>
           {media.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4,marginBottom:8}}>{media.slice(0,6).map((m,i)=>(<div key={i} onClick={()=>setBgUrl(m.url)} style={{aspectRatio:"16/9",borderRadius:5,overflow:"hidden",border:"2px solid "+(bgUrl===m.url?t.accent:t.border),cursor:"pointer"}}><img src={thumbOf(m)} loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div>))}</div>}
-          <div style={{display:"flex",gap:8,alignItems:"center"}}><UpBtn val={null} on={v=>setBgUrl(v)} w={48} h={34} r={6} label="Uploader" t={t} preset="media"/>{bgUrl&&<button onClick={()=>setBgUrl(null)} style={{fontSize:11,color:t.text3,background:"none",border:"none",cursor:"pointer"}}>✕ Retirer</button>}</div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}><UpBtn val={null} on={v=>setBgUrl(v)} w={48} h={34} r={6} label="Importer" t={t} preset="media"/>{bgUrl&&<button onClick={()=>setBgUrl(null)} style={{fontSize:11,color:t.text3,background:"none",border:"none",cursor:"pointer"}}>✕ Retirer</button>}</div>
         </PBox>
         <PBox t={t}>
           <SHdr label="Logo club" t={t}/>
-          <UpBtn val={logoUrl} on={setLogoUrl} w={56} h={56} r={8} label="Upload" t={t}/>
+          <UpBtn val={logoUrl} on={setLogoUrl} w={56} h={56} r={8} label="Importer" t={t}/>
           {club?.logo_url&&<button onClick={()=>setLogoUrl(club.logo_url)} style={{fontSize:10,color:t.accentUI,background:"none",border:"none",cursor:"pointer",marginTop:4,display:"block"}}>← Logo club</button>}
-          {isL&&<div style={{marginTop:10}}><div style={{fontSize:10,color:t.text3,marginBottom:5}}>Logo adversaire</div><UpBtn val={logo2Url} on={setLogo2Url} w={56} h={56} r={8} label="Upload ADV" t={t}/>{logo2Url&&<button onClick={()=>setLogo2Url(null)} style={{fontSize:10,color:t.text3,background:"none",border:"none",cursor:"pointer",marginTop:4,display:"block"}}>✕ Retirer</button>}</div>}
+          {isL&&<div style={{marginTop:10}}><div style={{fontSize:10,color:t.text3,marginBottom:5}}>Logo adversaire</div><UpBtn val={logo2Url} on={setLogo2Url} w={56} h={56} r={8} label="Logo adversaire" t={t}/>{logo2Url&&<button onClick={()=>setLogo2Url(null)} style={{fontSize:10,color:t.text3,background:"none",border:"none",cursor:"pointer",marginTop:4,display:"block"}}>✕ Retirer</button>}</div>}
         </PBox>
         {isL&&(
           <PBox t={t}>
@@ -2884,7 +2884,7 @@ export default function App({session}){
           <SHdr label="Image de fond" t={t}/>
           {media.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4,marginBottom:8}}>{media.map((m,i)=>(<div key={i} onClick={()=>setBgUrl(m.url)} style={{aspectRatio:"16/9",borderRadius:5,overflow:"hidden",border:"2px solid "+(bgUrl===m.url?t.accent:t.border),cursor:"pointer"}}><img src={thumbOf(m)} loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div>))}</div>}
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-            <UpBtn val={null} on={v=>setBgUrl(v)} w={52} h={36} r={6} label="Uploader" t={t} preset="media"/>
+            <UpBtn val={null} on={v=>setBgUrl(v)} w={52} h={36} r={6} label="Importer" t={t} preset="media"/>
             {bgUrl&&<button onClick={()=>setBgUrl(null)} style={{fontSize:11,color:t.text3,background:"none",border:"none",cursor:"pointer"}}>✕ Retirer</button>}
           </div>
         </PBox>
@@ -2937,8 +2937,8 @@ export default function App({session}){
         <PBox t={t}>
           <SHdr label={(selType==="recruit"||!showOpponent)?"Logo club":"Logos"} t={t}/>
           <div style={{display:"grid",gridTemplateColumns:showOpponent?"1fr 1fr":"1fr",gap:10}}>
-            <div><div style={{fontSize:10,color:t.text3,marginBottom:5}}>Club</div><UpBtn val={logoUrl} on={setLogoUrl} w={52} h={52} r={8} label="Upload" t={t}/>{club?.logo_url&&<button onClick={()=>setLogoUrl(club.logo_url)} style={{fontSize:10,color:t.accentUI,background:"none",border:"none",cursor:"pointer",marginTop:4,display:"block"}}>← Logo club</button>}</div>
-            {showOpponent&&<div><div style={{fontSize:10,color:t.text3,marginBottom:5}}>{T.opponent}</div><UpBtn val={logo2Url} on={setLogo2Url} w={52} h={52} r={8} label="Upload" t={t}/>{logo2Url&&<button onClick={()=>setLogo2Url(null)} style={{fontSize:10,color:t.text3,background:"none",border:"none",cursor:"pointer",marginTop:4,display:"block"}}>✕</button>}</div>}
+            <div><div style={{fontSize:10,color:t.text3,marginBottom:5}}>Club</div><UpBtn val={logoUrl} on={setLogoUrl} w={52} h={52} r={8} label="Importer" t={t}/>{club?.logo_url&&<button onClick={()=>setLogoUrl(club.logo_url)} style={{fontSize:10,color:t.accentUI,background:"none",border:"none",cursor:"pointer",marginTop:4,display:"block"}}>← Logo club</button>}</div>
+            {showOpponent&&<div><div style={{fontSize:10,color:t.text3,marginBottom:5}}>{T.opponent}</div><UpBtn val={logo2Url} on={setLogo2Url} w={52} h={52} r={8} label="Importer" t={t}/>{logo2Url&&<button onClick={()=>setLogo2Url(null)} style={{fontSize:10,color:t.text3,background:"none",border:"none",cursor:"pointer",marginTop:4,display:"block"}}>✕</button>}</div>}
           </div>
         </PBox>
         {saveBtn()}
@@ -3092,7 +3092,7 @@ export default function App({session}){
           </div>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16,maxWidth:650}}>
             <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Identité</div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Nom du club</label><TIn v={club?.name||""} on={v=>updateClub({name:v,is_configured:true})} ph="FC Mon Club" t={t}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,margin:"14px 0 10px"}}><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Couleur principale</label><input type="color" value={club?.color1||"#e63329"} onChange={e=>updateClub({color1:e.target.value,is_configured:true})} style={{width:"100%",height:40,borderRadius:8,border:"1px solid "+t.border2,background:t.bg3,cursor:"pointer",padding:3}}/></div><div><label style={{fontSize:11,color:t.text3,marginBottom:5,display:"block"}}>Couleur secondaire</label><input type="color" value={club?.color2||"#1a1a2e"} onChange={e=>updateClub({color2:e.target.value,is_configured:true})} style={{width:"100%",height:40,borderRadius:8,border:"1px solid "+t.border2,background:t.bg3,cursor:"pointer",padding:3}}/></div></div><div style={{height:24,borderRadius:8,background:"linear-gradient(90deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",marginBottom:4}}/><div style={{fontSize:10,color:t.text3,textAlign:"center"}}>Sauvegardé en temps réel ✓</div></div>
-            <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Logo du club</div><UpBtn val={club?.logo_url} on={v=>updateClub({logo_url:v,is_configured:true})} w={110} h={110} r={14} label="Cliquer pour uploader" t={t}/>{club?.logo_url&&<><div style={{marginTop:12,display:"flex",alignItems:"center",gap:8}}><div style={{width:36,height:36,borderRadius:7,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center"}}><img src={club.logo_url} style={{width:28,height:28,objectFit:"contain"}} alt=""/></div><div style={{fontSize:11,color:t.text2}}>Logo configuré ✓</div></div><button onClick={()=>updateClub({logo_url:null,is_configured:true})} style={{marginTop:8,fontSize:10,color:t.text3,background:"none",border:"none",cursor:"pointer"}}>✕ Supprimer</button></>}</div>
+            <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Logo du club</div><UpBtn val={club?.logo_url} on={v=>updateClub({logo_url:v,is_configured:true})} w={110} h={110} r={14} label="Cliquer pour importer" t={t}/>{club?.logo_url&&<><div style={{marginTop:12,display:"flex",alignItems:"center",gap:8}}><div style={{width:36,height:36,borderRadius:7,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center"}}><img src={club.logo_url} style={{width:28,height:28,objectFit:"contain"}} alt=""/></div><div style={{fontSize:11,color:t.text2}}>Logo configuré ✓</div></div><button onClick={()=>updateClub({logo_url:null,is_configured:true})} style={{marginTop:8,fontSize:10,color:t.text3,background:"none",border:"none",cursor:"pointer"}}>✕ Supprimer</button></>}</div>
           </div>
         </div>)}
         {nav==="players"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
@@ -3114,7 +3114,7 @@ export default function App({session}){
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Médiathèque</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>Fonds, stades et ambiances.</p>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"220px 1fr",gap:18}}>
-            <div style={card}><div onClick={()=>mRef.current.click()} style={{border:"2px dashed "+t.border2,borderRadius:10,padding:"28px 16px",textAlign:"center",cursor:"pointer",background:t.bg3}} onMouseEnter={e=>e.currentTarget.style.borderColor=t.accent} onMouseLeave={e=>e.currentTarget.style.borderColor=t.border2}><div style={{marginBottom:10,display:"flex",justifyContent:"center",opacity:.55}}><Icon name="media" size={26} strokeWidth={1.4}/></div><div style={{fontSize:13,color:t.text2,fontWeight:600}}>Uploader des images</div><div style={{fontSize:11,color:t.text3,marginTop:4}}>JPG, PNG · Multiple</div></div><input ref={mRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={pickMedia}/></div>
+            <div style={card}><div onClick={()=>mRef.current.click()} style={{border:"2px dashed "+t.border2,borderRadius:10,padding:"28px 16px",textAlign:"center",cursor:"pointer",background:t.bg3}} onMouseEnter={e=>e.currentTarget.style.borderColor=t.accent} onMouseLeave={e=>e.currentTarget.style.borderColor=t.border2}><div style={{marginBottom:10,display:"flex",justifyContent:"center",opacity:.55}}><Icon name="media" size={26} strokeWidth={1.4}/></div><div style={{fontSize:13,color:t.text2,fontWeight:600}}>Importer des images</div><div style={{fontSize:11,color:t.text3,marginTop:4}}>JPG, PNG · Multiple</div></div><input ref={mRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={pickMedia}/></div>
             <div>{media.length===0?<div style={Object.assign({},card,{padding:"40px 20px",textAlign:"center",color:t.text3})}><div style={{marginBottom:12,display:"flex",justifyContent:"center",opacity:.45}}><Icon name="media" size={30} strokeWidth={1.3}/></div><div>Médiathèque vide</div></div>:(<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>{media.map(m=>(<div key={m.id} style={{borderRadius:11,overflow:"hidden",border:"1px solid "+t.border}}><div style={{aspectRatio:"16/9",overflow:"hidden"}}><img src={thumbOf(m)} loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div><div style={{padding:"6px 10px",fontSize:11,color:t.text2,background:t.bg2,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"80%"}}>{m.name||"Image"}</span><button onClick={()=>deleteMedia(m.id)} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:14}}>✕</button></div></div>))}</div>)}</div>
           </div>
         </div>)}

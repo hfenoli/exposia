@@ -118,7 +118,7 @@ const LANDING_SPORTS = [
     rows: [[9], [7, 10, 11], [4, 6, 8], [2, 5, 3, 16], [1]],
     comp: "2E LIGUE · J12", venue: "Stade municipal", who: "M. Rodriguez · #9",
     recruitTag: "Nouvelle recrue", recruitName: "THOMAS<br/>MARCHAND", recruitPos: "Milieu · #8" ,
-    postTitle: "MATCH<br/>REPORTÉ", postBody: "Reporté au samedi 18 mai, 15h00. Merci de ton compréhension."},
+    postTitle: "MATCH<br/>REPORTÉ", postBody: "Reporté au samedi 18 mai, 15h00. Merci de ta compréhension."},
 
   { id: "rugby", label: "Rugby", accent: "#1D7A46", pitch: "rugby",
     cards: ["goal", "result", "match", "lineup", "recruit", "post"],
@@ -126,7 +126,7 @@ const LANDING_SPORTS = [
     rows: [[15], [11, 13, 12, 14], [10, 9], [6, 8, 7], [4, 5], [1, 2, 3]],
     comp: "LNA · J12", venue: "Stade", who: "L. Perret · #12",
     recruitTag: "Nouvelle recrue", recruitName: "LUCAS<br/>PERRET", recruitPos: "Centre · #12" ,
-    postTitle: "MATCH<br/>REPORTÉ", postBody: "Reporté au samedi 18 mai, 15h00. Merci de ton compréhension."},
+    postTitle: "MATCH<br/>REPORTÉ", postBody: "Reporté au samedi 18 mai, 15h00. Merci de ta compréhension."},
 
   { id: "hockey", label: "Hockey", accent: "#0F5FA6", pitch: "ice",
     cards: ["goal", "result", "match", "lineup", "recruit", "post"],
@@ -134,7 +134,7 @@ const LANDING_SPORTS = [
     rows: [[17, 91, 27], [4, 55], [30]],
     comp: "MYHOCKEY · J12", venue: "Patinoire", who: "N. Blanc · #17",
     recruitTag: "Nouvelle recrue", recruitName: "NOAH<br/>BLANC", recruitPos: "Ailier · #17" ,
-    postTitle: "MATCH<br/>REPORTÉ", postBody: "Reporté au samedi 18 mai, 20h15. Merci de ton compréhension."},
+    postTitle: "MATCH<br/>REPORTÉ", postBody: "Reporté au samedi 18 mai, 20h15. Merci de ta compréhension."},
 
   { id: "basketball", label: "Basket", accent: "#D4541E", pitch: "court",
     cards: ["goal", "result", "match", "lineup", "recruit", "post"],
@@ -142,7 +142,7 @@ const LANDING_SPORTS = [
     rows: [[7, 23], [11, 14], [5]],
     comp: "SB LEAGUE · J12", venue: "Salle", who: "A. Meier · #7",
     recruitTag: "Nouvelle recrue", recruitName: "ALEX<br/>MEIER", recruitPos: "Meneur · #7" ,
-    postTitle: "MATCH<br/>REPORTÉ", postBody: "Reporté au samedi 18 mai, 17h30. Merci de ton compréhension."},
+    postTitle: "MATCH<br/>REPORTÉ", postBody: "Reporté au samedi 18 mai, 17h30. Merci de ta compréhension."},
 
   { id: "handball", label: "Handball", accent: "#7B2D8E", pitch: "handball",
     cards: ["goal", "result", "match", "lineup", "recruit", "post"],
@@ -150,7 +150,7 @@ const LANDING_SPORTS = [
     rows: [[9, 3, 21], [7, 11, 44], [12]],
     comp: "SHL · J12", venue: "Salle", who: "J. Favre · #9",
     recruitTag: "Nouvelle recrue", recruitName: "JULIE<br/>FAVRE", recruitPos: "Pivot · #9" ,
-    postTitle: "MATCH<br/>REPORTÉ", postBody: "Reporté au samedi 18 mai, 16h00. Merci de ton compréhension."},
+    postTitle: "MATCH<br/>REPORTÉ", postBody: "Reporté au samedi 18 mai, 16h00. Merci de ta compréhension."},
 
   { id: "natation", label: "Natation", accent: "#0E7C9B", pitch: null,
     cards: ["perf", "result", "podium", "match", "recruit", "post"],
@@ -191,7 +191,7 @@ const FEATURES = [
 ];
 const STEPS = [
   { n: "01", t: "Ton sport, puis ton club",
-    d: "Tu choisis ton discipline à la première connexion : le vocabulaire, les postes et les types de visuels s'y adaptent. Puis logo, deux couleurs et effectif. Dix minutes le premier soir, et c'est fini." },
+    d: "Tu choisis ta discipline à la première connexion : le vocabulaire, les postes et les types de visuels s'y adaptent. Puis logo, deux couleurs et effectif. Dix minutes le premier soir, et c'est fini." },
   { n: "02", t: "Le type de visuel",
     d: "But ou essai, score final, affiche de rencontre, composition, convocation, recrue, annonce — et pour les sports individuels, chrono et podium. Story, post ou carré : le gabarit se met à la bonne taille." },
   { n: "03", t: "Ce qui se remplit tout seul",
@@ -204,19 +204,19 @@ const TEAM = [
   { nom: "Lucas Di Pasquale",     role: "Co-fondateur", photo: "/team/lucas.jpg" },
 ];
 const FAQ_ITEMS = [
-  { q: "Pour quels sports ?",                       a: "Sept aujourd'hui : football, rugby, hockey sur glace, basketball, handball, natation et triathlon. Tu choisis le vôtre à la première connexion, et tout suit — le vocabulaire (joueur, nageur, athlète), les postes, les formations, le tracé de l'aire de jeu et les types de visuels. Les sports individuels n'ont ni composition ni score d'équipe, mais des visuels de chrono et de podium. Ton discipline n'y est pas ? Écris-nous, on l'ajoute." },
+  { q: "Pour quels sports ?",                       a: "Sept aujourd'hui : football, rugby, hockey sur glace, basketball, handball, natation et triathlon. Tu choisis le tien à la première connexion, et tout suit — le vocabulaire (joueur, nageur, athlète), les postes, les formations, le tracé de l'aire de jeu et les types de visuels. Les sports individuels n'ont ni composition ni score d'équipe, mais des visuels de chrono et de podium. Ta discipline n'y est pas ? Écris-nous, on l'ajoute." },
   { q: "On pratique plusieurs sports dans le club.", a: "Un compte correspond à un sport. Tu peux y gérer plusieurs équipes, mais toutes dans la même discipline. Pour une structure omnisports, le plus simple est un accès par section — écris-nous, on t’arrange ça sur l'offre Institution." },
   { q: "Faut-il des compétences en design ?",       a: "Non. Tu configures ton club une fois (logo, couleurs, joueurs), l'app fait le reste. Aucune connaissance graphique requise." },
   { q: "Ça marche sur téléphone ?",                 a: "Oui, l'app est pensée mobile. Installe-la sur ton écran d'accueil pour un accès en un tap, comme une vraie application." },
   { q: "Combien ça coûte ?",                        a: "Trois offres selon la taille du club, de 44.99 à 189.99 CHF par mois. Au paiement annuel, un mois est offert sur les offres Équipe et Club, deux mois sur Institution. Elles diffèrent par le volume de visuels par semaine, le nombre de templates disponibles pour chaque type de visuel, et le niveau d'accompagnement — toutes les fonctionnalités de l'éditeur sont incluses partout. Le détail est dans la section Tarifs. Pas de frais d'installation, résiliable à tout moment." },
   { q: "Comment accéder ?",                         a: "L'accès est sur invitation. Envoie-nous un message à contact@viziona-sport.com, on revient sous 24h." },
   { q: "Comment configurer mon club ?",             a: "Va dans « Mon Club », téléverse ton logo, choisis tes deux couleurs. Tout se met à jour automatiquement dans tes visuels." },
-  { q: "Comment créer mon premier visuel ?",        a: "Clique sur « Créer », choisis un type (ex : But), sélectionne un joueur si besoin, puis cliquez sur Télécharger." },
-  { q: "Comment ajouter mes joueurs ?",             a: "Section « Joueurs » → bouton « + Ajouter ». Nom, numéro, poste. Tu peux aussi uploader leur photo." },
+  { q: "Comment créer mon premier visuel ?",        a: "Clique sur « Créer », choisis un type (ex : But), sélectionne un joueur si besoin, puis clique sur Télécharger." },
+  { q: "Comment ajouter mes joueurs ?",             a: "Section « Joueurs » → bouton « + Ajouter ». Nom, numéro, poste. Tu peux aussi importer leur photo." },
   { q: "Le visuel se télécharge où ?",              a: "Directement dans tes photos sur iPhone et Android. Prêt à publier sur Instagram, WhatsApp ou Facebook." },
   { q: "Que deviennent les photos de nos joueurs ?", a: "Elles restent celles de ton club : nous ne les revendons pas et ne les transmettons à personne. Attention en revanche à un point qui t’incombe : pour un joueur mineur, il te faut l'accord écrit des parents avant de publier son image. C'est détaillé dans nos conditions d'utilisation." },
   { q: "Peut-on essayer avant de payer ?",          a: "Oui. Les clubs acceptés en bêta disposent d'un mois complet sans engagement ni carte bancaire. Si ça ne te convient pas, tu pars avec tes visuels et on supprime tes données." },
-  { q: "Puis-je gérer plusieurs équipes ?",         a: "Oui. Chaque équipe — juniors, seniors, féminines — a son propre effectif et son propre historique de visuels, et tu bascules de l'une à l'autre en un clic. Le logo, les couleurs et le sport restent communs au club, tu ne les ressaisissez pas. L'offre Équipe en autorise une, l'offre Club trois, l'offre Institution autant que nécessaire." },
+  { q: "Puis-je gérer plusieurs équipes ?",         a: "Oui. Chaque équipe — juniors, seniors, féminines — a son propre effectif et son propre historique de visuels, et tu bascules de l'une à l'autre en un clic. Le logo, les couleurs et le sport restent communs au club, tu ne les ressaisis pas. L'offre Équipe en autorise une, l'offre Club trois, l'offre Institution autant que nécessaire." },
 ];
 
 // ─── DOCUMENTS JURIDIQUES ─────────────────────────────────────
@@ -708,7 +708,7 @@ function VisualCardBody({ type, sp }) {
         </div>
         <div style={{ width: 28, height: 2, background: accent, margin: "12px 0" }}/>
         <div style={{ fontFamily: FONT_BODY, fontSize: "0.6em", lineHeight: 1.6, color: "rgba(255,255,255,.62)", fontWeight: 300 }}>
-          {sp.postBody || "Reporté au samedi 18 mai, 15h00. Merci de ton compréhension."}
+          {sp.postBody || "Reporté au samedi 18 mai, 15h00. Merci de ta compréhension."}
         </div>
         <div style={{ fontFamily: FONT_M, fontSize: "0.52em", color: accent, marginTop: 12, letterSpacing: "0.1em" }}>#MonClub</div>
       </div>
@@ -804,7 +804,7 @@ export default function Landing({ onEnter }) {
             En quelques clics.
           </h1>
           <p className="viz-up" style={{ marginTop: 36, fontSize: 14, color: C.tx2, lineHeight: 1.8, fontWeight: 300, maxWidth: 440, position: "relative", zIndex: 1, animationDelay: ".4s" }}>
-            Le sifflet vient de retentir. Le temps de rejoindre le vestiaire, l'affiche du résultat est publiée — à tes couleurs, avec le bon nom, au bon format. Football, rugby, hockey, basket, handball, natation, triathlon : l'app parle la langue de ton discipline.
+            Le sifflet vient de retentir. Le temps de rejoindre le vestiaire, l'affiche du résultat est publiée — à tes couleurs, avec le bon nom, au bon format. Football, rugby, hockey, basket, handball, natation, triathlon : l'app parle la langue de ta discipline.
           </p>
           <div className="viz-up" style={{ marginTop: 52, display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", position: "relative", zIndex: 1, animationDelay: ".55s" }}>
             <a href="#" onClick={handleEnter("login")} className="viz-btn-text" style={{ background: "transparent", color: C.bk, border: "1.5px solid " + C.bk, padding: "13px 28px", borderRadius: 1, fontSize: 11, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", textDecoration: "none", transition: "all .2s" }}>Se connecter</a>
@@ -928,7 +928,7 @@ export default function Landing({ onEnter }) {
       {/* ─── FEATURES ─── */}
       <section id="features" className="viz-features" style={{ background: C.bgAlt, padding: "120px 52px", borderTop: "1px solid " + C.bdLite }}>
         <div style={{ maxWidth: 1340, margin: "0 auto" }}>
-          <SHead tag="Pourquoi Viziona" h2_a="Ce que tu" h2_b="obtenez" counter="03 fonctionnalités"/>
+          <SHead tag="Pourquoi Viziona" h2_a="Ce que tu" h2_b="obtiens" counter="03 fonctionnalités"/>
           <div data-reveal data-delay="1" className="viz-feat-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 1, background: C.bd }}>
             {FEATURES.map(f => (
               <div key={f.n} className="viz-fc" style={{ background: C.bg, padding: "42px 38px", position: "relative", transition: "background .25s" }}>
@@ -959,7 +959,7 @@ export default function Landing({ onEnter }) {
               </h2>
             </div>
             <p style={{ fontSize: 13, color: "rgba(250,250,250,0.55)", lineHeight: 1.8, fontWeight: 300, maxWidth: 340, margin: 0 }}>
-              L'app parle la langue de ton discipline. Le vocabulaire, les postes, le tracé du terrain et les types de visuels changent avec le sport — voyez tu-même.
+              L'app parle la langue de ta discipline. Le vocabulaire, les postes, le tracé du terrain et les types de visuels changent avec le sport — voyez tu-même.
             </p>
           </div>
 
@@ -1060,7 +1060,7 @@ export default function Landing({ onEnter }) {
               <div style={{ fontFamily: FONT_M, fontSize: 10, color: C.tx3, letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 14 }}>Tarifs</div>
               <h2 style={{ fontFamily: FONT_H, fontSize: "clamp(48px, 5.5vw, 76px)", letterSpacing: "0.02em", lineHeight: 0.9, fontWeight: 400, margin: 0, color: C.tx }}>
                 Le prix de<br/>
-                <em style={{ fontStyle: "normal", color: "transparent", WebkitTextStroke: "1px " + C.tx }}>ton taille.</em>
+                <em style={{ fontStyle: "normal", color: "transparent", WebkitTextStroke: "1px " + C.tx }}>ta taille.</em>
               </h2>
             </div>
             {/* Bascule mensuel / annuel */}
