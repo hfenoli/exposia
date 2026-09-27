@@ -268,3 +268,17 @@ export function ctypeInfo(id, typeId) {
 export function isTeamSport(id) {
   return getSport(id).kind === "team";
 }
+
+// ─── MODE MATCH ───────────────────────────────────────────────
+// Ce qu'on publie depuis le bord du terrain, dans l'ordre du jour de match.
+// « Nouvelle recrue » et « Annonce » n'y figurent pas : ils ne sont jamais
+// urgents et se préparent au calme, sur ordinateur.
+// L'ordre vaut pour les deux familles de sports ; le filtre ne retient que les
+// types que le sport possède réellement, d'où cinq tuiles partout : but,
+// composition, score, groupe, affiche pour les collectifs ; chrono, résultats,
+// podium, délégation, affiche pour les individuels.
+const LIVE_ORDER = ["goal", "perf", "lineup", "result", "podium", "group", "match"];
+export function liveTypesFor(id) {
+  const avail = getSport(id).types;
+  return LIVE_ORDER.filter(t => avail.includes(t)).map(t => ctypeInfo(id, t));
+}

@@ -1,7 +1,7 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import { supabase } from "./supabase";
 import { compressImageFile, removeBackground, dominantBorderColor, isImageFile, formatBytes, makeThumbnail, TOLERANCE_PRESETS, MAX_SOURCE_BYTES } from "./imaging";
-import { SPORT_LIST, DEFAULT_SPORT, getSport, termsFor, ctypesFor, ctypeInfo, isTeamSport } from "./sports";
+import { SPORT_LIST, DEFAULT_SPORT, getSport, termsFor, ctypesFor, ctypeInfo, isTeamSport, liveTypesFor } from "./sports";
 // ─── BOTTOM SHEET SWIPE-TO-DISMISS ────────────────────────────
 // Helper module-level pour pouvoir être utilisé dans DragCanvas comme dans App.
 function makeSwipeClose(onClose){
@@ -2219,7 +2219,6 @@ export default function App({session}){
   // `null` en base = pas encore choisi → on affiche le sélecteur.
   const sport=club&&club.sport?club.sport:DEFAULT_SPORT;
   const T=termsFor(sport);
-  const CT=useMemo(()=>ctypesFor(sport),[sport]);
   const NAVL=useMemo(()=>navFor(termsFor(sport)),[sport]);
   const[savingSport,setSavingSport]=useState(false);
   const[saveFlash,setSaveFlash]=useState(false);
@@ -2246,6 +2245,32 @@ export default function App({session}){
     return ()=>clearTimeout(id);
   },[selType]);
   const isMobile=useIsMobile();
+  // ── MODE MATCH ────────────────────────────────────────────────────────
+  // Sur telephone, le studio s ouvre en mode match : seuls les visuels qu on
+  // publie depuis le bord du terrain, et rien d autre. L effectif, les medias,
+  // les reglages et la fiche du club se preparent au calme.
+  // Le mode complet reste atteignable en un lien, et le choix est memorise :
+  // un club qui n a qu un telephone doit pouvoir tout configurer.
+  // Sur ordinateur, liveMode est toujours faux : rien ne change.
+  const[fullOnPhone,setFullOnPhone]=useState(()=>lsGet("viz_full_phone")==="1");
+  function setPhoneMode(full){
+    setFullOnPhone(full);
+    lsSet("viz_full_phone", full?"1":"0");
+    setSelType(null);
+    setNav(full?"home":"create");
+  }
+  // Un club qui n a pas encore ses couleurs ni son effectif n a rien a publier :
+  // le mode match lui cacherait justement les ecrans dont il a besoin, et la
+  // liste de demarrage de l accueil avec. Il reste donc en version complete
+  // jusqu a ce que la configuration soit faite. Le rendu principal n arrive
+  // qu apres le chargement (voir le garde `loading`), donc pas de bascule
+  // visible a l ecran.
+  const clubReady = club?.is_configured===true && players.length>0;
+  const liveMode = isMobile && !fullOnPhone && clubReady;
+  // Sections accessibles en mode match. Une URL qui pointe ailleurs (favori,
+  // bouton retour) retombe sur la creation plutot que sur un ecran masque.
+  const navLive = liveMode && nav!=="create" && nav!=="history" ? "create" : nav;
+  const CT=useMemo(()=>liveMode?liveTypesFor(sport):ctypesFor(sport),[sport,liveMode]);
   const F=fmt(format);
   const supportsFormat=FORMAT_TYPES.includes(selType);
   // Composition XI / Groupe restent en 9:16 (gabarits dessinés pour ce ratio).
@@ -3023,22 +3048,22 @@ export default function App({session}){
   }
   return(
     <div className="viz-fullvh" style={{display:"flex",background:t.bg,color:t.text,fontFamily:"'DM Sans','Helvetica Neue',Helvetica,Arial,sans-serif",fontSize:13,overflow:"hidden",letterSpacing:"-0.005em"}}>
-      {!isMobile&&!(nav==="create"&&selType)&&(<div style={{width:192,background:t.bg2,borderRight:"1px solid "+t.border,display:"flex",flexDirection:"column",flexShrink:0}}>
+      {!isMobile&&!(navLive==="create"&&selType)&&(<div style={{width:192,background:t.bg2,borderRight:"1px solid "+t.border,display:"flex",flexDirection:"column",flexShrink:0}}>
         <div style={{padding:"15px 14px 13px",borderBottom:"1px solid "+t.border,display:"flex",alignItems:"center",gap:10}}>
           {club?.logo_url?<img src={club.logo_url} style={{width:34,height:34,objectFit:"contain",borderRadius:7}} alt=""/>:<div style={{width:34,height:34,borderRadius:7,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:contrastText(mixC(club?.color1||"#e63329",club?.color2||"#1a1a2e",.5)),flexShrink:0}}>{(club?.name||"E")[0].toUpperCase()}</div>}
           <div style={{overflow:"hidden",flex:1}}><div style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:18,fontWeight:400,letterSpacing:".06em",color:t.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{club?.name||"Viziona"}</div><div style={{fontFamily:"'DM Mono',ui-monospace,monospace",fontSize:9,color:t.text3,marginTop:2,letterSpacing:".1em",textTransform:"uppercase"}}>Studio visuel</div></div>
         </div>
         <nav style={{padding:"10px 8px",flex:1}}>
-          {NAVL.map(n=>(<button key={n.id} onClick={()=>{setNav(n.id);if(n.id!=="create")setSelType(null);}} style={{display:"flex",alignItems:"center",gap:10,width:"100%",background:nav===n.id?rgba(t.accent,.15):"transparent",border:"none",borderRadius:9,padding:"9px 11px",color:nav===n.id?t.accentUI:t.text2,cursor:"pointer",fontSize:13,marginBottom:1,textAlign:"left",fontWeight:nav===n.id?600:400}}><Icon name={n.icon} size={17}/><span>{n.label}</span>{n.id==="history"&&historyCount>0&&<span style={{marginLeft:"auto",background:rgba(t.accent,.2),color:t.accentUI,fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{historyCount}</span>}</button>))}
+          {NAVL.map(n=>(<button key={n.id} onClick={()=>{setNav(n.id);if(n.id!=="create")setSelType(null);}} style={{display:"flex",alignItems:"center",gap:10,width:"100%",background:navLive===n.id?rgba(t.accent,.15):"transparent",border:"none",borderRadius:9,padding:"9px 11px",color:navLive===n.id?t.accentUI:t.text2,cursor:"pointer",fontSize:13,marginBottom:1,textAlign:"left",fontWeight:navLive===n.id?600:400}}><Icon name={n.icon} size={17}/><span>{n.label}</span>{n.id==="history"&&historyCount>0&&<span style={{marginLeft:"auto",background:rgba(t.accent,.2),color:t.accentUI,fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{historyCount}</span>}</button>))}
         </nav>
         <div style={{padding:12,borderTop:"1px solid "+t.border,display:"flex",flexDirection:"column",gap:8}}>
           <button onClick={()=>openCreate("goal")} style={{background:"#0a0a0a",color:"#fff",border:"2px solid "+(club?.color1||"#e63329"),borderRadius:2,padding:"10px 10px",fontSize:11,fontWeight:700,cursor:"pointer",width:"100%",letterSpacing:".12em",textTransform:"uppercase",fontFamily:"inherit"}}>Créer un visuel</button>
           <button onClick={signOut} style={{background:"transparent",color:t.text3,border:"1px solid "+t.border,borderRadius:8,padding:"7px",fontSize:11,cursor:"pointer",width:"100%"}}>Déconnexion</button>
         </div>
       </div>)}
-      <div style={{flex:1,display:"flex",overflow:"hidden",paddingBottom:isMobile&&!(nav==="create"&&selType)?60:0,boxSizing:"border-box"}}>
-        {nav==="home"&&(<div style={{flex:1,overflowY:"auto",background:t.bg}}>
-          <div style={{padding:"28px 28px 0"}}><h1 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:44,fontWeight:400,color:t.text,marginBottom:4,letterSpacing:".015em",lineHeight:1}}>{"Bonjour"+(club?.name?", "+club.name:"")}</h1><p style={{color:t.text3,marginBottom:24,fontSize:14}}>Que souhaitez-vous créer aujourd'hui ?</p></div>
+      <div style={{flex:1,display:"flex",overflow:"hidden",paddingBottom:isMobile&&!(navLive==="create"&&selType)?60:0,boxSizing:"border-box"}}>
+        {navLive==="home"&&(<div style={{flex:1,overflowY:"auto",background:t.bg}}>
+          <div style={{padding:"28px 28px 0"}}><h1 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:44,fontWeight:400,color:t.text,marginBottom:4,letterSpacing:".015em",lineHeight:1}}>{"Bonjour"+(club?.name?", "+club.name:"")}</h1><p style={{color:t.text3,marginBottom:24,fontSize:14}}>Que souhaitez-vous créer aujourd'hui ?</p>{isMobile&&fullOnPhone&&<button onClick={()=>setPhoneMode(false)} style={{display:"inline-flex",alignItems:"center",gap:7,background:rgba(t.accent,.13),color:t.accentUI,border:"1px solid "+rgba(t.accent,.28),borderRadius:9,padding:"9px 14px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",marginBottom:24}}><Icon name="stopwatch" size={15} strokeWidth={1.9}/>Passer en mode match</button>}</div>
           {(()=>{
             if(onboardingSkipped)return null;
             const clubDone=club?.is_configured===true;
@@ -3103,7 +3128,7 @@ export default function App({session}){
               </div>));
           })()}</div>
         </div>)}
-        {nav==="club"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
+        {navLive==="club"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Mon Club</h2>
           <p style={{color:t.text3,marginBottom:24,fontSize:13}}>Appliqué automatiquement à tous vos visuels.</p>
           {teams.length>0&&(
@@ -3162,7 +3187,7 @@ export default function App({session}){
             <div style={card}><div style={{fontSize:11,color:t.text3,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:14}}>Logo du club</div><UpBtn val={club?.logo_url} on={v=>updateClub({logo_url:v,is_configured:true})} w={110} h={110} r={14} label="Cliquer pour importer" t={t}/>{club?.logo_url&&<><div style={{marginTop:12,display:"flex",alignItems:"center",gap:8}}><div style={{width:36,height:36,borderRadius:7,background:"linear-gradient(135deg,"+(club?.color1||"#e63329")+","+(club?.color2||"#1a1a2e")+")",display:"flex",alignItems:"center",justifyContent:"center"}}><img src={club.logo_url} style={{width:28,height:28,objectFit:"contain"}} alt=""/></div><div style={{fontSize:11,color:t.text2}}>Logo configuré ✓</div></div><button onClick={()=>updateClub({logo_url:null,is_configured:true})} style={{marginTop:8,fontSize:10,color:t.text3,background:"none",border:"none",cursor:"pointer"}}>✕ Supprimer</button></>}</div>
           </div>
         </div>)}
-        {nav==="players"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
+        {navLive==="players"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>{T.squadTitle}</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>{T.squadDesc}</p>
           <TeamBar teams={teams} teamId={teamId} onPick={setTeamId} t={t}/>
@@ -3177,7 +3202,7 @@ export default function App({session}){
             </div>
           </div>
         </div>)}
-        {nav==="media"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
+        {navLive==="media"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Médiathèque</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>Fonds, stades et ambiances.</p>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"220px 1fr",gap:18}}>
@@ -3185,8 +3210,8 @@ export default function App({session}){
             <div>{media.length===0?<div style={Object.assign({},card,{padding:"40px 20px",textAlign:"center",color:t.text3})}><div style={{marginBottom:12,display:"flex",justifyContent:"center",opacity:.45}}><Icon name="media" size={30} strokeWidth={1.3}/></div><div>Médiathèque vide</div></div>:(<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>{media.map(m=>(<div key={m.id} style={{borderRadius:11,overflow:"hidden",border:"1px solid "+t.border}}><div style={{aspectRatio:"16/9",overflow:"hidden"}}><img src={thumbOf(m)} loading="lazy" decoding="async" style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/></div><div style={{padding:"6px 10px",fontSize:11,color:t.text2,background:t.bg2,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"80%"}}>{m.name||"Image"}</span><button onClick={()=>deleteMedia(m.id)} style={{background:"none",border:"none",color:t.text3,cursor:"pointer",fontSize:14}}>✕</button></div></div>))}</div>)}</div>
           </div>
         </div>)}
-        {nav==="create"&&(!selType?(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}><h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Choisir un type</h2><p style={{color:t.text3,marginBottom:22,fontSize:13}}>Sélectionnez ce que vous souhaitez créer.</p><TeamBar teams={teams} teamId={teamId} onPick={setTeamId} t={t} label="Créer pour"/><div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:14,maxWidth:680}}>{CT.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:"22px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(t.accent,.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}>  <div style={{marginBottom:12,color:t.accentUI}}><Icon name={typeIconName(c.id,sport)} size={26} strokeWidth={1.5}/></div><div style={{fontWeight:700,color:t.text,fontSize:14,marginBottom:4}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.5}}>{c.desc}</div></div>))}</div></div>):(selType==="lineup"||selType==="group")?renderSpecial():renderStandard())}
-        {nav==="history"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
+        {navLive==="create"&&(!selType?(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>{liveMode&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:14}}><span style={{display:"inline-flex",alignItems:"center",gap:6,background:rgba(t.accent,.13),color:t.accentUI,border:"1px solid "+rgba(t.accent,.28),borderRadius:20,padding:"4px 11px",fontSize:10,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase"}}><Icon name="stopwatch" size={12} strokeWidth={2}/>Mode match</span><button onClick={()=>setPhoneMode(true)} style={{background:"none",border:"none",color:t.text3,fontSize:11,cursor:"pointer",padding:"4px 0",textDecoration:"underline",fontFamily:"inherit",flexShrink:0}}>Version complète</button></div>}<h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>{liveMode?"Publier":"Choisir un type"}</h2><p style={{color:t.text3,marginBottom:22,fontSize:13}}>{liveMode?"L'essentiel du jour de match. Le reste se règle en version complète.":"Sélectionnez ce que vous souhaitez créer."}</p><TeamBar teams={teams} teamId={teamId} onPick={setTeamId} t={t} label="Créer pour"/><div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(3,1fr)",gap:14,maxWidth:680}}>{CT.map(c=>(<div key={c.id} onClick={()=>openCreate(c.id)} style={{background:t.bg2,border:"1px solid "+t.border,borderRadius:13,padding:"22px 18px",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=rgba(t.accent,.55);e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=t.border;e.currentTarget.style.transform="translateY(0)";}}>  <div style={{marginBottom:12,color:t.accentUI}}><Icon name={typeIconName(c.id,sport)} size={26} strokeWidth={1.5}/></div><div style={{fontWeight:700,color:t.text,fontSize:14,marginBottom:4}}>{c.label}</div><div style={{fontSize:11,color:t.text3,lineHeight:1.5}}>{c.desc}</div></div>))}</div></div>):(selType==="lineup"||selType==="group")?renderSpecial():renderStandard())}
+        {navLive==="history"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Historique</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>{historyCount+" visuel"+(historyCount!==1?"s":"")+(allHistory.length&&allHistory.length<historyCount?" · "+allHistory.length+" affichés":"")}</p>
           <TeamBar teams={teams} teamId={teamId} onPick={setTeamId} t={t}/>
@@ -3200,7 +3225,7 @@ export default function App({session}){
           {historyState==="loading"&&allHistory.length>0&&(
             <div style={{textAlign:"center",marginTop:18,fontSize:12,color:t.text3}}>Chargement…</div>)}
         </div>)}
-        {nav==="settings"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
+        {navLive==="settings"&&(<div style={{padding:28,flex:1,overflowY:"auto",background:t.bg}}>
           <h2 style={{fontFamily:"'Bebas Neue',Impact,sans-serif",fontSize:36,fontWeight:400,letterSpacing:".02em",lineHeight:1,marginBottom:6,color:t.text}}>Paramètres</h2>
           <p style={{color:t.text3,marginBottom:22,fontSize:13}}>Interface et données.</p>
           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:16,maxWidth:650}}>
@@ -3212,15 +3237,17 @@ export default function App({session}){
           </div>
         </div>)}
       </div>
-      {isMobile&&!(nav==="create"&&selType)&&(()=>{
+      {isMobile&&!(navLive==="create"&&selType)&&(()=>{
         // Mobile nav : on garde 6 onglets (Médias retiré, faute de place). Historique réintégré.
+        // En mode match, deux onglets seulement : créer et retrouver ses visuels.
         const MOBILE_LABELS={home:"Accueil",club:"Club",players:T.players,create:"Créer",history:"Visuels",settings:"Réglages"};
-        const mobileNav=NAVL.filter(n=>n.id!=="media").map(n=>({...n,label:MOBILE_LABELS[n.id]||n.label}));
+        const keep=liveMode?["create","history"]:["home","club","players","create","history","settings"];
+        const mobileNav=NAVL.filter(n=>keep.includes(n.id)).map(n=>({...n,label:MOBILE_LABELS[n.id]||n.label}));
         return(
         <div style={{position:"fixed",bottom:0,left:0,right:0,height:60,background:t.bg2,borderTop:"1px solid "+t.border,display:"flex",alignItems:"stretch",zIndex:100,paddingBottom:"env(safe-area-inset-bottom,0)"}}>
           {mobileNav.map(n=>{
             const isCreate=n.id==="create";
-            const active=nav===n.id;
+            const active=navLive===n.id;
             return(
               <button key={n.id} onClick={()=>{setNav(n.id);if(n.id!=="create")setSelType(null);}}
                 style={{flex:isCreate?1.25:1,minWidth:0,background:isCreate?(active?t.accent:rgba(t.accent,.18)):"none",border:"none",padding:"4px 2px",color:isCreate?(active?contrastText(t.accent):t.accentUI):(active?t.accentUI:t.text2),cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1,fontWeight:active?700:500,position:"relative",margin:isCreate?"4px":0,borderRadius:isCreate?12:0,transition:"all .15s",overflow:"hidden"}}>
