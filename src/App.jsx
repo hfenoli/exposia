@@ -1118,6 +1118,26 @@ function GroupCanvas({gd,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,sport}){
       if(!list.length)return;
       out.push({k:c.k,l:(c.l||"").toUpperCase(),list:list,c:c.k==="coaches"?"rgba(255,255,255,.5)":colors[i%colors.length]});
     });
+    // Les cles de stockage sont communes a tous les sports, mais chaque sport
+    // n en declare qu une partie : le handball n a pas de « mid », le basket
+    // pas de « def ». Un groupe enregistre avant un changement de sport peut
+    // donc contenir une categorie que le sport courant ignore. Les gabarits
+    // qui listent a plat (gr2, gr3) affichaient quand meme ces joueurs, ceux
+    // qui lisent groupCats les perdaient en silence : le meme groupe ne
+    // donnait pas la meme convocation selon le gabarit choisi. On les
+    // rattache en fin de liste plutot que de les faire disparaitre.
+    const connues={};
+    SPCATS.forEach(function(c){connues[c.k]=true;});
+    const orphelins=[];
+    ["gk","def","mid","fwd"].forEach(function(k){
+      if(!connues[k]&&byKey[k]&&byKey[k].length)orphelins.push.apply(orphelins,byKey[k]);
+    });
+    if(orphelins.length){
+      const bloc={k:"autres",l:(termsFor(sport).players||"Joueurs").toUpperCase(),list:orphelins,c:colors[out.length%colors.length]};
+      // Juste avant l encadrement, qui reste en dernier.
+      const iStaff=out.findIndex(function(c){return c.k==="coaches";});
+      if(iStaff===-1)out.push(bloc); else out.splice(iStaff,0,bloc);
+    }
     return out;
   }
   const rosterCount = gk.length+def.length+mid.length+fwd.length+coaches.length;
@@ -1280,7 +1300,7 @@ function GroupCanvas({gd,tpl,logoUrl,logo2Url,accent,accent2,bgUrl,W,H,sport}){
         {staffList.length>0&&<>
           <div style={{display:"flex",alignItems:"center",gap:W*.014,marginTop:W*.022,marginBottom:W*.012}}>
             <div style={{flex:1,height:1,background:rgba("#fff",.18)}}/>
-            <span style={{fontSize:W*.02,color:rgba("#fff",.6),letterSpacing:".22em",fontWeight:700,textTransform:"uppercase"}}>Staff</span>
+            <span style={{fontSize:W*.02,color:rgba("#fff",.6),letterSpacing:".22em",fontWeight:700,textTransform:"uppercase"}}>{STAFF_LABEL}</span>
             <div style={{flex:1,height:1,background:rgba("#fff",.18)}}/>
           </div>
           {staffList.map(function(p,i){
