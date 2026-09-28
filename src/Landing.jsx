@@ -44,6 +44,10 @@ function fmtCHF(n) {
   return ent.replace(/\B(?=(\d{3})+(?!\d))/g, "’") + "." + dec;
 }
 
+// ⚠️ Ces limites doivent rester identiques au barème SQL de
+//    supabase/migrations/0005_plan_limits.sql (visuels, templates) et
+//    0008_ai_credits.sql (rédactions IA). Si l'un change, changez l'autre
+//    dans le même commit.
 const PRICING = [
   {
     id: "BASIC",
@@ -56,6 +60,7 @@ const PRICING = [
       "1 équipe",
       "5 visuels par semaine",
       "1 template par type de visuel",
+      "10 rédactions par l'IA chaque mois",
       "Support par e-mail",
     ],
     absent: ["Plusieurs équipes", "Les 22 templates, sans restriction", "Accompagnement au démarrage"],
@@ -72,6 +77,7 @@ const PRICING = [
       "3 équipes",
       "15 visuels par semaine",
       "5 templates par type de visuel",
+      "60 rédactions par l'IA chaque mois",
       "Support par e-mail sous 48 h",
     ],
     absent: ["Les 22 templates, sans restriction", "Accompagnement au démarrage"],
@@ -86,6 +92,7 @@ const PRICING = [
     inclus: [
       "Équipes illimitées",
       "Visuels illimités",
+      "Rédactions par l'IA illimitées",
       "Les 22 templates, sans restriction",
       "Accompagnement au démarrage (1 h en visio)",
       "Support prioritaire sous 24 h",
@@ -217,6 +224,7 @@ const FAQ_ITEMS = [
   { q: "Que deviennent les photos de nos joueurs ?", a: "Elles restent celles de ton club : nous ne les revendons pas et ne les transmettons à personne. Attention en revanche à un point qui t’incombe : pour un joueur mineur, il te faut l'accord écrit des parents avant de publier son image. C'est détaillé dans nos conditions d'utilisation." },
   { q: "Peut-on essayer avant de payer ?",          a: "Oui. Les clubs acceptés en bêta disposent d'un mois complet sans engagement ni carte bancaire. Si ça ne te convient pas, tu pars avec tes visuels et on supprime tes données." },
   { q: "Puis-je gérer plusieurs équipes ?",         a: "Oui. Chaque équipe — juniors, seniors, féminines — a son propre effectif et son propre historique de visuels, et tu bascules de l'une à l'autre en un clic. Le logo, les couleurs et le sport restent communs au club, tu ne les ressaisis pas. L'offre Équipe en autorise une, l'offre Club trois, l'offre Institution autant que nécessaire." },
+  { q: "L'IA écrit vraiment mes textes ?",           a: "Tu lui dis en une phrase ce qui s'est passé — « victoire 3-1 à Sion, doublé de Marchand » — et elle te propose trois versions du texte de ton visuel, sous trois angles différents. Tu touches celle qui te plaît, tu corriges si tu veux. Elle n'invente rien : ce que tu ne lui dis pas, elle ne l'écrit pas, ni score ni nom ni date. Tes textes ne servent pas à entraîner de modèle. Compte 10 rédactions par mois avec l'offre Équipe, 60 avec Club, sans limite avec Institution." },
 ];
 
 // ─── DOCUMENTS JURIDIQUES ─────────────────────────────────────
@@ -286,13 +294,13 @@ const CONFIDENTIALITE = [
   { t: "1. Responsable du traitement",
     p: IDENTITE.raisonSociale + (IDENTITE_COMPLETE ? ", " + IDENTITE.adresse : "") + ". Pour toute question relative à vos données : " + IDENTITE.email + "." },
   { t: "2. Données traitées",
-    p: "Nous traitons : l'adresse e-mail du club et le nom du club (nécessaires à la connexion et à la facturation) ; les données que le club saisit lui-même sur son effectif (noms, numéros, postes) ; les photographies et images qu'il importe ; les visuels qu'il crée. Nous ne collectons ni données de navigation à des fins publicitaires, ni cookies de suivi tiers." },
+    p: "Nous traitons : l'adresse e-mail du club et le nom du club (nécessaires à la connexion et à la facturation) ; les données que le club saisit lui-même sur son effectif (noms, numéros, postes) ; les photographies et images qu'il importe ; les visuels qu'il crée ; et, s'il utilise la rédaction assistée, la phrase qu'il saisit pour décrire ce qu'il veut publier. Nous ne collectons ni données de navigation à des fins publicitaires, ni cookies de suivi tiers." },
   { t: "3. Finalités et base légale",
     p: "Ces données servent exclusivement à fournir le service et à facturer l'abonnement. La base légale est l'exécution du contrat qui nous lie au club. Elles ne sont utilisées ni pour de la prospection, ni pour de la publicité, ni pour entraîner des modèles d'intelligence artificielle, et ne sont vendues à personne." },
   { t: "4. Photographies de personnes",
     p: "Les photographies importées peuvent représenter des personnes identifiables, y compris des mineurs. Nous n'y accédons pas pour d'autres fins que le fonctionnement du service, n'exécutons aucune reconnaissance faciale et n'en tirons aucun profil. Le recueil du consentement des personnes photographiées relève du club (voir l'article 3 des conditions d'utilisation)." },
   { t: "5. Hébergement et sous-traitants",
-    p: "Les données sont hébergées chez Supabase, qui assure le stockage et l'authentification. Selon la région d'hébergement retenue, elles peuvent être traitées hors de Suisse, y compris dans un pays ne bénéficiant pas d'une décision d'adéquation ; les garanties contractuelles usuelles (clauses types de protection des données) s'appliquent alors. La région exacte est communiquée sur simple demande." },
+    p: "Les données sont hébergées chez Supabase, qui assure le stockage et l'authentification. Selon la région d'hébergement retenue, elles peuvent être traitées hors de Suisse, y compris dans un pays ne bénéficiant pas d'une décision d'adéquation ; les garanties contractuelles usuelles (clauses types de protection des données) s'appliquent alors. La région exacte est communiquée sur simple demande. La rédaction assistée fait appel à Anthropic (Claude) : lui sont transmis la phrase saisie par le club, le nom du club, son sport, et les textes figurant déjà sur le visuel en cours — lesquels peuvent contenir un nom que le club y a lui-même écrit. Ne lui sont jamais transmis l'effectif enregistré, les photographies, ni les visuels eux-mêmes. Ces échanges ne servent pas à entraîner de modèle et ne sont pas conservés à cette fin. Le club qui ne souhaite pas recourir à ce traitement peut simplement ne pas utiliser la fonction." },
   { t: "6. Durée de conservation",
     p: "Les données sont conservées pendant toute la durée de l'abonnement, puis trente jours après sa fin, avant suppression définitive. Les documents comptables sont conservés dix ans, comme l'impose le droit suisse. Une demande de suppression anticipée est exécutée sous trente jours." },
   { t: "7. Vos droits",

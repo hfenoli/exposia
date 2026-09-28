@@ -3,6 +3,7 @@ import { supabase } from "./supabase";
 import { compressImageFile, removeBackground, dominantBorderColor, isImageFile, formatBytes, makeThumbnail, TOLERANCE_PRESETS, MAX_SOURCE_BYTES } from "./imaging";
 import { SPORT_LIST, DEFAULT_SPORT, getSport, termsFor, ctypesFor, ctypeInfo, isTeamSport, liveTypesFor } from "./sports";
 import { suggestionContext, suggestionsFor } from "./suggestions";
+import { textLayersFor, creditsState, askForText } from "./ai";
 // ─── BOTTOM SHEET SWIPE-TO-DISMISS ────────────────────────────
 // Helper module-level pour pouvoir être utilisé dans DragCanvas comme dans App.
 function makeSwipeClose(onClose){
@@ -248,6 +249,9 @@ const ICON_PATHS = {
   clipboard:  "M9 4.5h6v2.5H9zM7 5.8H5.5V20h13V5.8H17M8.5 11h7M8.5 15h5",
   jersey:     "M8.6 4 4 6.6l2 3.6 2-1V20h8V9.2l2 1 2-3.6L15.4 4a3.6 3.6 0 0 1-6.8 0Z",
   star:       "M12 3.6 14.6 9l5.9.8-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8L3.5 9.8 9.4 9 12 3.6Z",
+  // Rédaction assistée : une grande étincelle et deux petites. Dessin propre
+  // à Viziona, pas l'icône d'un autre produit.
+  sparkle:    "M11 3.5 12.6 8l4.5 1.6L12.6 11.2 11 15.7 9.4 11.2 4.9 9.6 9.4 8 11 3.5ZM18 14l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7.7-1.9ZM6 16.4l.5 1.4 1.4.5-1.4.5-.5 1.4-.5-1.4L4.1 18.3l1.4-.5.5-1.4Z",
   megaphone:  "M4 10v4l3 .6V9.4L4 10ZM7 9.4 17 5v14L7 14.6M20 10.5v3M8.5 15.2V20h3l-.8-4.4",
   stopwatch:  "M12 20.5a7.6 7.6 0 1 0 0-15.2 7.6 7.6 0 0 0 0 15.2ZM12 8.8v4.1l2.6 1.6M9.4 3.5h5.2M18.6 6.4l1.6-1.6",
   podium:     "M9 10.5h6V21H9zM3 14.5h6V21H3zM15 12.5h6V21h-6zM12 3.5l1.2 2.5 2.8.4-2 2 .5 2.7-2.5-1.3-2.5 1.3.5-2.7-2-2 2.8-.4L12 3.5Z",
@@ -1402,7 +1406,7 @@ function HistoryThumb({h,c1,c2}){
   }catch{return<div style={Object.assign({},wr,{background:"#111",display:"flex",alignItems:"center",justifyContent:"center",color:"#555"})}><Icon name="doc" size={22}/></div>;}
 }
 // ─── DRAG CANVAS ──────────────────────────────────────────────
-function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,t,isMobile,mobileSheet,setMobileSheet,canvasScale,clubName,sport,cw,ch,onLogoChange}){
+function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,accent2,t,isMobile,mobileSheet,setMobileSheet,canvasScale,clubName,sport,cw,ch,onLogoChange,visualType}){
   const CW=cw||270, CH=ch||480;
   // Chaque snapshot est un clone profond des calques, sponsors compris — et
   // ceux-ci portent leur image en data URL. Pile plus courte sur mobile.
@@ -1662,6 +1666,11 @@ function DragCanvas({layers,setLayers,bgUrl,playerUrl,logoUrl,logo2Url,accent,ac
     {isMobile&&mobileSheet==="layers"&&<div onClick={()=>setMobileSheet&&setMobileSheet(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:150}}/>}
     <div data-bottom-sheet="layers" style={layersPanelStyle}>
       {isMobile&&<div {...makeSwipeClose(()=>setMobileSheet&&setMobileSheet(null))} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,paddingBottom:8,borderBottom:"1px solid "+t.border,touchAction:"none",cursor:"grab",userSelect:"none"}}><div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:34,height:4,background:"rgba(255,255,255,.2)",borderRadius:3}}/><div style={{fontSize:13,fontWeight:700,color:t.text}}>Calques</div></div><button onClick={()=>setMobileSheet&&setMobileSheet(null)} style={{background:"none",border:"none",color:t.text3,fontSize:18,cursor:"pointer",padding:4}}>✕</button></div>}
+      <AiWriter layers={layers} cw={cw} ch={ch} t={t} isMobile={isMobile}
+        visualType={visualType} typeLabel={ctypeInfo(sport,visualType).label}
+        sportLabel={getSport(sport).label} vocabulaire={[termsFor(sport).player,termsFor(sport).match,termsFor(sport).venue].join(", ")}
+        club={clubName} supabase={supabase}
+        onApply={textes=>{pushHist();setLayers(prev=>prev.map(l=>(textes[l.id]!=null?Object.assign({},l,{text:textes[l.id]}):l)));}}/>
       <div style={{display:"flex",alignItems:"center",justifyContent:isMobile?"flex-end":"space-between",marginBottom:8}}>
         {!isMobile&&<div style={{fontSize:10,color:t.text3,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase"}}>Calques</div>}
         <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
@@ -1831,6 +1840,103 @@ function TeamBar({teams,teamId,onPick,t,label}){
       </div>
     </div>
   );
+}
+// ─── RÉDACTION ASSISTÉE ───────────────────────────────────────
+// Le club décrit en une phrase ce qu'il veut dire, l'IA propose trois angles
+// différents, il touche celui qui lui plaît. Un seul appel, donc un seul
+// crédit, quel que soit le nombre de propositions.
+//
+// Trois états volontairement distincts : indisponible (migration pas encore
+// appliquée, ou fonction pas déployée) → le bloc disparaît ; quota épuisé →
+// on le dit et on propose de changer d'offre ; erreur → on précise si le
+// crédit a été rendu.
+function AiWriter({layers,cw,ch,onApply,t,isMobile,visualType,typeLabel,sportLabel,vocabulaire,club,supabase}){
+  const[ouvert,setOuvert]=useState(false);
+  const[brief,setBrief]=useState("");
+  const[etat,setEtat]=useState("repos");      // repos | attente | choix
+  const[versions,setVersions]=useState([]);
+  const[erreur,setErreur]=useState("");
+  const[credits,setCredits]=useState(undefined); // undefined = pas encore su, null = indisponible
+  const champs=useMemo(()=>textLayersFor(layers,cw,ch),[layers,cw,ch]);
+
+  useEffect(()=>{
+    let vivant=true;
+    creditsState(supabase).then(c=>{ if(vivant)setCredits(c); });
+    return()=>{vivant=false;};
+  },[supabase]);
+
+  // Pas de crédits lisibles = fonction non activée sur ce compte. On ne montre
+  // rien plutôt qu'un bouton qui échouera.
+  if(credits===null||!champs.length)return null;
+
+  const restants=credits?credits.remaining:null;
+  const illimite=credits&&credits.allowed>=100000;
+  const epuise=credits&&!illimite&&restants<=0;
+
+  async function lancer(){
+    setEtat("attente");setErreur("");
+    const r=await askForText({supabase,type:visualType,typeLabel,sportLabel,vocabulaire,club,brief,layers:champs});
+    if(r.erreur){
+      setErreur(r.erreur);setEtat("repos");
+      if(r.inactif)setCredits(null);
+      if(r.quota)setCredits(c=>c?Object.assign({},c,{remaining:0}):c);
+      return;
+    }
+    setVersions(r.versions);setEtat("choix");
+    if(typeof r.restants==="number")setCredits(c=>c?Object.assign({},c,{remaining:r.restants,used:c.used+1}):c);
+  }
+  function appliquer(v){
+    const textes={};champs.forEach(c=>{ if(typeof v[c.id]==="string"&&v[c.id])textes[c.id]=v[c.id]; });
+    onApply(textes);
+    setEtat("repos");setVersions([]);setOuvert(false);
+  }
+
+  const cadre={background:t.bg3,border:"1px solid "+rgba(t.accent,.28),borderRadius:10,padding:10,marginBottom:12};
+  const champ={width:"100%",background:t.bg4,border:"1px solid "+t.border2,borderRadius:6,padding:"7px 8px",color:t.text,fontSize:12,outline:"none",fontFamily:"inherit",boxSizing:"border-box",resize:"vertical"};
+
+  if(!ouvert)return(
+    <button onClick={()=>setOuvert(true)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",background:rgba(t.accent,.13),color:t.accentUI,border:"1px solid "+rgba(t.accent,.3),borderRadius:9,padding:"10px 12px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",marginBottom:12,textAlign:"left"}}>
+      <Icon name="sparkle" size={16} strokeWidth={1.8}/>
+      <span style={{flex:1}}>Écrire les textes pour moi</span>
+      {!illimite&&credits&&<span style={{fontSize:10,color:t.text3,fontWeight:500}}>{restants} restant{restants>1?"s":""}</span>}
+    </button>
+  );
+
+  return(<div style={cadre}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+      <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:10,color:t.accentUI,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase"}}><Icon name="sparkle" size={13} strokeWidth={2}/>Rédaction assistée</span>
+      <button onClick={()=>{setOuvert(false);setEtat("repos");setErreur("");}} aria-label="Fermer" style={{background:"none",border:"none",color:t.text3,fontSize:15,lineHeight:1,cursor:"pointer",padding:"2px 4px",fontFamily:"inherit"}}>×</button>
+    </div>
+
+    {epuise?(
+      <div style={{fontSize:11.5,color:t.text3,lineHeight:1.55}}>
+        Vous avez utilisé vos {credits.allowed} rédactions du mois. Le compteur repart le 1<sup>er</sup>. Une offre supérieure en donne davantage.
+      </div>
+    ):etat==="choix"?(<div>
+      <div style={{fontSize:10,color:t.text3,marginBottom:7}}>Touchez la version qui vous convient.</div>
+      {versions.map(function(v,i){return(
+        <button key={i} onClick={()=>appliquer(v)} style={{display:"block",width:"100%",textAlign:"left",background:t.bg2,border:"1px solid "+t.border,borderRadius:8,padding:"9px 10px",marginBottom:6,cursor:"pointer",fontFamily:"inherit"}}>
+          <div style={{fontSize:9,color:t.accentUI,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:4}}>{v.angle||("Version "+(i+1))}</div>
+          {champs.map(function(c){ return v[c.id]?<div key={c.id} style={{fontSize:11.5,color:t.text,lineHeight:1.45,marginBottom:2,wordBreak:"break-word"}}>{v[c.id]}</div>:null; })}
+        </button>
+      );})}
+      <button onClick={()=>setEtat("repos")} style={{background:"none",border:"none",color:t.text3,fontSize:11,cursor:"pointer",padding:"4px 0",textDecoration:"underline",fontFamily:"inherit"}}>Revenir</button>
+    </div>):(<div>
+      <div style={{fontSize:10,color:t.text3,marginBottom:4}}>Que voulez-vous dire ?</div>
+      <textarea value={brief} onChange={e=>setBrief(e.target.value.slice(0,600))} rows={isMobile?3:2}
+        placeholder="Victoire 3-1 à Sion, doublé de Marchand, on remonte au classement"
+        style={champ}/>
+      <div style={{fontSize:9.5,color:t.text3,margin:"5px 0 9px",lineHeight:1.5}}>
+        Plus vous êtes précis, plus le texte sera juste. L'IA n'invente ni score ni nom : ce que vous ne dites pas, elle ne l'écrit pas.
+      </div>
+      <button onClick={lancer} disabled={etat==="attente"} style={{width:"100%",background:etat==="attente"?t.bg4:t.accent,color:etat==="attente"?t.text3:contrastText(t.accent),border:"none",borderRadius:8,padding:"10px",fontSize:12,fontWeight:700,cursor:etat==="attente"?"default":"pointer",fontFamily:"inherit"}}>
+        {etat==="attente"?"Rédaction en cours…":"Proposer trois versions"}
+      </button>
+      {!illimite&&credits&&<div style={{fontSize:9.5,color:t.text3,marginTop:6,textAlign:"center"}}>{restants} rédaction{restants>1?"s":""} restante{restants>1?"s":""} ce mois-ci</div>}
+    </div>)}
+
+    {erreur&&<div style={{fontSize:11,color:"#fca5a5",marginTop:8,lineHeight:1.45}}>{erreur}</div>}
+  </div>);
 }
 function PBox({children,t,mb}){return<div style={{background:t.bg3,borderRadius:10,padding:12,marginBottom:mb||10}}>{children}</div>;}
 function SHdr({label,t}){return<div style={{fontSize:10,color:t.text3,fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",marginBottom:8,paddingBottom:6,borderBottom:"1px solid "+t.border}}>{label}</div>;}
@@ -3088,7 +3194,7 @@ export default function App({session}){
         </PBox>
         {saveBtn()}
       </div>
-      <DragCanvas key={editId||("new_"+selType)} layers={layers} setLayers={setLayers} bgUrl={bgUrl} playerUrl={selPhoto} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={t.accent} accent2={t.accent2} t={t} isMobile={isMobile} mobileSheet={mobileSheet} setMobileSheet={setMobileSheet} canvasScale={canvasScale} clubName={club?.name} sport={sport} cw={canvasW} ch={canvasH} onLogoChange={(kind,url)=>{if(kind==="logo2")setLogo2Url(url);else setLogoUrl(url);}}/>
+      <DragCanvas key={editId||("new_"+selType)} layers={layers} setLayers={setLayers} bgUrl={bgUrl} playerUrl={selPhoto} logoUrl={logoUrl||club?.logo_url} logo2Url={logo2Url} accent={t.accent} accent2={t.accent2} t={t} isMobile={isMobile} mobileSheet={mobileSheet} setMobileSheet={setMobileSheet} canvasScale={canvasScale} clubName={club?.name} sport={sport} visualType={selType} cw={canvasW} ch={canvasH} onLogoChange={(kind,url)=>{if(kind==="logo2")setLogo2Url(url);else setLogoUrl(url);}}/>
       {isMobile&&(
         <div style={{position:"fixed",bottom:0,left:0,right:0,height:60,background:t.bg2,borderTop:"1px solid "+t.border,display:"flex",gap:6,alignItems:"center",padding:"0 10px",zIndex:90}}>
           <button onClick={()=>setSelType(null)} className="viz-touch-btn" style={{background:t.bg3,border:"1px solid "+t.border2,borderRadius:8,padding:"10px 12px",color:t.text2,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>↩</button>
